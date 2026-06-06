@@ -101,9 +101,8 @@ Buka URL di 2 browser/tab berbeda, login dengan akun demo:
 
 | Username | Password |
 |---|---|
-| admin | admin123 |
-| alice | alice123 |
-| bob | bob123 |
+| A | A123 |
+| B | B123 |
 
 Kirim pesan dari satu tab — tab lain harus terima real-time. Refresh browser — history pesan harus tetap muncul.
 

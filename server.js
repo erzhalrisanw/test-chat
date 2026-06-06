@@ -49,9 +49,8 @@ async function getHistory(limit = 50) {
 }
 
 const users = {
-  admin: 'admin123',
-  alice: 'alice123',
-  bob: 'bob123',
+  A: 'A123',
+  B: 'B123',
 };
 
 const sessions = new Map();
