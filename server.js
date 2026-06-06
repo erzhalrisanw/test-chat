@@ -36,6 +36,29 @@ async function initDb() {
       created_at TEXT NOT NULL
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS user_settings (
+      username TEXT PRIMARY KEY,
+      notif_enabled INTEGER NOT NULL DEFAULT 1
+    )
+  `);
+}
+
+async function getNotifEnabled(username) {
+  const result = await db.execute({
+    sql: 'SELECT notif_enabled FROM user_settings WHERE username = ?',
+    args: [username],
+  });
+  if (!result.rows.length) return true;
+  return Number(result.rows[0].notif_enabled) !== 0;
+}
+
+async function setNotifEnabled(username, enabled) {
+  await db.execute({
+    sql: `INSERT INTO user_settings (username, notif_enabled) VALUES (?, ?)
+          ON CONFLICT(username) DO UPDATE SET notif_enabled = excluded.notif_enabled`,
+    args: [username, enabled ? 1 : 0],
+  });
 }
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
@@ -189,6 +212,32 @@ app.post('/push-subscribe', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('subscribe error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.get('/user-settings', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  try {
+    const notifEnabled = await getNotifEnabled(username);
+    res.json({ ok: true, notifEnabled });
+  } catch (err) {
+    console.error('settings get error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post('/user-settings', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const { notifEnabled } = req.body || {};
+  if (typeof notifEnabled !== 'boolean') return res.status(400).json({ ok: false });
+  try {
+    await setNotifEnabled(username, notifEnabled);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('settings set error:', err.message);
     res.status(500).json({ ok: false });
   }
 });

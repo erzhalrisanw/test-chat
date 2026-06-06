@@ -38,9 +38,38 @@ function updateNotifBtn() {
   notifBtn.classList.toggle('off', !notifEnabled);
 }
 
+async function saveNotifEnabled(enabled) {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    await fetch('/user-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ notifEnabled: enabled }),
+    });
+  } catch (_) {}
+}
+
+async function loadNotifEnabled() {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    const res = await fetch('/user-settings', { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data && typeof data.notifEnabled === 'boolean') {
+      notifEnabled = data.notifEnabled;
+      localStorage.setItem('notifEnabled', notifEnabled ? '1' : '0');
+      updateNotifBtn();
+      if (!notifEnabled) unsubscribePush();
+    }
+  } catch (_) {}
+}
+
 notifBtn.addEventListener('click', async () => {
   notifEnabled = !notifEnabled;
   localStorage.setItem('notifEnabled', notifEnabled ? '1' : '0');
+  saveNotifEnabled(notifEnabled);
   updateNotifBtn();
   unlockAudio();
   if (notifEnabled && 'Notification' in window) {
@@ -196,6 +225,7 @@ function startChat(token, username) {
   chatView.classList.remove('hidden');
   messagesEl.innerHTML = '';
   updateNotifBtn();
+  loadNotifEnabled();
   if (notifEnabled && 'Notification' in window) {
     if (Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {});
@@ -483,7 +513,6 @@ logoutBtn.addEventListener('click', () => {
   localStorage.removeItem('username');
   chatView.classList.add('hidden');
   loginView.classList.remove('hidden');
-  document.getElementById('password').value = '';
 });
 
 const savedToken = localStorage.getItem('token');
