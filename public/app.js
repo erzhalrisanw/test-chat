@@ -165,41 +165,21 @@ function notify(msg) {
   showDesktopNotification(`Message from ${msg.username}`, body);
 }
 
-const usernameInput = document.getElementById('username');
-const passwordInput = document.getElementById('password');
-const rememberCheck = document.getElementById('remember');
-
-const savedRemember = localStorage.getItem('rememberCreds');
-if (savedRemember) {
-  try {
-    const { username, password } = JSON.parse(savedRemember);
-    if (username) usernameInput.value = username;
-    if (password) passwordInput.value = password;
-    rememberCheck.checked = true;
-  } catch (_) {}
-}
-
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';
-  const username = usernameInput.value.trim();
-  const password = passwordInput.value;
+  const username = document.getElementById('username').value.trim();
 
   try {
     const res = await fetch('/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username }),
     });
     const data = await res.json();
     if (!data.ok) {
       loginError.textContent = data.error || 'Login failed';
       return;
-    }
-    if (rememberCheck.checked) {
-      localStorage.setItem('rememberCreds', JSON.stringify({ username, password }));
-    } else {
-      localStorage.removeItem('rememberCreds');
     }
     localStorage.setItem('token', data.token);
     localStorage.setItem('username', data.username);

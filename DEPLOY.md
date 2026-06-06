@@ -99,10 +99,10 @@ https://simple-chat-xxxx.onrender.com
 
 Buka URL di 2 browser/tab berbeda, login dengan akun demo:
 
-| Username | Password |
-|---|---|
-| A | A123 |
-| B | B123 |
+| Username |
+|---|
+| occupatus |
+| mutatio |
 
 Kirim pesan dari satu tab — tab lain harus terima real-time. Refresh browser — history pesan harus tetap muncul.
 

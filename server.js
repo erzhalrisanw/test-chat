@@ -75,7 +75,7 @@ async function getSubscriptionsFor(username) {
 
 async function sendPushToOfflineUsers(sender, payload) {
   if (!pushEnabled) return;
-  const recipients = Object.keys(users).filter((u) => u !== sender && !onlineUsers.has(u));
+  const recipients = [...users].filter((u) => u !== sender && !onlineUsers.has(u));
   await Promise.all(recipients.map(async (u) => {
     const subs = await getSubscriptionsFor(u);
     await Promise.all(subs.map(async (sub) => {
@@ -114,10 +114,7 @@ async function getHistory(limit = 50) {
   }));
 }
 
-const users = {
-  A: 'A123',
-  B: 'B123',
-};
+const users = new Set(['occupatus', 'mutatio']);
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -143,7 +140,7 @@ function verifyToken(token) {
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
     const data = JSON.parse(Buffer.from(payload, 'base64').toString());
-    if (!data.u || !users[data.u]) return null;
+    if (!data.u || !users.has(data.u)) return null;
     if (Date.now() - data.iat > SESSION_MAX_AGE_MS) return null;
     return data.u;
   } catch {
@@ -152,12 +149,12 @@ function verifyToken(token) {
 }
 
 app.post('/login', (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) {
-    return res.status(400).json({ ok: false, error: 'Username & password are required' });
+  const { username } = req.body || {};
+  if (!username) {
+    return res.status(400).json({ ok: false, error: 'Username is required' });
   }
-  if (users[username] !== password) {
-    return res.status(401).json({ ok: false, error: 'Invalid username or password' });
+  if (!users.has(username)) {
+    return res.status(401).json({ ok: false, error: 'Invalid username' });
   }
   const token = createToken(username);
   res.json({ ok: true, token, username });
@@ -299,8 +296,7 @@ initDb()
       console.log(`Chat running at http://localhost:${PORT}`);
       console.log(`DB: ${process.env.TURSO_DATABASE_URL ? 'Turso (remote)' : 'local file (chat.db)'}`);
       console.log(`Push notifications: ${pushEnabled ? 'enabled' : 'disabled (set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)'}`);
-      console.log('Demo accounts:');
-      Object.entries(users).forEach(([u, p]) => console.log(`  ${u} / ${p}`));
+      console.log('Available users:', [...users].join(', '));
     });
   })
   .catch((err) => {
