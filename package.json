@@ -12,6 +12,7 @@
   "dependencies": {
     "@libsql/client": "^0.17.3",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "socket.io": "^4.7.5",
+    "web-push": "^3.6.7"
   }
 }

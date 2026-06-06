@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
+const webPush = require('web-push');
 const { createClient } = require('@libsql/client');
 const { Server } = require('socket.io');
 
@@ -27,6 +28,68 @@ async function initDb() {
       time TEXT NOT NULL
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      endpoint TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      subscription TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `);
+}
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
+const pushEnabled = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+
+if (pushEnabled) {
+  webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
+
+async function saveSubscription(username, sub) {
+  await db.execute({
+    sql: `INSERT INTO push_subscriptions (endpoint, username, subscription, created_at)
+          VALUES (?, ?, ?, ?)
+          ON CONFLICT(endpoint) DO UPDATE SET username=excluded.username, subscription=excluded.subscription`,
+    args: [sub.endpoint, username, JSON.stringify(sub), new Date().toISOString()],
+  });
+}
+
+async function deleteSubscription(endpoint) {
+  await db.execute({
+    sql: 'DELETE FROM push_subscriptions WHERE endpoint = ?',
+    args: [endpoint],
+  });
+}
+
+async function getSubscriptionsFor(username) {
+  const result = await db.execute({
+    sql: 'SELECT subscription FROM push_subscriptions WHERE username = ?',
+    args: [username],
+  });
+  return result.rows.map((r) => {
+    try { return JSON.parse(r.subscription); } catch { return null; }
+  }).filter(Boolean);
+}
+
+async function sendPushToOfflineUsers(sender, payload) {
+  if (!pushEnabled) return;
+  const recipients = Object.keys(users).filter((u) => u !== sender && !onlineUsers.has(u));
+  await Promise.all(recipients.map(async (u) => {
+    const subs = await getSubscriptionsFor(u);
+    await Promise.all(subs.map(async (sub) => {
+      try {
+        await webPush.sendNotification(sub, JSON.stringify(payload));
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await deleteSubscription(sub.endpoint).catch(() => {});
+        } else {
+          console.error('push error:', err.statusCode, err.body);
+        }
+      }
+    }));
+  }));
 }
 
 async function saveMessage(msg) {
@@ -108,6 +171,44 @@ app.get('/me', (req, res) => {
   res.json({ ok: true, username });
 });
 
+function authFromReq(req) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  return token && verifyToken(token);
+}
+
+app.get('/vapid-public', (req, res) => {
+  if (!pushEnabled) return res.status(503).json({ ok: false, error: 'Push not configured' });
+  res.json({ ok: true, key: VAPID_PUBLIC_KEY });
+});
+
+app.post('/push-subscribe', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const sub = req.body;
+  if (!sub || !sub.endpoint) return res.status(400).json({ ok: false, error: 'Invalid subscription' });
+  try {
+    await saveSubscription(username, sub);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('subscribe error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post('/push-unsubscribe', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const { endpoint } = req.body || {};
+  if (!endpoint) return res.status(400).json({ ok: false });
+  try {
+    await deleteSubscription(endpoint);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false });
+  }
+});
+
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   const username = token && verifyToken(token);
@@ -130,7 +231,7 @@ io.on('connection', async (socket) => {
     socket.emit('history', []);
   }
   socket.emit('readState', Object.fromEntries(lastRead));
-  io.emit('system', { text: `${username} joined`, online: [...onlineUsers] });
+  io.emit('presence', { online: [...onlineUsers] });
 
   socket.on('message', async (text) => {
     if (typeof text !== 'string' || !text.trim()) return;
@@ -142,6 +243,11 @@ io.on('connection', async (socket) => {
     try {
       const id = await saveMessage(msg);
       io.emit('message', { ...msg, id });
+      sendPushToOfflineUsers(username, {
+        title: `Message from ${username}`,
+        body: msg.text,
+        url: '/',
+      }).catch(() => {});
     } catch (e) {
       console.error('save error:', e.message);
     }
@@ -162,6 +268,11 @@ io.on('connection', async (socket) => {
     try {
       const id = await saveMessage(msg);
       io.emit('message', { ...msg, id });
+      sendPushToOfflineUsers(username, {
+        title: `Message from ${username}`,
+        body: msg.text || '📷 Sent a photo',
+        url: '/',
+      }).catch(() => {});
     } catch (e) {
       console.error('save error:', e.message);
     }
@@ -178,7 +289,7 @@ io.on('connection', async (socket) => {
 
   socket.on('disconnect', () => {
     onlineUsers.delete(username);
-    io.emit('system', { text: `${username} left`, online: [...onlineUsers] });
+    io.emit('presence', { online: [...onlineUsers] });
   });
 });
 
@@ -189,6 +300,7 @@ initDb()
     server.listen(PORT, () => {
       console.log(`Chat running at http://localhost:${PORT}`);
       console.log(`DB: ${process.env.TURSO_DATABASE_URL ? 'Turso (remote)' : 'local file (chat.db)'}`);
+      console.log(`Push notifications: ${pushEnabled ? 'enabled' : 'disabled (set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)'}`);
       console.log('Demo accounts:');
       Object.entries(users).forEach(([u, p]) => console.log(`  ${u} / ${p}`));
     });

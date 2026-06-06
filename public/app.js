@@ -43,10 +43,90 @@ notifBtn.addEventListener('click', async () => {
   notifEnabled = !notifEnabled;
   localStorage.setItem('notifEnabled', notifEnabled ? '1' : '0');
   updateNotifBtn();
-  if (notifEnabled && 'Notification' in window && Notification.permission === 'default') {
-    try { await Notification.requestPermission(); } catch (_) {}
+  unlockAudio();
+  if (notifEnabled && 'Notification' in window) {
+    if (Notification.permission === 'default') {
+      try {
+        const result = await Notification.requestPermission();
+        if (result === 'denied') {
+          alert('Notifications blocked. Enable them in your browser settings.');
+          return;
+        }
+      } catch (_) {}
+    } else if (Notification.permission === 'denied') {
+      alert('Notifications are blocked. Enable them in your browser settings.');
+      return;
+    }
+    setupPush();
+  } else if (!notifEnabled) {
+    unsubscribePush();
   }
 });
+
+async function setupPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const res = await fetch('/vapid-public');
+      if (!res.ok) return;
+      const { key } = await res.json();
+      if (!key) return;
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+    }
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    await fetch('/push-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(sub),
+    });
+  } catch (err) {
+    console.warn('Push setup failed:', err);
+  }
+}
+
+async function unsubscribePush() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) return;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return;
+    const token = localStorage.getItem('token');
+    if (token) {
+      await fetch('/push-unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      }).catch(() => {});
+    }
+    await sub.unsubscribe();
+  } catch (_) {}
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (_) {}
+}
+document.addEventListener('click', unlockAudio);
+document.addEventListener('touchstart', unlockAudio, { passive: true });
 
 function playBeep() {
   try {
@@ -79,6 +159,9 @@ function notify(msg) {
   if (!notifEnabled) return;
   if (msg.username === me) return;
   playBeep();
+  if ('vibrate' in navigator) {
+    try { navigator.vibrate(200); } catch (_) {}
+  }
   const body = msg.text || (msg.image ? '📷 Sent a photo' : '');
   showDesktopNotification(`Message from ${msg.username}`, body);
 }
@@ -115,8 +198,12 @@ function startChat(token, username) {
   chatView.classList.remove('hidden');
   messagesEl.innerHTML = '';
   updateNotifBtn();
-  if (notifEnabled && 'Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission().catch(() => {});
+  if (notifEnabled && 'Notification' in window) {
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    } else if (Notification.permission === 'granted') {
+      setupPush();
+    }
   }
 
   socket = io({ auth: { token } });
@@ -163,7 +250,10 @@ function startChat(token, username) {
   });
 
   socket.on('system', (m) => {
-    addSystem(m.text);
+    if (m.text) addSystem(m.text);
+  });
+
+  socket.on('presence', (m) => {
     if (Array.isArray(m.online)) {
       onlineCountEl.textContent = `${m.online.length} online`;
     }
