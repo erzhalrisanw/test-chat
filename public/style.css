@@ -1,0 +1,211 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f0f2f5;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hidden { display: none !important; }
+
+.card {
+  background: #fff;
+  padding: 32px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  width: 100%;
+  max-width: 360px;
+}
+.card h1 { margin: 0 0 16px; font-size: 22px; }
+.card form { display: flex; flex-direction: column; gap: 10px; }
+.card input, .card button {
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 8px;
+  border: 1px solid #d0d5dd;
+}
+.card button {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+.card button:hover { background: #1d4ed8; }
+.error { color: #dc2626; font-size: 13px; margin: 4px 0 0; min-height: 18px; }
+.hint {
+  margin-top: 16px;
+  font-size: 12px;
+  color: #555;
+  background: #f9fafb;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+#chat-view {
+  background: #fff;
+  width: 100%;
+  max-width: 720px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  overflow: hidden;
+}
+#chat-view header {
+  padding: 12px 16px;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#chat-view header .right { display: flex; gap: 12px; align-items: center; font-size: 13px; }
+#chat-view header button {
+  background: rgba(255,255,255,.2);
+  border: none;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+#chat-view header button.off { background: rgba(0,0,0,.25); opacity: .7; }
+#me { margin-left: 8px; opacity: .9; font-weight: normal; font-size: 13px; }
+
+#messages {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.msg { max-width: 70%; padding: 8px 12px; border-radius: 12px; line-height: 1.4; word-wrap: break-word; }
+.msg .meta { font-size: 11px; opacity: .7; margin-bottom: 2px; }
+.msg.mine { align-self: flex-end; background: #2563eb; color: #fff; }
+.msg.other { align-self: flex-start; background: #fff; border: 1px solid #e5e7eb; }
+.msg.system { align-self: center; background: transparent; color: #6b7280; font-size: 12px; font-style: italic; }
+
+#chat-form {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
+#chat-form input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #d0d5dd;
+  font-size: 14px;
+}
+#chat-form button {
+  padding: 10px 18px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.attach-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #e5e7eb;
+  cursor: pointer;
+  font-size: 18px;
+  user-select: none;
+}
+.attach-btn:hover { background: #d1d5db; }
+
+#preview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+#preview img { max-height: 60px; border-radius: 6px; }
+#preview button {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.msg img.chat-img {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+  margin-top: 4px;
+  cursor: pointer;
+}
+
+#camera-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.cam-box {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  background: #000;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+#cam-video {
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+  display: block;
+}
+.cam-controls {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+  background: rgba(0,0,0,.5);
+  width: 100%;
+  justify-content: center;
+  align-items: center;
+}
+.cam-controls button {
+  border: none;
+  background: rgba(255,255,255,.15);
+  color: #fff;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+}
+.cam-controls #cam-snap {
+  width: 64px;
+  height: 64px;
+  background: #fff;
+  color: #000;
+  font-size: 22px;
+}
+.cam-error { color: #fca5a5; padding: 0 12px 12px; font-size: 13px; text-align: center; }

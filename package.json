@@ -1,0 +1,17 @@
+{
+  "name": "simple-chat",
+  "version": "1.0.0",
+  "description": "Simple 2-way web chat with login",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.3",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
