@@ -1,62 +1,62 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simple Chat</title>
+  <title>AJjpxFsIsk</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <div id="login-view" class="card">
-    <h1>Masuk</h1>
+    <h1>Login</h1>
     <form id="login-form">
       <input id="username" type="text" placeholder="Username" autocomplete="username" required />
       <input id="password" type="password" placeholder="Password" autocomplete="current-password" required />
       <button type="submit">Login</button>
       <p id="login-error" class="error"></p>
     </form>
-    <div class="hint">
-      <strong>Akun demo:</strong>
-      <div>A / A123</div>
-      <div>B / B123</div>
-    </div>
   </div>
 
   <div id="chat-view" class="hidden">
     <header>
       <div>
-        <strong>Simple Chat</strong>
+        <strong>AJjpxFsIsk</strong>
         <span id="me"></span>
       </div>
       <div class="right">
         <span id="online-count">0 online</span>
-        <button id="notif-toggle" title="Notifikasi">🔔 On</button>
-        <button id="logout">Keluar</button>
+        <button id="notif-toggle" title="Notifications">🔔 On</button>
+        <button id="logout">Logout</button>
       </div>
     </header>
     <main id="messages"></main>
     <form id="chat-form">
-      <label class="attach-btn" title="Kirim foto">
+      <label class="attach-btn" title="Send photo">
         📎
         <input id="file-input" type="file" accept="image/*" hidden />
       </label>
-      <button type="button" id="camera-btn" class="attach-btn" title="Buka kamera">📷</button>
-      <input id="msg" type="text" placeholder="Ketik pesan..." autocomplete="off" maxlength="1000" />
-      <button type="submit">Kirim</button>
+      <button type="button" id="camera-btn" class="attach-btn" title="Open camera">📷</button>
+      <input id="msg" type="text" placeholder="Type a message..." autocomplete="off" maxlength="1000" />
+      <button type="submit">Send</button>
     </form>
     <div id="preview" class="hidden">
       <img id="preview-img" alt="preview" />
-      <button id="preview-cancel" type="button" title="Batal">✕</button>
+      <button id="preview-cancel" type="button" title="Cancel">✕</button>
     </div>
+  </div>
+
+  <div id="image-viewer" class="hidden">
+    <button id="viewer-close" type="button" title="Close">✕</button>
+    <img id="viewer-img" alt="preview" />
   </div>
 
   <div id="camera-modal" class="hidden">
     <div class="cam-box">
       <video id="cam-video" autoplay playsinline muted></video>
       <div class="cam-controls">
-        <button id="cam-switch" type="button" title="Ganti kamera">🔄</button>
-        <button id="cam-snap" type="button" title="Jepret">⬤</button>
-        <button id="cam-close" type="button" title="Tutup">✕</button>
+        <button id="cam-switch" type="button" title="Switch camera">🔄</button>
+        <button id="cam-snap" type="button" title="Take photo">⬤</button>
+        <button id="cam-close" type="button" title="Close">✕</button>
       </div>
       <div id="cam-error" class="cam-error"></div>
     </div>

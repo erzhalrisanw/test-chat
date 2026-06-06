@@ -29,6 +29,8 @@ let camFacing = 'user';
 
 let socket = null;
 let me = null;
+let lastIncomingId = 0;
+let lastReadByOthers = 0;
 let notifEnabled = localStorage.getItem('notifEnabled') !== '0';
 let audioCtx = null;
 
@@ -77,8 +79,8 @@ function notify(msg) {
   if (!notifEnabled) return;
   if (msg.username === me) return;
   playBeep();
-  const body = msg.text || (msg.image ? '📷 Mengirim foto' : '');
-  showDesktopNotification(`Pesan dari ${msg.username}`, body);
+  const body = msg.text || (msg.image ? '📷 Sent a photo' : '');
+  showDesktopNotification(`Message from ${msg.username}`, body);
 }
 
 loginForm.addEventListener('submit', async (e) => {
@@ -95,14 +97,14 @@ loginForm.addEventListener('submit', async (e) => {
     });
     const data = await res.json();
     if (!data.ok) {
-      loginError.textContent = data.error || 'Login gagal';
+      loginError.textContent = data.error || 'Login failed';
       return;
     }
-    sessionStorage.setItem('token', data.token);
-    sessionStorage.setItem('username', data.username);
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('username', data.username);
     startChat(data.token, data.username);
   } catch (err) {
-    loginError.textContent = 'Terjadi kesalahan jaringan';
+    loginError.textContent = 'Network error occurred';
   }
 });
 
@@ -124,14 +126,39 @@ function startChat(token, username) {
     if (list.length) {
       const sep = document.createElement('div');
       sep.className = 'msg system';
-      sep.textContent = '— riwayat percakapan —';
+      sep.textContent = '— chat history —';
       messagesEl.appendChild(sep);
     }
-    list.forEach((m) => addMessage(m));
+    list.forEach((m) => {
+      addMessage(m);
+      if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
+    });
+    maybeMarkRead();
+  });
+
+  socket.on('readState', (state) => {
+    if (!state || typeof state !== 'object') return;
+    Object.entries(state).forEach(([u, id]) => {
+      if (u !== me && typeof id === 'number' && id > lastReadByOthers) {
+        lastReadByOthers = id;
+      }
+    });
+    updateReceipts();
+  });
+
+  socket.on('read', ({ username, lastReadId }) => {
+    if (username === me) return;
+    if (typeof lastReadId !== 'number') return;
+    if (lastReadId > lastReadByOthers) {
+      lastReadByOthers = lastReadId;
+      updateReceipts();
+    }
   });
 
   socket.on('message', (m) => {
     addMessage(m);
+    if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
+    if (m.username !== me) maybeMarkRead();
     notify(m);
   });
 
@@ -143,29 +170,46 @@ function startChat(token, username) {
   });
 
   socket.on('connect_error', (err) => {
-    addSystem(`Koneksi gagal: ${err.message}`);
+    if (err.message === 'Unauthorized') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+      socket.disconnect();
+      chatView.classList.add('hidden');
+      loginView.classList.remove('hidden');
+      loginError.textContent = 'Session expired, please log in again';
+      return;
+    }
+    addSystem(`Connection failed: ${err.message}`);
   });
 }
 
-function addMessage({ username, text, time, image }) {
+function addMessage({ id, username, text, time, image }) {
   const div = document.createElement('div');
   div.className = 'msg ' + (username === me ? 'mine' : 'other');
-  const t = new Date(time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  if (id) div.dataset.id = String(id);
+  const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   const meta = `<div class="meta">${escapeHtml(username)} • ${t}</div>`;
   let body = text ? escapeHtml(text) : '';
   if (image && /^data:image\//.test(image)) {
-    const img = `<img class="chat-img" src="${image}" alt="foto" />`;
+    const img = `<img class="chat-img" src="${image}" alt="photo" />`;
     body = body ? `${body}${img}` : img;
   }
   div.innerHTML = meta + body;
   const imgEl = div.querySelector('img.chat-img');
   if (imgEl) {
-    imgEl.addEventListener('click', () => window.open(image, '_blank'));
+    imgEl.addEventListener('click', () => openImageViewer(image));
     imgEl.addEventListener('load', () => {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     });
   }
   messagesEl.appendChild(div);
+  if (username === me && id) {
+    const mark = document.createElement('div');
+    mark.className = 'read-mark';
+    mark.dataset.id = String(id);
+    mark.textContent = id <= lastReadByOthers ? 'read' : '';
+    messagesEl.appendChild(mark);
+  }
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
@@ -176,6 +220,55 @@ function addSystem(text) {
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+
+function maybeMarkRead() {
+  if (!socket || !lastIncomingId) return;
+  if (document.visibilityState !== 'visible') return;
+  if (chatView.classList.contains('hidden')) return;
+  socket.emit('read', lastIncomingId);
+}
+
+function updateReceipts() {
+  let latestReadMark = null;
+  document.querySelectorAll('.read-mark').forEach((el) => {
+    const id = Number(el.dataset.id || 0);
+    if (!id) return;
+    if (id <= lastReadByOthers) {
+      el.textContent = '';
+      latestReadMark = el;
+    } else {
+      el.textContent = '';
+    }
+  });
+  if (latestReadMark) latestReadMark.textContent = 'read';
+}
+
+document.addEventListener('visibilitychange', maybeMarkRead);
+window.addEventListener('focus', maybeMarkRead);
+
+const imageViewer = document.getElementById('image-viewer');
+const viewerImg = document.getElementById('viewer-img');
+const viewerClose = document.getElementById('viewer-close');
+
+function openImageViewer(src) {
+  viewerImg.src = src;
+  imageViewer.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeImageViewer() {
+  imageViewer.classList.add('hidden');
+  viewerImg.src = '';
+  document.body.style.overflow = '';
+}
+
+viewerClose.addEventListener('click', closeImageViewer);
+imageViewer.addEventListener('click', (e) => {
+  if (e.target === imageViewer) closeImageViewer();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) closeImageViewer();
+});
 
 function escapeHtml(s) {
   return String(s)
@@ -206,11 +299,11 @@ fileInput.addEventListener('change', () => {
   fileInput.value = '';
   if (!file) return;
   if (!file.type.startsWith('image/')) {
-    alert('File harus berupa gambar');
+    alert('File must be an image');
     return;
   }
   if (file.size > MAX_IMAGE_BYTES) {
-    alert('Ukuran maksimal 4 MB');
+    alert('Maximum size is 4 MB');
     return;
   }
   const reader = new FileReader();
@@ -218,7 +311,7 @@ fileInput.addEventListener('change', () => {
     pendingImage = reader.result;
     previewImg.src = pendingImage;
     preview.classList.remove('hidden');
-    msgInput.placeholder = 'Tambahkan caption (opsional)...';
+    msgInput.placeholder = 'Add a caption (optional)...';
     msgInput.focus();
   };
   reader.readAsDataURL(file);
@@ -230,7 +323,7 @@ function clearPreview() {
   pendingImage = null;
   previewImg.src = '';
   preview.classList.add('hidden');
-  msgInput.placeholder = 'Ketik pesan...';
+  msgInput.placeholder = 'Type a message...';
 }
 
 cameraBtn.addEventListener('click', () => openCamera());
@@ -272,7 +365,7 @@ camSnap.addEventListener('click', () => {
 async function openCamera() {
   camError.textContent = '';
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    camError.textContent = 'Browser tidak mendukung akses kamera';
+    camError.textContent = 'Browser does not support camera access';
     camModal.classList.remove('hidden');
     return;
   }
@@ -285,7 +378,7 @@ async function openCamera() {
     });
     camVideo.srcObject = camStream;
   } catch (err) {
-    camError.textContent = 'Tidak bisa mengakses kamera: ' + (err.message || err.name);
+    camError.textContent = 'Cannot access camera: ' + (err.message || err.name);
   }
 }
 
@@ -304,14 +397,15 @@ function stopCamStream() {
 
 logoutBtn.addEventListener('click', () => {
   if (socket) socket.disconnect();
-  sessionStorage.clear();
+  localStorage.removeItem('token');
+  localStorage.removeItem('username');
   chatView.classList.add('hidden');
   loginView.classList.remove('hidden');
   document.getElementById('password').value = '';
 });
 
-const savedToken = sessionStorage.getItem('token');
-const savedUser = sessionStorage.getItem('username');
+const savedToken = localStorage.getItem('token');
+const savedUser = localStorage.getItem('username');
 if (savedToken && savedUser) {
   startChat(savedToken, savedUser);
 }
