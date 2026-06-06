@@ -6,7 +6,6 @@ const messagesEl = document.getElementById('messages');
 const chatForm = document.getElementById('chat-form');
 const msgInput = document.getElementById('msg');
 const meEl = document.getElementById('me');
-const onlineCountEl = document.getElementById('online-count');
 const logoutBtn = document.getElementById('logout');
 const notifBtn = document.getElementById('notif-toggle');
 const fileInput = document.getElementById('file-input');
@@ -270,12 +269,6 @@ function startChat(token, username) {
 
   socket.on('system', (m) => {
     if (m.text) addSystem(m.text);
-  });
-
-  socket.on('presence', (m) => {
-    if (Array.isArray(m.online)) {
-      onlineCountEl.textContent = `${m.online.length} online`;
-    }
   });
 
   socket.on('connect_error', (err) => {

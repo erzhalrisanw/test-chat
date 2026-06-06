@@ -231,7 +231,6 @@ io.on('connection', async (socket) => {
     socket.emit('history', []);
   }
   socket.emit('readState', Object.fromEntries(lastRead));
-  io.emit('presence', { online: [...onlineUsers] });
 
   socket.on('message', async (text) => {
     if (typeof text !== 'string' || !text.trim()) return;
@@ -289,7 +288,6 @@ io.on('connection', async (socket) => {
 
   socket.on('disconnect', () => {
     onlineUsers.delete(username);
-    io.emit('presence', { online: [...onlineUsers] });
   });
 });
 
