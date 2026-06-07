@@ -231,7 +231,7 @@ function triggerHeartBurst(msg) {
 
 function maybeLoveAnim(msg) {
   if (!msg || typeof msg.text !== 'string') return;
-  if (/sayang/i.test(msg.text)) triggerHeartBurst(msg);
+  if (/sayang/i.test(msg.text)) setTimeout(() => triggerHeartBurst(msg), 2000);
 }
 
 function notify(msg) {
