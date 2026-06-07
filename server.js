@@ -50,6 +50,27 @@ async function initDb() {
       notif_enabled INTEGER NOT NULL DEFAULT 1
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS read_state (
+      username TEXT PRIMARY KEY,
+      last_read_id INTEGER NOT NULL
+    )
+  `);
+}
+
+async function loadAllReadState() {
+  const result = await db.execute('SELECT username, last_read_id FROM read_state');
+  for (const row of result.rows) {
+    lastRead.set(String(row.username), Number(row.last_read_id));
+  }
+}
+
+async function persistReadState(username, id) {
+  await db.execute({
+    sql: `INSERT INTO read_state (username, last_read_id) VALUES (?, ?)
+          ON CONFLICT(username) DO UPDATE SET last_read_id = excluded.last_read_id`,
+    args: [username, id],
+  });
 }
 
 async function getNotifEnabled(username) {
@@ -459,6 +480,7 @@ io.on('connection', async (socket) => {
     const prev = lastRead.get(username) || 0;
     if (id <= prev) return;
     lastRead.set(username, id);
+    persistReadState(username, id).catch((e) => console.error('persist read state:', e.message));
     io.emit('read', { username, lastReadId: id });
   });
 
@@ -470,6 +492,7 @@ io.on('connection', async (socket) => {
 const PORT = process.env.PORT || 3000;
 
 initDb()
+  .then(() => loadAllReadState())
   .then(() => {
     server.listen(PORT, () => {
       console.log(`Chat running at http://localhost:${PORT}`);
