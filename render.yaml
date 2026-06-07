@@ -8,6 +8,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: ALLOWED_USERS
+        sync: false
       - key: TURSO_DATABASE_URL
         sync: false
       - key: TURSO_AUTH_TOKEN

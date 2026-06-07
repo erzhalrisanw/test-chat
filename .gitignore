@@ -9,3 +9,4 @@ chat.db-shm
 .DS_Store
 npm-debug.log*
 DEPLOY.md
+DEPLOY_TOKYO_LONDON.md

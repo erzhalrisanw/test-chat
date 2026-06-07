@@ -183,7 +183,12 @@ async function getHistory(limit = 50, beforeId = null) {
   return result.rows.reverse().map(mapRow);
 }
 
-const users = new Set(['occupatus', 'mutatio', 'A', 'B']);
+const users = new Set(
+  (process.env.ALLOWED_USERS || 'occupatus,mutatio,A,B')
+    .split(',')
+    .map(u => u.trim())
+    .filter(Boolean)
+);
 
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
