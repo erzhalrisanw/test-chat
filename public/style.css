@@ -307,6 +307,26 @@ body {
 }
 #viewer-close:hover { background: rgba(255,255,255,.25); }
 
+.heart-burst {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 5;
+}
+.heart-burst .heart {
+  position: absolute;
+  bottom: 0;
+  user-select: none;
+  animation: heart-pop 2.4s ease-out forwards;
+  will-change: transform, opacity;
+}
+@keyframes heart-pop {
+  0%   { transform: translate(0, 0) scale(.4); opacity: 0; }
+  15%  { transform: translate(var(--dx, 0), -8px) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx, 0), -140px) scale(.85); opacity: 0; }
+}
+
 #camera-modal {
   position: fixed;
   inset: 0;

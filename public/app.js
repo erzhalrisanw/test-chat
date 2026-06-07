@@ -203,6 +203,33 @@ function showDesktopNotification(title, body) {
   } catch (_) {}
 }
 
+function triggerHeartBurst(msg) {
+  if (!msg || !msg.id) return;
+  const bubble = messagesEl.querySelector(`.msg[data-id="${msg.id}"]`);
+  if (!bubble) return;
+  const burst = document.createElement('div');
+  burst.className = 'heart-burst';
+  bubble.appendChild(burst);
+  const emojis = ['❤️', '💕', '💖', '💗', '💘', '💝', '🥰', '😍'];
+  for (let i = 0; i < 12; i++) {
+    const h = document.createElement('span');
+    h.className = 'heart';
+    h.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    h.style.setProperty('--dx', (Math.random() * 60 - 30) + 'px');
+    h.style.left = (5 + Math.random() * 85) + '%';
+    h.style.fontSize = (16 + Math.random() * 14) + 'px';
+    h.style.animationDelay = (Math.random() * 0.5) + 's';
+    h.style.animationDuration = (1.8 + Math.random() * 0.9) + 's';
+    burst.appendChild(h);
+  }
+  setTimeout(() => burst.remove(), 3500);
+}
+
+function maybeLoveAnim(msg) {
+  if (!msg || typeof msg.text !== 'string') return;
+  if (/sayang/i.test(msg.text)) triggerHeartBurst(msg);
+}
+
 function notify(msg) {
   if (!notifEnabled) return;
   if (msg.username === me) return;
@@ -297,6 +324,7 @@ function startChat(token, username) {
     if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
     if (m.username !== me) maybeMarkRead();
     notify(m);
+    maybeLoveAnim(m);
   });
 
   socket.on('system', (m) => {
