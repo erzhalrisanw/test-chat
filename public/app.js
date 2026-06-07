@@ -372,7 +372,11 @@ function buildMessageNodes(msg) {
   div.className = 'msg ' + (username === me ? 'mine' : 'other');
   if (id) div.dataset.id = String(id);
   const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-  const meta = `<div class="meta">${escapeHtml(username)} • ${t}</div>`;
+  div.dataset.day = dayKey(time);
+  const tick = username === me && id
+    ? `<span class="tick ${id <= lastReadByOthers ? 'read' : 'sent'}" data-id="${id}" aria-label="${id <= lastReadByOthers ? 'read' : 'sent'}"><svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
+    : '';
+  const meta = `<div class="meta">${escapeHtml(username)} • ${t}${tick}</div>`;
   let quote = '';
   if (replyTo) {
     quote = `<div class="reply-quote" data-target="${replyTo.id}">
@@ -411,19 +415,54 @@ function buildMessageNodes(msg) {
       setReplyTarget({ id, username, text, hasImage: !!image, hasVideo: !!msg.video });
     });
   }
-  const nodes = [div];
-  if (username === me && id) {
-    const mark = document.createElement('div');
-    mark.className = 'read-mark';
-    mark.dataset.id = String(id);
-    mark.textContent = id <= lastReadByOthers ? 'read' : '';
-    nodes.push(mark);
-  }
-  return nodes;
+  return [div];
+}
+
+function dayKey(time) {
+  const d = new Date(time);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function dateSeparatorLabel(time) {
+  const d = new Date(time);
+  const now = new Date();
+  const k = dayKey(time);
+  if (k === dayKey(now)) return 'Today';
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (k === dayKey(yest)) return 'Yesterday';
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString('en-US', sameYear
+    ? { weekday: 'short', month: 'short', day: 'numeric' }
+    : { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function makeDateSeparator(time) {
+  const sep = document.createElement('div');
+  sep.className = 'msg system date-sep';
+  sep.textContent = dateSeparatorLabel(time);
+  return sep;
+}
+
+function renderDateSeparators() {
+  messagesEl.querySelectorAll('.date-sep').forEach((el) => el.remove());
+  let prevDay = null;
+  messagesEl.querySelectorAll('.msg[data-day]').forEach((el) => {
+    const day = el.dataset.day;
+    if (day !== prevDay) {
+      const [y, mo, d] = day.split('-').map(Number);
+      messagesEl.insertBefore(makeDateSeparator(new Date(y, mo - 1, d)), el);
+      prevDay = day;
+    }
+  });
 }
 
 function addMessage(msg) {
   const nodes = buildMessageNodes(msg);
+  const key = dayKey(msg.time);
+  const existing = messagesEl.querySelectorAll('.msg[data-day]');
+  const lastDay = existing.length ? existing[existing.length - 1].dataset.day : null;
+  if (lastDay !== key) messagesEl.appendChild(makeDateSeparator(msg.time));
   nodes.forEach((n) => messagesEl.appendChild(n));
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -475,18 +514,14 @@ function maybeMarkRead() {
 }
 
 function updateReceipts() {
-  let latestReadMark = null;
-  document.querySelectorAll('.read-mark').forEach((el) => {
+  document.querySelectorAll('.tick').forEach((el) => {
     const id = Number(el.dataset.id || 0);
     if (!id) return;
-    if (id <= lastReadByOthers) {
-      el.textContent = '';
-      latestReadMark = el;
-    } else {
-      el.textContent = '';
-    }
+    const isRead = id <= lastReadByOthers;
+    el.classList.toggle('read', isRead);
+    el.classList.toggle('sent', !isRead);
+    el.setAttribute('aria-label', isRead ? 'read' : 'sent');
   });
-  if (latestReadMark) latestReadMark.textContent = 'read';
 }
 
 document.addEventListener('visibilitychange', maybeMarkRead);
@@ -510,6 +545,7 @@ function loadMoreHistory() {
       const anchor = messagesEl.firstChild;
       list.forEach((m) => prependMessage(m, anchor));
       oldestLoadedId = list[0].id || oldestLoadedId;
+      renderDateSeparators();
       const newHeight = messagesEl.scrollHeight;
       messagesEl.scrollTop = prevTop + (newHeight - prevHeight);
     }
