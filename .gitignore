@@ -8,3 +8,4 @@ chat.db-shm
 !.env.example
 .DS_Store
 npm-debug.log*
+DEPLOY.md
