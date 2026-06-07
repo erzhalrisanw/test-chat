@@ -312,11 +312,37 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
+function maybePlaySunrise() {
+  const now = new Date();
+  const hour = now.getHours();
+  if (hour < 4 || hour >= 10) return;
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (localStorage.getItem('sunriseShown') === today) return;
+  const overlay = document.getElementById('sunrise-overlay');
+  if (!overlay) return;
+  localStorage.setItem('sunriseShown', today);
+  document.body.classList.add('sunrise-playing');
+  overlay.classList.remove('hidden', 'fade-out');
+  void overlay.offsetWidth;
+  // 0-4s sun rises, 4-5s overlay fades, 5-7s chat slides up (CSS delay 5s)
+  setTimeout(() => {
+    overlay.classList.add('fade-out');
+    setTimeout(() => {
+      overlay.classList.add('hidden');
+      overlay.classList.remove('fade-out');
+    }, 1000);
+  }, 4000);
+  setTimeout(() => {
+    document.body.classList.remove('sunrise-playing');
+  }, 7000);
+}
+
 function startChat(token, username) {
   me = username;
   meEl.textContent = `— ${username}`;
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
+  maybePlaySunrise();
   messagesEl.innerHTML = '';
   updateNotifBtn();
   updateGalleryBtn();
