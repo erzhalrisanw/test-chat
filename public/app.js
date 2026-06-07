@@ -234,13 +234,6 @@ function maybeLoveAnim(msg) {
   if (/sayang/i.test(msg.text)) triggerHeartBurst(msg);
 }
 
-function burstOnNewlyReadMine(prevReadId, newReadId) {
-  document.querySelectorAll('.msg.mine.has-sayang').forEach((el) => {
-    const id = Number(el.dataset.id || 0);
-    if (id > prevReadId && id <= newReadId) triggerHeartBurstOnElement(el);
-  });
-}
-
 function notify(msg) {
   if (!notifEnabled) return;
   if (msg.username === me) return;
@@ -325,19 +318,19 @@ function startChat(token, username) {
     if (username === me) return;
     if (typeof lastReadId !== 'number') return;
     if (lastReadId > lastReadByOthers) {
-      const prev = lastReadByOthers;
       lastReadByOthers = lastReadId;
       updateReceipts();
-      burstOnNewlyReadMine(prev, lastReadId);
     }
   });
 
   socket.on('message', (m) => {
     addMessage(m);
     if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
-    if (m.username !== me) maybeMarkRead();
+    if (m.username !== me) {
+      maybeMarkRead();
+      maybeLoveAnim(m);
+    }
     notify(m);
-    maybeLoveAnim(m);
   });
 
   socket.on('system', (m) => {
@@ -370,7 +363,6 @@ function buildMessageNodes(msg) {
   const div = document.createElement('div');
   div.className = 'msg ' + (username === me ? 'mine' : 'other');
   if (id) div.dataset.id = String(id);
-  if (text && /sayang/i.test(text)) div.classList.add('has-sayang');
   const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   const meta = `<div class="meta">${escapeHtml(username)} • ${t}</div>`;
   let quote = '';
