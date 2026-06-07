@@ -514,28 +514,112 @@ messagesEl.addEventListener('scroll', () => {
 });
 
 const imageViewer = document.getElementById('image-viewer');
-const viewerImg = document.getElementById('viewer-img');
+const viewerContent = document.getElementById('viewer-content');
 const viewerClose = document.getElementById('viewer-close');
+const viewerPrev = document.getElementById('viewer-prev');
+const viewerNext = document.getElementById('viewer-next');
+const viewerCounter = document.getElementById('viewer-counter');
+
+let viewerItems = [];
+let viewerIndex = 0;
+
+function collectViewerItems() {
+  const items = [];
+  messagesEl.querySelectorAll('img.chat-img, video.chat-vid').forEach((el) => {
+    const src = el.getAttribute('src');
+    if (!src) return;
+    items.push({ type: el.tagName === 'VIDEO' ? 'video' : 'image', src });
+  });
+  return items;
+}
+
+function renderViewerItem() {
+  viewerContent.innerHTML = '';
+  const item = viewerItems[viewerIndex];
+  if (!item) return;
+  let node;
+  if (item.type === 'video') {
+    node = document.createElement('video');
+    node.src = item.src;
+    node.controls = true;
+    node.playsInline = true;
+    node.preload = 'metadata';
+  } else {
+    node = document.createElement('img');
+    node.src = item.src;
+    node.alt = 'preview';
+  }
+  viewerContent.appendChild(node);
+  if (viewerItems.length > 1) {
+    viewerCounter.textContent = `${viewerIndex + 1} / ${viewerItems.length}`;
+    viewerCounter.style.display = '';
+    viewerPrev.style.display = '';
+    viewerNext.style.display = '';
+    viewerPrev.disabled = viewerIndex === 0;
+    viewerNext.disabled = viewerIndex === viewerItems.length - 1;
+  } else {
+    viewerCounter.style.display = 'none';
+    viewerPrev.style.display = 'none';
+    viewerNext.style.display = 'none';
+  }
+}
 
 function openImageViewer(src) {
-  viewerImg.src = src;
+  viewerItems = collectViewerItems();
+  const idx = viewerItems.findIndex((it) => it.src === src);
+  viewerIndex = idx >= 0 ? idx : 0;
+  if (!viewerItems.length) viewerItems = [{ type: 'image', src }];
+  renderViewerItem();
   imageViewer.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
 
 function closeImageViewer() {
   imageViewer.classList.add('hidden');
-  viewerImg.src = '';
+  viewerContent.innerHTML = '';
+  viewerItems = [];
   document.body.style.overflow = '';
 }
 
+function viewerStep(delta) {
+  const next = viewerIndex + delta;
+  if (next < 0 || next >= viewerItems.length) return;
+  viewerIndex = next;
+  renderViewerItem();
+}
+
 viewerClose.addEventListener('click', closeImageViewer);
+viewerPrev.addEventListener('click', (e) => { e.stopPropagation(); viewerStep(-1); });
+viewerNext.addEventListener('click', (e) => { e.stopPropagation(); viewerStep(1); });
 imageViewer.addEventListener('click', (e) => {
   if (e.target === imageViewer) closeImageViewer();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) closeImageViewer();
+  if (imageViewer.classList.contains('hidden')) return;
+  if (e.key === 'Escape') closeImageViewer();
+  else if (e.key === 'ArrowLeft') viewerStep(-1);
+  else if (e.key === 'ArrowRight') viewerStep(1);
 });
+
+let viewerTouchX = 0;
+let viewerTouchY = 0;
+let viewerTouchActive = false;
+viewerContent.addEventListener('touchstart', (e) => {
+  if (!e.touches.length) return;
+  viewerTouchX = e.touches[0].clientX;
+  viewerTouchY = e.touches[0].clientY;
+  viewerTouchActive = true;
+}, { passive: true });
+viewerContent.addEventListener('touchend', (e) => {
+  if (!viewerTouchActive) return;
+  viewerTouchActive = false;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - viewerTouchX;
+  const dy = t.clientY - viewerTouchY;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+    viewerStep(dx > 0 ? -1 : 1);
+  }
+}, { passive: true });
 
 function escapeHtml(s) {
   return String(s)
