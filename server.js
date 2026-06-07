@@ -25,9 +25,13 @@ async function initDb() {
       username TEXT NOT NULL,
       text TEXT,
       image TEXT,
-      time TEXT NOT NULL
+      time TEXT NOT NULL,
+      reply_to_id INTEGER
     )
   `);
+  try {
+    await db.execute(`ALTER TABLE messages ADD COLUMN reply_to_id INTEGER`);
+  } catch (_) {}
   await db.execute(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       endpoint TEXT PRIMARY KEY,
@@ -117,24 +121,60 @@ async function sendPushToOfflineUsers(sender, payload) {
 
 async function saveMessage(msg) {
   const result = await db.execute({
-    sql: 'INSERT INTO messages (username, text, image, time) VALUES (?, ?, ?, ?)',
-    args: [msg.username, msg.text || null, msg.image || null, msg.time],
+    sql: 'INSERT INTO messages (username, text, image, time, reply_to_id) VALUES (?, ?, ?, ?, ?)',
+    args: [msg.username, msg.text || null, msg.image || null, msg.time, msg.replyToId || null],
   });
   return Number(result.lastInsertRowid);
 }
 
-async function getHistory(limit = 50) {
-  const result = await db.execute({
-    sql: 'SELECT id, username, text, image, time FROM messages ORDER BY id DESC LIMIT ?',
-    args: [limit],
-  });
-  return result.rows.reverse().map((r) => ({
+function mapRow(r) {
+  const out = {
     id: Number(r.id),
     username: r.username,
     text: r.text,
     image: r.image,
     time: r.time,
-  }));
+  };
+  if (r.reply_to_id) {
+    out.replyTo = {
+      id: Number(r.reply_to_id),
+      username: r.reply_username,
+      text: r.reply_text,
+      hasImage: !!r.reply_image,
+    };
+  }
+  return out;
+}
+
+async function getMessageById(id) {
+  const result = await db.execute({
+    sql: `SELECT m.id, m.username, m.text, m.image, m.time, m.reply_to_id,
+                 p.username AS reply_username, p.text AS reply_text, p.image AS reply_image
+          FROM messages m
+          LEFT JOIN messages p ON m.reply_to_id = p.id
+          WHERE m.id = ?`,
+    args: [id],
+  });
+  if (!result.rows.length) return null;
+  return mapRow(result.rows[0]);
+}
+
+async function getHistory(limit = 50, beforeId = null) {
+  const sql = beforeId
+    ? `SELECT m.id, m.username, m.text, m.image, m.time, m.reply_to_id,
+              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image
+       FROM messages m
+       LEFT JOIN messages p ON m.reply_to_id = p.id
+       WHERE m.id < ?
+       ORDER BY m.id DESC LIMIT ?`
+    : `SELECT m.id, m.username, m.text, m.image, m.time, m.reply_to_id,
+              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image
+       FROM messages m
+       LEFT JOIN messages p ON m.reply_to_id = p.id
+       ORDER BY m.id DESC LIMIT ?`;
+  const args = beforeId ? [beforeId, limit] : [limit];
+  const result = await db.execute({ sql, args });
+  return result.rows.reverse().map(mapRow);
 }
 
 const users = new Set(['occupatus', 'mutatio']);
@@ -271,23 +311,33 @@ io.on('connection', async (socket) => {
   onlineUsers.add(username);
 
   try {
-    socket.emit('history', await getHistory(50));
+    const list = await getHistory(50);
+    socket.emit('history', { messages: list, hasMore: list.length === 50 });
   } catch (err) {
     console.error('history error:', err.message);
-    socket.emit('history', []);
+    socket.emit('history', { messages: [], hasMore: false });
   }
   socket.emit('readState', Object.fromEntries(lastRead));
 
-  socket.on('message', async (text) => {
+  socket.on('message', async (payload) => {
+    let text, replyToId;
+    if (typeof payload === 'string') {
+      text = payload;
+    } else if (payload && typeof payload === 'object') {
+      text = payload.text;
+      replyToId = Number(payload.replyToId) || null;
+    }
     if (typeof text !== 'string' || !text.trim()) return;
     const msg = {
       username,
       text: text.slice(0, 1000),
       time: new Date().toISOString(),
+      replyToId,
     };
     try {
       const id = await saveMessage(msg);
-      io.emit('message', { ...msg, id });
+      const full = await getMessageById(id);
+      io.emit('message', full || { ...msg, id });
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text,
@@ -300,7 +350,7 @@ io.on('connection', async (socket) => {
 
   socket.on('image', async (payload) => {
     if (!payload || typeof payload.dataUrl !== 'string') return;
-    const { dataUrl, caption } = payload;
+    const { dataUrl, caption, replyToId } = payload;
     const m = /^data:(image\/(png|jpeg|jpg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!m) return;
     if (dataUrl.length > 6 * 1024 * 1024) return;
@@ -309,10 +359,12 @@ io.on('connection', async (socket) => {
       image: dataUrl,
       text: typeof caption === 'string' ? caption.slice(0, 500) : '',
       time: new Date().toISOString(),
+      replyToId: Number(replyToId) || null,
     };
     try {
       const id = await saveMessage(msg);
-      io.emit('message', { ...msg, id });
+      const full = await getMessageById(id);
+      io.emit('message', full || { ...msg, id });
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text || '📷 Sent a photo',
@@ -320,6 +372,22 @@ io.on('connection', async (socket) => {
       }).catch(() => {});
     } catch (e) {
       console.error('save error:', e.message);
+    }
+  });
+
+  socket.on('loadMore', async (payload, ack) => {
+    const beforeId = Number(payload && payload.beforeId);
+    if (!Number.isFinite(beforeId) || beforeId <= 0) {
+      if (typeof ack === 'function') ack({ messages: [], hasMore: false });
+      return;
+    }
+    try {
+      const list = await getHistory(50, beforeId);
+      const hasMore = list.length === 50;
+      if (typeof ack === 'function') ack({ messages: list, hasMore });
+    } catch (e) {
+      console.error('loadMore error:', e.message);
+      if (typeof ack === 'function') ack({ messages: [], hasMore: false });
     }
   });
 

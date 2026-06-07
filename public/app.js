@@ -16,6 +16,12 @@ const previewCancel = document.getElementById('preview-cancel');
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 let pendingImage = null;
 
+const replyPreview = document.getElementById('reply-preview');
+const replyPreviewUser = document.getElementById('reply-preview-user');
+const replyPreviewText = document.getElementById('reply-preview-text');
+const replyCancelBtn = document.getElementById('reply-cancel');
+let replyTarget = null;
+
 const cameraBtn = document.getElementById('camera-btn');
 const camModal = document.getElementById('camera-modal');
 const camVideo = document.getElementById('cam-video');
@@ -30,6 +36,9 @@ let socket = null;
 let me = null;
 let lastIncomingId = 0;
 let lastReadByOthers = 0;
+let oldestLoadedId = null;
+let hasMoreHistory = false;
+let loadingMore = false;
 let notifEnabled = localStorage.getItem('notifEnabled') !== '0';
 let audioCtx = null;
 
@@ -236,13 +245,15 @@ function startChat(token, username) {
 
   socket = io({ auth: { token } });
 
-  socket.on('history', (list) => {
-    if (!Array.isArray(list)) return;
+  socket.on('history', (payload) => {
+    const list = Array.isArray(payload) ? payload : (payload && payload.messages) || [];
+    hasMoreHistory = !!(payload && payload.hasMore);
     if (list.length) {
       const sep = document.createElement('div');
       sep.className = 'msg system';
       sep.textContent = '— chat history —';
       messagesEl.appendChild(sep);
+      oldestLoadedId = list[0].id || null;
     }
     list.forEach((m) => {
       addMessage(m);
@@ -295,18 +306,35 @@ function startChat(token, username) {
   });
 }
 
-function addMessage({ id, username, text, time, image }) {
+function replySnippet(msg) {
+  if (msg.text) return msg.text;
+  if (msg.image || msg.hasImage) return '📷 Photo';
+  return '';
+}
+
+function buildMessageNodes(msg) {
+  const { id, username, text, time, image, replyTo } = msg;
   const div = document.createElement('div');
   div.className = 'msg ' + (username === me ? 'mine' : 'other');
   if (id) div.dataset.id = String(id);
   const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   const meta = `<div class="meta">${escapeHtml(username)} • ${t}</div>`;
+  let quote = '';
+  if (replyTo) {
+    quote = `<div class="reply-quote" data-target="${replyTo.id}">
+      <div class="reply-quote-body">
+        <div class="reply-quote-user">${escapeHtml(replyTo.username || '')}</div>
+        <div class="reply-quote-text">${escapeHtml(replySnippet(replyTo))}</div>
+      </div>
+    </div>`;
+  }
   let body = text ? escapeHtml(text) : '';
   if (image && /^data:image\//.test(image)) {
     const img = `<img class="chat-img" src="${image}" alt="photo" />`;
     body = body ? `${body}${img}` : img;
   }
-  div.innerHTML = meta + body;
+  const replyBtn = id ? `<button class="reply-btn" type="button" title="Reply">↩</button>` : '';
+  div.innerHTML = meta + quote + body + replyBtn;
   const imgEl = div.querySelector('img.chat-img');
   if (imgEl) {
     imgEl.addEventListener('click', () => openImageViewer(image));
@@ -314,16 +342,64 @@ function addMessage({ id, username, text, time, image }) {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     });
   }
-  messagesEl.appendChild(div);
+  const quoteEl = div.querySelector('.reply-quote');
+  if (quoteEl && replyTo) {
+    quoteEl.addEventListener('click', () => jumpToMessage(replyTo.id));
+  }
+  const btn = div.querySelector('.reply-btn');
+  if (btn && id) {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setReplyTarget({ id, username, text, hasImage: !!image });
+    });
+  }
+  const nodes = [div];
   if (username === me && id) {
     const mark = document.createElement('div');
     mark.className = 'read-mark';
     mark.dataset.id = String(id);
     mark.textContent = id <= lastReadByOthers ? 'read' : '';
-    messagesEl.appendChild(mark);
+    nodes.push(mark);
   }
+  return nodes;
+}
+
+function addMessage(msg) {
+  const nodes = buildMessageNodes(msg);
+  nodes.forEach((n) => messagesEl.appendChild(n));
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+
+function prependMessage(msg, anchor) {
+  const nodes = buildMessageNodes(msg);
+  nodes.forEach((n) => messagesEl.insertBefore(n, anchor));
+}
+
+function jumpToMessage(targetId) {
+  const el = messagesEl.querySelector(`.msg[data-id="${targetId}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.classList.remove('highlight');
+  void el.offsetWidth;
+  el.classList.add('highlight');
+}
+
+function setReplyTarget(target) {
+  replyTarget = target;
+  replyPreviewUser.textContent = target.username || '';
+  replyPreviewText.textContent = replySnippet(target);
+  replyPreview.classList.remove('hidden');
+  msgInput.focus();
+}
+
+function clearReply() {
+  replyTarget = null;
+  replyPreview.classList.add('hidden');
+  replyPreviewUser.textContent = '';
+  replyPreviewText.textContent = '';
+}
+
+replyCancelBtn.addEventListener('click', clearReply);
 
 function addSystem(text) {
   const div = document.createElement('div');
@@ -357,6 +433,35 @@ function updateReceipts() {
 
 document.addEventListener('visibilitychange', maybeMarkRead);
 window.addEventListener('focus', maybeMarkRead);
+
+function loadMoreHistory() {
+  if (!socket || loadingMore || !hasMoreHistory || !oldestLoadedId) return;
+  loadingMore = true;
+  const loader = document.createElement('div');
+  loader.className = 'msg system';
+  loader.id = 'history-loader';
+  loader.textContent = 'Loading older messages...';
+  messagesEl.insertBefore(loader, messagesEl.firstChild);
+  const prevHeight = messagesEl.scrollHeight;
+  const prevTop = messagesEl.scrollTop;
+  socket.emit('loadMore', { beforeId: oldestLoadedId }, (resp) => {
+    loader.remove();
+    const list = (resp && resp.messages) || [];
+    hasMoreHistory = !!(resp && resp.hasMore);
+    if (list.length) {
+      const anchor = messagesEl.firstChild;
+      list.forEach((m) => prependMessage(m, anchor));
+      oldestLoadedId = list[0].id || oldestLoadedId;
+      const newHeight = messagesEl.scrollHeight;
+      messagesEl.scrollTop = prevTop + (newHeight - prevHeight);
+    }
+    loadingMore = false;
+  });
+}
+
+messagesEl.addEventListener('scroll', () => {
+  if (messagesEl.scrollTop < 80) loadMoreHistory();
+});
 
 const imageViewer = document.getElementById('image-viewer');
 const viewerImg = document.getElementById('viewer-img');
@@ -395,15 +500,18 @@ chatForm.addEventListener('submit', (e) => {
   e.preventDefault();
   if (!socket) return;
   const text = msgInput.value.trim();
+  const replyToId = replyTarget ? replyTarget.id : null;
   if (pendingImage) {
-    socket.emit('image', { dataUrl: pendingImage, caption: text });
+    socket.emit('image', { dataUrl: pendingImage, caption: text, replyToId });
     clearPreview();
+    clearReply();
     msgInput.value = '';
     return;
   }
   if (!text) return;
-  socket.emit('message', text);
+  socket.emit('message', { text, replyToId });
   msgInput.value = '';
+  clearReply();
 });
 
 fileInput.addEventListener('change', () => {
