@@ -54,6 +54,7 @@
     </form>
     <div id="preview" class="hidden">
       <img id="preview-img" alt="preview" />
+      <video id="preview-video" class="hidden" controls playsinline></video>
       <button id="preview-cancel" type="button" title="Cancel">✕</button>
     </div>
   </div>
@@ -66,9 +67,11 @@
   <div id="camera-modal" class="hidden">
     <div class="cam-box">
       <video id="cam-video" autoplay playsinline muted></video>
+      <div id="cam-timer" class="cam-timer hidden">● 0:00</div>
       <div class="cam-controls">
         <button id="cam-switch" type="button" title="Switch camera">🔄</button>
         <button id="cam-snap" type="button" title="Take photo">⬤</button>
+        <button id="cam-record" type="button" title="Record video">🎥</button>
         <button id="cam-close" type="button" title="Close">✕</button>
       </div>
       <div id="cam-error" class="cam-error"></div>

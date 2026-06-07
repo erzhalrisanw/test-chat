@@ -11,10 +11,14 @@ const notifBtn = document.getElementById('notif-toggle');
 const fileInput = document.getElementById('file-input');
 const preview = document.getElementById('preview');
 const previewImg = document.getElementById('preview-img');
+const previewVideo = document.getElementById('preview-video');
 const previewCancel = document.getElementById('preview-cancel');
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
+const MAX_VIDEO_DURATION_MS = 15000;
 let pendingImage = null;
+let pendingVideo = null;
 
 const replyPreview = document.getElementById('reply-preview');
 const replyPreviewUser = document.getElementById('reply-preview-user');
@@ -28,9 +32,16 @@ const camVideo = document.getElementById('cam-video');
 const camSnap = document.getElementById('cam-snap');
 const camClose = document.getElementById('cam-close');
 const camSwitch = document.getElementById('cam-switch');
+const camRecord = document.getElementById('cam-record');
+const camTimer = document.getElementById('cam-timer');
 const camError = document.getElementById('cam-error');
 let camStream = null;
 let camFacing = 'user';
+let mediaRecorder = null;
+let recordChunks = [];
+let recordTimerId = null;
+let recordAutoStopId = null;
+let recordStartTime = 0;
 
 let socket = null;
 let me = null;
@@ -199,7 +210,7 @@ function notify(msg) {
   if ('vibrate' in navigator) {
     try { navigator.vibrate(200); } catch (_) {}
   }
-  const body = msg.text || (msg.image ? '📷 Sent a photo' : '');
+  const body = msg.text || (msg.image ? '📷 Sent a photo' : msg.video ? '🎬 Sent a video' : '');
   showDesktopNotification(`Message from ${msg.username}`, body);
 }
 
@@ -309,6 +320,7 @@ function startChat(token, username) {
 function replySnippet(msg) {
   if (msg.text) return msg.text;
   if (msg.image || msg.hasImage) return '📷 Photo';
+  if (msg.video || msg.hasVideo) return '🎬 Video';
   return '';
 }
 
@@ -333,6 +345,10 @@ function buildMessageNodes(msg) {
     const img = `<img class="chat-img" src="${image}" alt="photo" />`;
     body = body ? `${body}${img}` : img;
   }
+  if (msg.video && /^data:video\//.test(msg.video)) {
+    const vid = `<video class="chat-vid" src="${msg.video}" controls playsinline preload="metadata"></video>`;
+    body = body ? `${body}${vid}` : vid;
+  }
   const replyBtn = id ? `<button class="reply-btn" type="button" title="Reply">↩</button>` : '';
   div.innerHTML = meta + quote + body + replyBtn;
   const imgEl = div.querySelector('img.chat-img');
@@ -350,7 +366,7 @@ function buildMessageNodes(msg) {
   if (btn && id) {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      setReplyTarget({ id, username, text, hasImage: !!image });
+      setReplyTarget({ id, username, text, hasImage: !!image, hasVideo: !!msg.video });
     });
   }
   const nodes = [div];
@@ -501,6 +517,13 @@ chatForm.addEventListener('submit', (e) => {
   if (!socket) return;
   const text = msgInput.value.trim();
   const replyToId = replyTarget ? replyTarget.id : null;
+  if (pendingVideo) {
+    socket.emit('video', { dataUrl: pendingVideo, caption: text, replyToId });
+    clearPreview();
+    clearReply();
+    msgInput.value = '';
+    return;
+  }
   if (pendingImage) {
     socket.emit('image', { dataUrl: pendingImage, caption: text, replyToId });
     clearPreview();
@@ -541,7 +564,13 @@ previewCancel.addEventListener('click', clearPreview);
 
 function clearPreview() {
   pendingImage = null;
+  pendingVideo = null;
   previewImg.src = '';
+  previewImg.classList.remove('hidden');
+  try { previewVideo.pause(); } catch (_) {}
+  previewVideo.removeAttribute('src');
+  previewVideo.load();
+  previewVideo.classList.add('hidden');
   preview.classList.add('hidden');
   msgInput.placeholder = 'Type a message...';
 }
@@ -549,8 +578,16 @@ function clearPreview() {
 cameraBtn.addEventListener('click', () => openCamera());
 camClose.addEventListener('click', closeCamera);
 camSwitch.addEventListener('click', () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') return;
   camFacing = camFacing === 'user' ? 'environment' : 'user';
   openCamera();
+});
+camRecord.addEventListener('click', () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    stopRecording();
+  } else {
+    startRecording();
+  }
 });
 camSnap.addEventListener('click', () => {
   if (!camStream) return;
@@ -603,6 +640,13 @@ async function openCamera() {
 }
 
 function closeCamera() {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.onstop = null;
+    try { mediaRecorder.stop(); } catch (_) {}
+    recordChunks = [];
+    resetRecordUI();
+    mediaRecorder = null;
+  }
   stopCamStream();
   camModal.classList.add('hidden');
 }
@@ -613,6 +657,118 @@ function stopCamStream() {
     camStream = null;
   }
   camVideo.srcObject = null;
+}
+
+function pickVideoMime() {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const candidates = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    'video/mp4',
+  ];
+  for (const m of candidates) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function resetRecordUI() {
+  if (recordTimerId) { clearInterval(recordTimerId); recordTimerId = null; }
+  if (recordAutoStopId) { clearTimeout(recordAutoStopId); recordAutoStopId = null; }
+  camRecord.classList.remove('recording');
+  camRecord.textContent = '🎥';
+  camTimer.classList.add('hidden');
+}
+
+function updateRecordTimer() {
+  const s = Math.floor((Date.now() - recordStartTime) / 1000);
+  camTimer.textContent = `● 0:${String(s).padStart(2, '0')}`;
+}
+
+async function startRecording() {
+  camError.textContent = '';
+  if (typeof MediaRecorder === 'undefined') {
+    camError.textContent = 'Browser does not support video recording';
+    return;
+  }
+  if (!camStream || camStream.getAudioTracks().length === 0) {
+    try {
+      stopCamStream();
+      camStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: camFacing },
+        audio: true,
+      });
+      camVideo.srcObject = camStream;
+    } catch (err) {
+      camError.textContent = 'Cannot access camera/mic: ' + (err.message || err.name);
+      return;
+    }
+  }
+  const mime = pickVideoMime();
+  try {
+    mediaRecorder = mime
+      ? new MediaRecorder(camStream, { mimeType: mime, videoBitsPerSecond: 800_000 })
+      : new MediaRecorder(camStream, { videoBitsPerSecond: 800_000 });
+  } catch (err) {
+    camError.textContent = 'Cannot record: ' + (err.message || err.name);
+    return;
+  }
+  recordChunks = [];
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size) recordChunks.push(e.data);
+  };
+  mediaRecorder.onstop = onRecordingStop;
+  mediaRecorder.start();
+  recordStartTime = Date.now();
+  camRecord.classList.add('recording');
+  camRecord.textContent = '⏹';
+  camTimer.classList.remove('hidden');
+  updateRecordTimer();
+  recordTimerId = setInterval(updateRecordTimer, 250);
+  recordAutoStopId = setTimeout(stopRecording, MAX_VIDEO_DURATION_MS);
+}
+
+function stopRecording() {
+  if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+  try { mediaRecorder.stop(); } catch (_) {}
+  resetRecordUI();
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+async function onRecordingStop() {
+  const mime = (mediaRecorder && mediaRecorder.mimeType) || 'video/webm';
+  const baseType = mime.split(';')[0];
+  const blob = new Blob(recordChunks, { type: baseType });
+  recordChunks = [];
+  if (!blob.size) return;
+  if (blob.size > MAX_VIDEO_BYTES) {
+    camError.textContent = 'Video too large; try a shorter clip.';
+    return;
+  }
+  try {
+    const dataUrl = await blobToDataUrl(blob);
+    pendingVideo = dataUrl;
+    pendingImage = null;
+    previewImg.classList.add('hidden');
+    previewImg.src = '';
+    previewVideo.src = dataUrl;
+    previewVideo.classList.remove('hidden');
+    preview.classList.remove('hidden');
+    msgInput.placeholder = 'Add a caption (optional)...';
+    closeCamera();
+    msgInput.focus();
+  } catch (err) {
+    camError.textContent = 'Failed to process video: ' + (err.message || err);
+  }
 }
 
 logoutBtn.addEventListener('click', () => {
