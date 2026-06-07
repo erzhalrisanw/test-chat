@@ -45,12 +45,21 @@
       <button id="reply-cancel" type="button" title="Cancel reply">✕</button>
     </div>
     <form id="chat-form">
-      <label class="attach-btn" title="Send photo">
-        📎
-        <input id="file-input" type="file" accept="image/*" hidden />
-      </label>
-      <button type="button" id="camera-btn" class="attach-btn" title="Open camera">📷</button>
-      <button type="button" id="mic-btn" class="attach-btn" title="Record voice note">🎤</button>
+      <div class="attach-wrap">
+        <button type="button" id="attach-menu-btn" class="attach-btn" title="Attach" aria-haspopup="true" aria-expanded="false">⋮</button>
+        <div id="attach-menu" class="attach-menu hidden" role="menu">
+          <label class="attach-menu-item" role="menuitem" title="File">
+            <span class="attach-menu-icon">📎</span>
+            <input id="file-input" type="file" accept="image/*" hidden />
+          </label>
+          <button type="button" id="camera-btn" class="attach-menu-item" role="menuitem" title="Foto">
+            <span class="attach-menu-icon">📷</span>
+          </button>
+          <button type="button" id="mic-btn" class="attach-menu-item" role="menuitem" title="Voice Note">
+            <span class="attach-menu-icon">🎤</span>
+          </button>
+        </div>
+      </div>
       <input id="msg" type="text" placeholder="Type a message..." autocomplete="off" maxlength="1000" />
       <button type="submit">Send</button>
     </form>

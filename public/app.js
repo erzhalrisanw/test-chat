@@ -33,6 +33,27 @@ const galleryClose = document.getElementById('gallery-close');
 const galleryEmpty = document.getElementById('gallery-empty');
 const GALLERY_ALLOWED = new Set(['occupatus', 'london']);
 
+const attachMenuBtn = document.getElementById('attach-menu-btn');
+const attachMenu = document.getElementById('attach-menu');
+
+function closeAttachMenu() {
+  attachMenu.classList.add('hidden');
+  attachMenuBtn.setAttribute('aria-expanded', 'false');
+}
+function toggleAttachMenu() {
+  const isHidden = attachMenu.classList.toggle('hidden');
+  attachMenuBtn.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
+}
+attachMenuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleAttachMenu();
+});
+document.addEventListener('click', (e) => {
+  if (attachMenu.classList.contains('hidden')) return;
+  if (!attachMenu.contains(e.target) && e.target !== attachMenuBtn) closeAttachMenu();
+});
+attachMenu.addEventListener('click', () => closeAttachMenu());
+
 const micBtn = document.getElementById('mic-btn');
 const recorderBar = document.getElementById('recorder');
 const recTimerEl = document.getElementById('rec-timer');
