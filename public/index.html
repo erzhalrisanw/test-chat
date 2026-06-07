@@ -50,9 +50,17 @@
         <input id="file-input" type="file" accept="image/*" hidden />
       </label>
       <button type="button" id="camera-btn" class="attach-btn" title="Open camera">📷</button>
+      <button type="button" id="mic-btn" class="attach-btn" title="Record voice note">🎤</button>
       <input id="msg" type="text" placeholder="Type a message..." autocomplete="off" maxlength="1000" />
       <button type="submit">Send</button>
     </form>
+    <div id="recorder" class="hidden">
+      <div class="rec-dot"></div>
+      <span id="rec-timer">0:00</span>
+      <span class="rec-label">Recording voice note...</span>
+      <button id="rec-cancel" type="button" title="Cancel">✕</button>
+      <button id="rec-send" type="button" title="Send">Send</button>
+    </div>
     <div id="preview" class="hidden">
       <img id="preview-img" alt="preview" />
       <video id="preview-video" class="hidden" controls playsinline></video>

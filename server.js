@@ -26,6 +26,7 @@ async function initDb() {
       text TEXT,
       image TEXT,
       video TEXT,
+      audio TEXT,
       time TEXT NOT NULL,
       reply_to_id INTEGER
     )
@@ -35,6 +36,9 @@ async function initDb() {
   } catch (_) {}
   try {
     await db.execute(`ALTER TABLE messages ADD COLUMN video TEXT`);
+  } catch (_) {}
+  try {
+    await db.execute(`ALTER TABLE messages ADD COLUMN audio TEXT`);
   } catch (_) {}
   await db.execute(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -146,8 +150,8 @@ async function sendPushToOfflineUsers(sender, payload) {
 
 async function saveMessage(msg) {
   const result = await db.execute({
-    sql: 'INSERT INTO messages (username, text, image, video, time, reply_to_id) VALUES (?, ?, ?, ?, ?, ?)',
-    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.time, msg.replyToId || null],
+    sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.audio || null, msg.time, msg.replyToId || null],
   });
   return Number(result.lastInsertRowid);
 }
@@ -159,6 +163,7 @@ function mapRow(r) {
     text: r.text,
     image: r.image,
     video: r.video,
+    audio: r.audio,
     time: r.time,
   };
   if (r.reply_to_id) {
@@ -168,6 +173,7 @@ function mapRow(r) {
       text: r.reply_text,
       hasImage: !!r.reply_image,
       hasVideo: !!r.reply_video,
+      hasAudio: !!r.reply_audio,
     };
   }
   return out;
@@ -175,8 +181,8 @@ function mapRow(r) {
 
 async function getMessageById(id) {
   const result = await db.execute({
-    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.time, m.reply_to_id,
-                 p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video
+    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id,
+                 p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
           FROM messages m
           LEFT JOIN messages p ON m.reply_to_id = p.id
           WHERE m.id = ?`,
@@ -188,14 +194,14 @@ async function getMessageById(id) {
 
 async function getHistory(limit = 50, beforeId = null) {
   const sql = beforeId
-    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.time, m.reply_to_id,
-              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video
+    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id,
+              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
        WHERE m.id < ?
        ORDER BY m.id DESC LIMIT ?`
-    : `SELECT m.id, m.username, m.text, m.image, m.video, m.time, m.reply_to_id,
-              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video
+    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id,
+              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
        ORDER BY m.id DESC LIMIT ?`;
@@ -451,6 +457,32 @@ io.on('connection', async (socket) => {
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text || '🎬 Sent a video',
+        url: '/',
+      }).catch(() => {});
+    } catch (e) {
+      console.error('save error:', e.message);
+    }
+  });
+
+  socket.on('audio', async (payload) => {
+    if (!payload || typeof payload.dataUrl !== 'string') return;
+    const { dataUrl, replyToId } = payload;
+    const m = /^data:(audio\/(webm|mp4|ogg|mpeg|wav))(;codecs=[A-Za-z0-9.,-]+)?;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+    if (!m) return;
+    if (dataUrl.length > 3 * 1024 * 1024) return;
+    const msg = {
+      username,
+      audio: dataUrl,
+      time: new Date().toISOString(),
+      replyToId: Number(replyToId) || null,
+    };
+    try {
+      const id = await saveMessage(msg);
+      const full = await getMessageById(id);
+      io.emit('message', full || { ...msg, id });
+      sendPushToOfflineUsers(username, {
+        title: `Message from ${username}`,
+        body: '🎤 Sent a voice note',
         url: '/',
       }).catch(() => {});
     } catch (e) {

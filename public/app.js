@@ -33,6 +33,21 @@ const galleryClose = document.getElementById('gallery-close');
 const galleryEmpty = document.getElementById('gallery-empty');
 const GALLERY_ALLOWED = new Set(['occupatus', 'london']);
 
+const micBtn = document.getElementById('mic-btn');
+const recorderBar = document.getElementById('recorder');
+const recTimerEl = document.getElementById('rec-timer');
+const recCancelBtn = document.getElementById('rec-cancel');
+const recSendBtn = document.getElementById('rec-send');
+const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+const MAX_AUDIO_DURATION_MS = 60_000;
+let audioRecorder = null;
+let audioChunks = [];
+let audioStream = null;
+let audioTimerId = null;
+let audioAutoStopId = null;
+let audioStartTime = 0;
+let audioCancelled = false;
+
 const cameraBtn = document.getElementById('camera-btn');
 const camModal = document.getElementById('camera-modal');
 const camVideo = document.getElementById('cam-video');
@@ -248,7 +263,7 @@ function notify(msg) {
   if ('vibrate' in navigator) {
     try { navigator.vibrate(200); } catch (_) {}
   }
-  const body = msg.text || (msg.image ? '📷 Sent a photo' : msg.video ? '🎬 Sent a video' : '');
+  const body = msg.text || (msg.image ? '📷 Sent a photo' : msg.video ? '🎬 Sent a video' : msg.audio ? '🎤 Sent a voice note' : '');
   showDesktopNotification(`Message from ${msg.username}`, body);
 }
 
@@ -363,6 +378,7 @@ function replySnippet(msg) {
   if (msg.text) return msg.text;
   if (msg.image || msg.hasImage) return '📷 Photo';
   if (msg.video || msg.hasVideo) return '🎬 Video';
+  if (msg.audio || msg.hasAudio) return '🎤 Voice note';
   return '';
 }
 
@@ -395,6 +411,10 @@ function buildMessageNodes(msg) {
     const vid = `<video class="chat-vid" src="${msg.video}" controls playsinline preload="metadata"></video>`;
     body = body ? `${body}${vid}` : vid;
   }
+  if (msg.audio && /^data:audio\//.test(msg.audio)) {
+    const aud = `<audio class="chat-aud" src="${msg.audio}" controls preload="metadata"></audio>`;
+    body = body ? `${body}${aud}` : aud;
+  }
   const replyBtn = id ? `<button class="reply-btn" type="button" title="Reply">↩</button>` : '';
   div.innerHTML = meta + quote + body + replyBtn;
   const imgEl = div.querySelector('img.chat-img');
@@ -412,7 +432,7 @@ function buildMessageNodes(msg) {
   if (btn && id) {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      setReplyTarget({ id, username, text, hasImage: !!image, hasVideo: !!msg.video });
+      setReplyTarget({ id, username, text, hasImage: !!image, hasVideo: !!msg.video, hasAudio: !!msg.audio });
     });
   }
   return [div];
@@ -980,6 +1000,122 @@ function closeGallery() {
 
 galleryBtn.addEventListener('click', openGallery);
 galleryClose.addEventListener('click', closeGallery);
+
+function pickAudioMime() {
+  if (typeof MediaRecorder === 'undefined') return null;
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+  ];
+  for (const m of candidates) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+function updateAudioTimer() {
+  const s = Math.floor((Date.now() - audioStartTime) / 1000);
+  recTimerEl.textContent = `0:${String(s).padStart(2, '0')}`;
+}
+
+function stopAudioStream() {
+  if (audioStream) {
+    audioStream.getTracks().forEach((t) => t.stop());
+    audioStream = null;
+  }
+}
+
+function resetRecorderUI() {
+  if (audioTimerId) { clearInterval(audioTimerId); audioTimerId = null; }
+  if (audioAutoStopId) { clearTimeout(audioAutoStopId); audioAutoStopId = null; }
+  recorderBar.classList.add('hidden');
+  recTimerEl.textContent = '0:00';
+}
+
+async function startVoiceRecording() {
+  if (audioRecorder) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert('Browser does not support microphone access');
+    return;
+  }
+  if (typeof MediaRecorder === 'undefined') {
+    alert('Browser does not support audio recording');
+    return;
+  }
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    alert('Cannot access microphone: ' + (err.message || err.name));
+    return;
+  }
+  const mime = pickAudioMime();
+  try {
+    audioRecorder = mime
+      ? new MediaRecorder(audioStream, { mimeType: mime, audioBitsPerSecond: 32_000 })
+      : new MediaRecorder(audioStream, { audioBitsPerSecond: 32_000 });
+  } catch (err) {
+    stopAudioStream();
+    alert('Cannot record: ' + (err.message || err.name));
+    return;
+  }
+  audioChunks = [];
+  audioCancelled = false;
+  audioRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size) audioChunks.push(e.data);
+  };
+  audioRecorder.onstop = onVoiceRecordingStop;
+  audioRecorder.start();
+  audioStartTime = Date.now();
+  recorderBar.classList.remove('hidden');
+  updateAudioTimer();
+  audioTimerId = setInterval(updateAudioTimer, 250);
+  audioAutoStopId = setTimeout(finishVoiceRecording, MAX_AUDIO_DURATION_MS);
+}
+
+function finishVoiceRecording() {
+  if (!audioRecorder || audioRecorder.state === 'inactive') return;
+  audioCancelled = false;
+  try { audioRecorder.stop(); } catch (_) {}
+}
+
+function cancelVoiceRecording() {
+  if (!audioRecorder) return;
+  audioCancelled = true;
+  try { audioRecorder.stop(); } catch (_) {}
+}
+
+async function onVoiceRecordingStop() {
+  const mime = (audioRecorder && audioRecorder.mimeType) || 'audio/webm';
+  const baseType = mime.split(';')[0];
+  const blob = new Blob(audioChunks, { type: baseType });
+  audioChunks = [];
+  audioRecorder = null;
+  stopAudioStream();
+  resetRecorderUI();
+  if (audioCancelled || !blob.size) return;
+  if (blob.size > MAX_AUDIO_BYTES) {
+    alert('Voice note too large; try a shorter clip.');
+    return;
+  }
+  try {
+    const dataUrl = await blobToDataUrl(blob);
+    const replyToId = replyTarget ? replyTarget.id : null;
+    if (socket) socket.emit('audio', { dataUrl, replyToId });
+    clearReply();
+  } catch (err) {
+    alert('Failed to process voice note: ' + (err.message || err));
+  }
+}
+
+micBtn.addEventListener('click', () => {
+  if (audioRecorder) finishVoiceRecording();
+  else startVoiceRecording();
+});
+recSendBtn.addEventListener('click', finishVoiceRecording);
+recCancelBtn.addEventListener('click', cancelVoiceRecording);
 
 logoutBtn.addEventListener('click', () => {
   if (socket) socket.disconnect();
