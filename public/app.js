@@ -203,9 +203,7 @@ function showDesktopNotification(title, body) {
   } catch (_) {}
 }
 
-function triggerHeartBurst(msg) {
-  if (!msg || !msg.id) return;
-  const bubble = messagesEl.querySelector(`.msg[data-id="${msg.id}"]`);
+function triggerHeartBurstOnElement(bubble) {
   if (!bubble) return;
   const burst = document.createElement('div');
   burst.className = 'heart-burst';
@@ -225,9 +223,22 @@ function triggerHeartBurst(msg) {
   setTimeout(() => burst.remove(), 3500);
 }
 
+function triggerHeartBurst(msg) {
+  if (!msg || !msg.id) return;
+  const bubble = messagesEl.querySelector(`.msg[data-id="${msg.id}"]`);
+  triggerHeartBurstOnElement(bubble);
+}
+
 function maybeLoveAnim(msg) {
   if (!msg || typeof msg.text !== 'string') return;
   if (/sayang/i.test(msg.text)) triggerHeartBurst(msg);
+}
+
+function burstOnNewlyReadMine(prevReadId, newReadId) {
+  document.querySelectorAll('.msg.mine.has-sayang').forEach((el) => {
+    const id = Number(el.dataset.id || 0);
+    if (id > prevReadId && id <= newReadId) triggerHeartBurstOnElement(el);
+  });
 }
 
 function notify(msg) {
@@ -314,8 +325,10 @@ function startChat(token, username) {
     if (username === me) return;
     if (typeof lastReadId !== 'number') return;
     if (lastReadId > lastReadByOthers) {
+      const prev = lastReadByOthers;
       lastReadByOthers = lastReadId;
       updateReceipts();
+      burstOnNewlyReadMine(prev, lastReadId);
     }
   });
 
@@ -357,6 +370,7 @@ function buildMessageNodes(msg) {
   const div = document.createElement('div');
   div.className = 'msg ' + (username === me ? 'mine' : 'other');
   if (id) div.dataset.id = String(id);
+  if (text && /sayang/i.test(text)) div.classList.add('has-sayang');
   const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   const meta = `<div class="meta">${escapeHtml(username)} • ${t}</div>`;
   let quote = '';
