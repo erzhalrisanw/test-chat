@@ -30,6 +30,7 @@
         <span id="me"></span>
       </div>
       <div class="right">
+        <button id="gallery-btn" class="hidden" title="Gallery">🖼️</button>
         <button id="notif-toggle" title="Notifications">🔔 On</button>
         <button id="logout">Logout</button>
       </div>
@@ -57,6 +58,15 @@
       <video id="preview-video" class="hidden" controls playsinline></video>
       <button id="preview-cancel" type="button" title="Cancel">✕</button>
     </div>
+  </div>
+
+  <div id="gallery-modal" class="hidden">
+    <div class="gallery-header">
+      <span>Gallery</span>
+      <button id="gallery-close" type="button" title="Close">✕</button>
+    </div>
+    <div id="gallery-grid"></div>
+    <div id="gallery-empty" class="hidden">No media yet</div>
   </div>
 
   <div id="image-viewer" class="hidden">

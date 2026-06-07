@@ -26,6 +26,13 @@ const replyPreviewText = document.getElementById('reply-preview-text');
 const replyCancelBtn = document.getElementById('reply-cancel');
 let replyTarget = null;
 
+const galleryBtn = document.getElementById('gallery-btn');
+const galleryModal = document.getElementById('gallery-modal');
+const galleryGrid = document.getElementById('gallery-grid');
+const galleryClose = document.getElementById('gallery-close');
+const galleryEmpty = document.getElementById('gallery-empty');
+const GALLERY_ALLOWED = new Set(['occupatus', 'london']);
+
 const cameraBtn = document.getElementById('camera-btn');
 const camModal = document.getElementById('camera-modal');
 const camVideo = document.getElementById('cam-video');
@@ -276,6 +283,7 @@ function startChat(token, username) {
   chatView.classList.remove('hidden');
   messagesEl.innerHTML = '';
   updateNotifBtn();
+  updateGalleryBtn();
   loadNotifEnabled();
   if (notifEnabled && 'Notification' in window) {
     if (Notification.permission === 'default') {
@@ -523,16 +531,6 @@ const viewerCounter = document.getElementById('viewer-counter');
 let viewerItems = [];
 let viewerIndex = 0;
 
-function collectViewerItems() {
-  const items = [];
-  messagesEl.querySelectorAll('img.chat-img, video.chat-vid').forEach((el) => {
-    const src = el.getAttribute('src');
-    if (!src) return;
-    items.push({ type: el.tagName === 'VIDEO' ? 'video' : 'image', src });
-  });
-  return items;
-}
-
 function renderViewerItem() {
   viewerContent.innerHTML = '';
   const item = viewerItems[viewerIndex];
@@ -565,10 +563,8 @@ function renderViewerItem() {
 }
 
 function openImageViewer(src) {
-  viewerItems = collectViewerItems();
-  const idx = viewerItems.findIndex((it) => it.src === src);
-  viewerIndex = idx >= 0 ? idx : 0;
-  if (!viewerItems.length) viewerItems = [{ type: 'image', src }];
+  viewerItems = [{ type: 'image', src }];
+  viewerIndex = 0;
   renderViewerItem();
   imageViewer.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
@@ -888,6 +884,66 @@ async function onRecordingStop() {
     camError.textContent = 'Failed to process video: ' + (err.message || err);
   }
 }
+
+function updateGalleryBtn() {
+  if (GALLERY_ALLOWED.has(me)) galleryBtn.classList.remove('hidden');
+  else galleryBtn.classList.add('hidden');
+}
+
+async function openGallery() {
+  galleryGrid.innerHTML = '';
+  galleryEmpty.classList.add('hidden');
+  galleryModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    const res = await fetch('/gallery', { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const items = (data && data.items) || [];
+    if (!items.length) { galleryEmpty.classList.remove('hidden'); return; }
+    const viewerList = items.map((it) => ({ type: it.type, src: it.src }));
+    items.forEach((it, idx) => {
+      const cell = document.createElement('div');
+      cell.className = 'gallery-item';
+      if (it.type === 'video') {
+        const v = document.createElement('video');
+        v.src = it.src;
+        v.preload = 'metadata';
+        v.muted = true;
+        v.playsInline = true;
+        cell.appendChild(v);
+        const badge = document.createElement('span');
+        badge.className = 'gallery-badge';
+        badge.textContent = '▶';
+        cell.appendChild(badge);
+      } else {
+        const img = document.createElement('img');
+        img.src = it.src;
+        img.loading = 'lazy';
+        img.alt = 'photo';
+        cell.appendChild(img);
+      }
+      cell.addEventListener('click', () => {
+        viewerItems = viewerList;
+        viewerIndex = idx;
+        renderViewerItem();
+        imageViewer.classList.remove('hidden');
+      });
+      galleryGrid.appendChild(cell);
+    });
+  } catch (_) {}
+}
+
+function closeGallery() {
+  galleryModal.classList.add('hidden');
+  galleryGrid.innerHTML = '';
+  if (imageViewer.classList.contains('hidden')) document.body.style.overflow = '';
+}
+
+galleryBtn.addEventListener('click', openGallery);
+galleryClose.addEventListener('click', closeGallery);
 
 logoutBtn.addEventListener('click', () => {
   if (socket) socket.disconnect();

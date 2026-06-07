@@ -267,6 +267,30 @@ app.post('/push-subscribe', async (req, res) => {
   }
 });
 
+app.get('/gallery', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  try {
+    const result = await db.execute(`
+      SELECT id, username, image, video, time
+      FROM messages
+      WHERE image IS NOT NULL OR video IS NOT NULL
+      ORDER BY id ASC
+    `);
+    const items = result.rows.map((r) => ({
+      id: Number(r.id),
+      username: r.username,
+      time: r.time,
+      type: r.image ? 'image' : 'video',
+      src: r.image || r.video,
+    }));
+    res.json({ ok: true, items });
+  } catch (err) {
+    console.error('gallery error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
 app.get('/user-settings', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
