@@ -500,9 +500,12 @@ function buildMessageNodes(msg) {
   const imgEl = div.querySelector('img.chat-img');
   if (imgEl) {
     imgEl.addEventListener('click', () => openImageViewer(image));
-    imgEl.addEventListener('load', () => {
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    });
+    // Hanya scroll ke bottom jika ini pesan baru (bukan history lama)
+    if (!msg._history) {
+      imgEl.addEventListener('load', () => {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      });
+    }
   }
   const quoteEl = div.querySelector('.reply-quote');
   if (quoteEl && replyTo) {
@@ -644,6 +647,11 @@ function loadMoreHistory() {
       // Insert date separator before first message if needed
       const firstExisting = messagesEl.querySelector('.msg[data-day]');
       const firstExistingDay = firstExisting ? firstExisting.dataset.day : null;
+      
+      // Mark messages as history so onload won't scroll
+      list.forEach(function(m) {
+        m._history = true;
+      });
       
       // Track which day keys we've seen while inserting
       const seenDays = new Set();
@@ -1203,6 +1211,19 @@ function renderGalleryPage() {
       img.loading = 'lazy';
       img.alt = 'photo';
       cell.appendChild(img);
+    }
+    // Tombol view in chat
+    if (it.id) {
+      var viewBtn = document.createElement('button');
+      viewBtn.className = 'gallery-view-btn';
+      viewBtn.textContent = '💬';
+      viewBtn.title = 'View in chat';
+      viewBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        closeGallery();
+        jumpToMessage(it.id);
+      });
+      cell.appendChild(viewBtn);
     }
     cell.addEventListener('click', function() {
       viewerItems = galleryItems.map(function(g) { return { type: g.type, src: g.src }; });
