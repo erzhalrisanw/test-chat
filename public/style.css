@@ -23,7 +23,7 @@ html, body {
 }
 
 /* ==========================================================================
-   2. CARD LOGIN CARD
+   2. CARD LOGIN
    ========================================================================== */
 .card {
   background: #fff;
@@ -421,7 +421,7 @@ html, body {
 .cam-error { color: #fca5a5; padding: 0 12px 12px; font-size: 13px; text-align: center; }
 
 /* ==========================================================================
-   9. INTERACTION ANIMATIONS (HEART & SUNRISE)
+   9. INTERACTION ANIMATIONS (HEART & SUNRISE) - CROSS PLATFORM FIX
    ========================================================================== */
 /* Heart Burst System */
 .heart-burst { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 5; }
@@ -438,7 +438,7 @@ html, body {
   50% { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
 }
 
-/* HIGHLY OPTIMIZED SUNRISE OVERLAY (Cross-Platform iOS/Android) */
+/* HIGHLY OPTIMIZED SUNRISE OVERLAY */
 #sunrise-overlay {
   position: fixed;
   inset: 0;
@@ -446,7 +446,7 @@ html, body {
   background: #0f172a;
   overflow: hidden;
   pointer-events: none;
-  animation: sunriseSkyLighten 4s ease-in-out forwards;
+  animation: sunriseSkyLighten 4.5s ease-in-out forwards;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
@@ -456,34 +456,35 @@ html, body {
   animation: sunriseFade 1s ease-out forwards;
 }
 
+/* 1. MATAHARI: Dipaksa pakai titik tengah 'top' agar ter-render penuh di iPhone & Android */
 .sunrise-sun {
   width: 220px;
   height: 220px;
-  background: url('/sun.png') center/contain no-repeat;
+  background: url('sun.png') center/contain no-repeat; 
   position: absolute;
   left: 50%;
-  bottom: 0;
-  /* Menggunakan sumbu Z (translate3d) untuk memicu akselerasi GPU perangkat keras */
-  transform: translate3d(-50%, 240px, 0);
+  top: 50%;
+  transform: translate3d(-50%, 60vh, 0);
   will-change: transform, opacity;
-  /* Pengurangan multi drop-shadow yang kompleks agar WebKit iOS tidak stuttering */
-  filter: drop-shadow(0 0 40px rgba(255, 140, 0, 0.75));
-  animation: sunriseRise 4s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  filter: drop-shadow(0 0 30px rgba(255, 140, 0, 0.75));
+  /* Langsung melesat naik tanpa delay */
+  animation: sunriseRise 4s cubic-bezier(0.23, 1, 0.32, 1) forwards; 
 }
 
 @keyframes sunriseRise {
-  0%   { transform: translate3d(-50%, 240px, 0); opacity: 0; }
-  20%  { opacity: 0.4; }
-  50%  { opacity: 1; }
-  80%  { opacity: 0.4; }
-  100% { transform: translate3d(-50%, -105vh, 0); opacity: 0; }
+  0%   { transform: translate3d(-50%, 60vh, 0); opacity: 0; }
+  15%  { opacity: 1; }
+  45%  { transform: translate3d(-50%, -10vh, 0); opacity: 1; } 
+  80%  { opacity: 1; }
+  100% { transform: translate3d(-50%, -120vh, 0); opacity: 0; } 
 }
 
+/* 2. TULISAN: Diberi jeda delay 1 detik agar tidak balapan dengan matahari */
 .sunrise-greeting {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 25%;
+  top: 50%;
   text-align: center;
   white-space: nowrap;
   pointer-events: none;
@@ -491,9 +492,10 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  transform: translate3d(0, 150px, 0);
+  transform: translate3d(0, 70vh, 0);
   will-change: transform, opacity;
-  animation: sunriseGreetRise 4s cubic-bezier(0.25, 1, 0.5, 1) 0.4s both;
+  /* Jeda 1 detik (Matahari mencuat dulu, baru tulisan menyusul mulus) */
+  animation: sunriseGreetRise 3.2s cubic-bezier(0.23, 1, 0.32, 1) 1s both;
 }
 
 .sunrise-greet-main {
@@ -517,15 +519,15 @@ html, body {
 }
 
 @keyframes sunriseGreetRise {
-  0%   { transform: translate3d(0, 150px, 0); opacity: 0; }
-  20%  { opacity: 1; }
+  0%   { transform: translate3d(0, 70vh, 0); opacity: 0; }
+  20%  { transform: translate3d(0, 15vh, 0); opacity: 1; } 
   80%  { opacity: 1; }
-  100% { transform: translate3d(0, -105vh, 0); opacity: 0; }
+  100% { transform: translate3d(0, -120vh, 0); opacity: 0; }
 }
 
 @keyframes sunriseSkyLighten {
   0%   { background: #0f172a; }
-  45%  { background: #ff7e5f; }
+  35%  { background: #ff7e5f; }
   100% { background: #bae6fd; }
 }
 
@@ -534,18 +536,18 @@ html, body {
   100% { opacity: 0; visibility: hidden; }
 }
 
-/* Chat Pull Intro */
+/* 3. WINDOW CHAT APP ENTRY */
 body.sunrise-playing #chat-view {
-  animation: sunriseChatPull 2.2s cubic-bezier(0.25, 1, 0.5, 1) 4.6s both;
+  animation: sunriseChatPull 2s cubic-bezier(0.23, 1, 0.32, 1) 4.8s both;
 }
 
 @keyframes sunriseChatPull {
-  0%   { transform: translate3d(0, 105vh, 0); opacity: 0; }
+  0%   { transform: translate3d(0, 100vh, 0); opacity: 0; }
   15%  { opacity: 1; }
   100% { transform: translate3d(0, 0, 0); opacity: 1; }
 }
 
-/* Accessibility Settings (Bagi user yang mengaktifkan 'reduce motion') */
+/* Accessibility Settings */
 @media (prefers-reduced-motion: reduce) {
   #sunrise-overlay, .sunrise-sun, .sunrise-greeting, body.sunrise-playing #chat-view { animation: none !important; }
   #sunrise-overlay { display: none !important; }
