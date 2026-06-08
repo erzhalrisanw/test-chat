@@ -400,19 +400,12 @@ function startChat(token, username) {
   socket.on('message', (m) => {
     // Cegah duplikasi: jika pesan dengan id ini sudah ada di DOM, skip
     if (m.id && messagesEl.querySelector('.msg[data-id="' + m.id + '"]')) return;
-    // Jika ini pesan kita sendiri yang sudah pending, update pending ke sent
-    if (m.username === me && m.id) {
-      var pendingEl = messagesEl.querySelector('.msg[data-temp-id]');
-      if (pendingEl && pendingEl.querySelector('.tick.pending')) {
-        pendingEl.dataset.id = String(m.id);
-        delete pendingEl.dataset.tempId;
-        var tick = pendingEl.querySelector('.tick');
-        if (tick) {
-          tick.className = 'tick sent';
-          tick.setAttribute('aria-label', 'sent');
-          tick.innerHTML = '<svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-        }
-        if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
+    // Jika ini pesan kita sendiri yang sudah pending, update pending ke sent (match by clientId/tempId)
+    if (m.username === me && m.id && m.clientId != null) {
+      var pendingEl = messagesEl.querySelector('.msg[data-temp-id="' + m.clientId + '"]');
+      if (pendingEl) {
+        updatePendingToSent(m.clientId, m.id);
+        lastIncomingId = Math.max(lastIncomingId, m.id);
         return;
       }
     }
@@ -593,8 +586,15 @@ function prependMessage(msg, anchor) {
   nodes.forEach((n) => messagesEl.insertBefore(n, anchor));
 }
 
-function jumpToMessage(targetId) {
-  const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+async function jumpToMessage(targetId) {
+  var targetNum = Number(targetId);
+  var el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+  var safety = 0;
+  while (!el && hasMoreHistory && oldestLoadedId && targetNum < Number(oldestLoadedId) && safety < 100) {
+    safety++;
+    await loadMoreHistory();
+    el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+  }
   if (!el) return;
   // Scroll messages container to center the target element
   const containerRect = messagesEl.getBoundingClientRect();
@@ -654,7 +654,7 @@ document.addEventListener('visibilitychange', maybeMarkRead);
 window.addEventListener('focus', maybeMarkRead);
 
 function loadMoreHistory() {
-  if (!socket || loadingMore || !hasMoreHistory || !oldestLoadedId) return;
+  if (!socket || loadingMore || !hasMoreHistory || !oldestLoadedId) return Promise.resolve();
   loadingMore = true;
   const loader = document.createElement('div');
   loader.className = 'msg system';
@@ -663,6 +663,7 @@ function loadMoreHistory() {
   messagesEl.insertBefore(loader, messagesEl.firstChild);
   const prevScrollTop = messagesEl.scrollTop;
   const prevScrollHeight = messagesEl.scrollHeight;
+  return new Promise((resolve) => {
   socket.emit('loadMore', { beforeId: oldestLoadedId }, (resp) => {
     const list = (resp && resp.messages) || [];
     hasMoreHistory = !!(resp && resp.hasMore);
@@ -720,6 +721,8 @@ function loadMoreHistory() {
     const loaderEl = document.getElementById('history-loader');
     if (loaderEl) loaderEl.remove();
     loadingMore = false;
+    resolve();
+  });
   });
 }
 
@@ -848,9 +851,7 @@ function showPendingLocally(msgData) {
   tempIdCounter++;
   var tempId = tempIdCounter;
   var pendingMsg = {
-    dataUrl: msgData.dataUrl,
-    text: msgData.text,
-    caption: msgData.caption,
+    text: msgData.text || msgData.caption || '',
     replyToId: msgData.replyToId,
     _pending: true,
     _tempId: tempId,
@@ -858,6 +859,9 @@ function showPendingLocally(msgData) {
     username: me,
     time: new Date().toISOString()
   };
+  if (msgData._type === 'image') pendingMsg.image = msgData.dataUrl;
+  else if (msgData._type === 'video') pendingMsg.video = msgData.dataUrl;
+  else if (msgData._type === 'audio') pendingMsg.audio = msgData.dataUrl;
   addMessage(pendingMsg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return tempId;
@@ -876,6 +880,18 @@ function updatePendingToSent(tempId, realId) {
   }
 }
 
+function markPendingFailed(tempId, errorMsg) {
+  var el = messagesEl.querySelector('.msg[data-temp-id="' + tempId + '"]');
+  if (!el) return;
+  var tick = el.querySelector('.tick');
+  if (tick) {
+    tick.className = 'tick failed';
+    tick.setAttribute('aria-label', 'failed');
+    tick.setAttribute('title', errorMsg || 'Failed to send');
+    tick.textContent = '❌';
+  }
+}
+
 function emitWithAck(msgData) {
   var tempId = msgData._tempId;
   if (socket && socket.connected) {
@@ -885,11 +901,16 @@ function emitWithAck(msgData) {
     if (msgData.text) payload.text = msgData.text;
     if (msgData.caption) payload.caption = msgData.caption;
     if (msgData.replyToId) payload.replyToId = msgData.replyToId;
+    if (tempId != null) payload.clientId = tempId;
     socket.emit(event, payload, function(ack) {
       if (ack && ack.id) {
         updatePendingToSent(tempId, ack.id);
-        if (ack.id) lastIncomingId = Math.max(lastIncomingId, ack.id);
+        lastIncomingId = Math.max(lastIncomingId, ack.id);
+      } else if (ack && ack.error) {
+        // Server menolak (validasi/ukuran): tandai gagal, jangan re-queue
+        markPendingFailed(tempId, ack.error);
       } else {
+        // Tidak ada ack info: anggap perlu retry saat reconnect
         if (!pendingQueue.some(function(p) { return p._tempId === tempId; })) {
           pendingQueue.push(msgData);
         }
@@ -1279,6 +1300,9 @@ async function loadGalleryPage(page) {
   var token = localStorage.getItem('token');
   if (!token) return;
   galleryLoading = true;
+  var loadingEl = document.getElementById('gallery-loading');
+  if (loadingEl) loadingEl.classList.remove('hidden');
+  galleryEmpty.classList.add('hidden');
   try {
     var res = await fetch('/gallery?limit=' + GALLERY_PAGE_SIZE + '&page=' + page, {
       headers: { Authorization: 'Bearer ' + token }
@@ -1298,6 +1322,7 @@ async function loadGalleryPage(page) {
   } catch (_) {
   } finally {
     galleryLoading = false;
+    if (loadingEl) loadingEl.classList.add('hidden');
   }
 }
 
@@ -1447,7 +1472,7 @@ async function onVoiceRecordingStop() {
   try {
     var dataUrl = await blobToDataUrl(blob);
     var replyToId = replyTarget ? replyTarget.id : null;
-    if (socket) socket.emit('audio', { dataUrl: dataUrl, replyToId: replyToId });
+    queueMessage('audio', { dataUrl: dataUrl, replyToId: replyToId });
     clearReply();
   } catch (err) {
     alert('Failed to process voice note: ' + (err.message || err));

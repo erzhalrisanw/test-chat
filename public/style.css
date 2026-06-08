@@ -198,6 +198,8 @@ line-height: 1;
 .tick.read { color: #4ade80; }
 .tick.pending { color: rgba(255,255,255,.5); font-size: 14px; line-height: 1; }
 .msg.other .tick.pending { color: #94a3b8; }
+.tick.failed { color: #fca5a5; font-size: 12px; line-height: 1; cursor: help; }
+.msg.other .tick.failed { color: #dc2626; }
 .msg.mine { align-self: flex-end; background: #2563eb; color: #fff; }
 .msg.other { align-self: flex-start; background: #fff; border: 1px solid #e5e7eb; }
 .msg.system { align-self: center; background: transparent; color: #6b7280; font-size: 12px; font-style: italic; }
@@ -552,6 +554,28 @@ height: 1px;
   justify-content: center;
   color: #94a3b8;
   font-size: 14px;
+}
+
+#gallery-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+#gallery-loading.hidden { display: none; }
+#gallery-loading .spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid rgba(148, 163, 184, 0.25);
+  border-top-color: #94a3b8;
+  border-radius: 50%;
+  animation: gallery-spin 0.8s linear infinite;
+}
+@keyframes gallery-spin {
+  to { transform: rotate(360deg); }
 }
 
 #gallery-pagination {

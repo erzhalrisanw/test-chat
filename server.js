@@ -481,12 +481,13 @@ io.on('connection', async (socket) => {
   socket.emit('readState', Object.fromEntries(lastRead));
 
   socket.on('message', async (payload, ack) => {
-    let text, replyToId;
+    let text, replyToId, clientId;
     if (typeof payload === 'string') {
       text = payload;
     } else if (payload && typeof payload === 'object') {
       text = payload.text;
       replyToId = Number(payload.replyToId) || null;
+      clientId = payload.clientId;
     }
     if (typeof text !== 'string' || !text.trim()) {
       if (typeof ack === 'function') ack({ error: 'No text' });
@@ -501,7 +502,9 @@ io.on('connection', async (socket) => {
     try {
       const id = await saveMessage(msg);
       const full = await getMessageById(id);
-      io.emit('message', full || { ...msg, id });
+      const broadcast = full || { ...msg, id };
+      if (clientId != null) broadcast.clientId = clientId;
+      io.emit('message', broadcast);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text,
@@ -519,7 +522,7 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const { dataUrl, caption, replyToId } = payload;
+    const { dataUrl, caption, replyToId, clientId } = payload;
     const m = /^data:(image\/(png|jpeg|jpg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!m) {
       if (typeof ack === 'function') ack({ error: 'Invalid image' });
@@ -539,7 +542,9 @@ io.on('connection', async (socket) => {
     try {
       const id = await saveMessage(msg);
       const full = await getMessageById(id);
-      io.emit('message', full || { ...msg, id });
+      const broadcast = full || { ...msg, id };
+      if (clientId != null) broadcast.clientId = clientId;
+      io.emit('message', broadcast);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text || '📷 Sent a photo',
@@ -557,7 +562,7 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const { dataUrl, caption, replyToId } = payload;
+    const { dataUrl, caption, replyToId, clientId } = payload;
     const m = /^data:(video\/(webm|mp4));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!m) {
       if (typeof ack === 'function') ack({ error: 'Invalid video' });
@@ -577,7 +582,9 @@ io.on('connection', async (socket) => {
     try {
       const id = await saveMessage(msg);
       const full = await getMessageById(id);
-      io.emit('message', full || { ...msg, id });
+      const broadcast = full || { ...msg, id };
+      if (clientId != null) broadcast.clientId = clientId;
+      io.emit('message', broadcast);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text || '🎬 Sent a video',
@@ -590,12 +597,21 @@ io.on('connection', async (socket) => {
     }
   });
 
-  socket.on('audio', async (payload) => {
-    if (!payload || typeof payload.dataUrl !== 'string') return;
-    const { dataUrl, replyToId } = payload;
+  socket.on('audio', async (payload, ack) => {
+    if (!payload || typeof payload.dataUrl !== 'string') {
+      if (typeof ack === 'function') ack({ error: 'Invalid payload' });
+      return;
+    }
+    const { dataUrl, replyToId, clientId } = payload;
     const m = /^data:(audio\/(webm|mp4|ogg|mpeg|wav))(;codecs=[A-Za-z0-9.,-]+)?;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-    if (!m) return;
-    if (dataUrl.length > 3 * 1024 * 1024) return;
+    if (!m) {
+      if (typeof ack === 'function') ack({ error: 'Invalid audio' });
+      return;
+    }
+    if (dataUrl.length > 3 * 1024 * 1024) {
+      if (typeof ack === 'function') ack({ error: 'Too large' });
+      return;
+    }
     const msg = {
       username,
       audio: dataUrl,
@@ -605,14 +621,18 @@ io.on('connection', async (socket) => {
     try {
       const id = await saveMessage(msg);
       const full = await getMessageById(id);
-      io.emit('message', full || { ...msg, id });
+      const broadcast = full || { ...msg, id };
+      if (clientId != null) broadcast.clientId = clientId;
+      io.emit('message', broadcast);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: '🎤 Sent a voice note',
         url: '/',
       }).catch(() => {});
+      if (typeof ack === 'function') ack({ id });
     } catch (e) {
       console.error('save error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
     }
   });
 
