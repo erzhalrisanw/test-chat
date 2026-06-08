@@ -315,6 +315,8 @@ loginForm.addEventListener('submit', async (e) => {
 
 function maybePlaySunrise() {
   const now = new Date();
+  const hour = now.getHours();
+  if (hour < 4 || hour >= 12) return;
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   if (localStorage.getItem('sunriseShown') === today) return;
   const overlay = document.getElementById('sunrise-overlay');
