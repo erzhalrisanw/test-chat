@@ -994,75 +994,99 @@ function updateGalleryBtn() {
   else galleryBtn.classList.add('hidden');
 }
 
-const GALLERY_PAGE_SIZE = 24;
-let galleryCursor = null;
-let galleryHasMore = true;
+const GALLERY_PAGE_SIZE = 8;
+let galleryCurrentPage = 1;
+let galleryTotalPages = 0;
+let galleryTotalItems = 0;
 let galleryLoading = false;
 let galleryItems = [];
-let gallerySentinel = null;
-let galleryObserver = null;
+let galleryAllItems = [];
 
-function appendGalleryCell(it, idx) {
-  const cell = document.createElement('div');
-  cell.className = 'gallery-item';
-  if (it.type === 'video') {
-    const v = document.createElement('video');
-    v.src = it.src;
-    v.preload = 'metadata';
-    v.muted = true;
-    v.playsInline = true;
-    cell.appendChild(v);
-    const badge = document.createElement('span');
-    badge.className = 'gallery-badge';
-    badge.textContent = '▶';
-    cell.appendChild(badge);
-  } else {
-    const img = document.createElement('img');
-    img.src = it.src;
-    img.loading = 'lazy';
-    img.alt = 'photo';
-    cell.appendChild(img);
-  }
-  cell.addEventListener('click', () => {
-    viewerItems = galleryItems.map((g) => ({ type: g.type, src: g.src }));
-    viewerIndex = idx;
-    renderViewerItem();
-    imageViewer.classList.remove('hidden');
-  });
-  if (gallerySentinel && gallerySentinel.parentNode === galleryGrid) {
-    galleryGrid.insertBefore(cell, gallerySentinel);
-  } else {
+function renderGalleryPage() {
+  galleryGrid.innerHTML = '';
+  
+  const startIdx = (galleryCurrentPage - 1) * GALLERY_PAGE_SIZE;
+  const endIdx = Math.min(startIdx + GALLERY_PAGE_SIZE, galleryAllItems.length);
+  const pageItems = galleryAllItems.slice(startIdx, endIdx);
+  
+  pageItems.forEach((it, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'gallery-item';
+    if (it.type === 'video') {
+      const v = document.createElement('video');
+      v.src = it.src;
+      v.preload = 'metadata';
+      v.muted = true;
+      v.playsInline = true;
+      cell.appendChild(v);
+      const badge = document.createElement('span');
+      badge.className = 'gallery-badge';
+      badge.textContent = '▶';
+      cell.appendChild(badge);
+    } else {
+      const img = document.createElement('img');
+      img.src = it.src;
+      img.loading = 'lazy';
+      img.alt = 'photo';
+      cell.appendChild(img);
+    }
+    cell.addEventListener('click', () => {
+      viewerItems = galleryAllItems.map((g) => ({ type: g.type, src: g.src }));
+      viewerIndex = startIdx + i;
+      renderViewerItem();
+      imageViewer.classList.remove('hidden');
+    });
     galleryGrid.appendChild(cell);
-  }
+  });
+  
+  updatePaginationControls();
 }
 
-async function loadGalleryPage() {
-  if (galleryLoading || !galleryHasMore) return;
+function updatePaginationControls() {
+  const paginationEl = document.getElementById('gallery-pagination');
+  const pageInfoEl = document.getElementById('gallery-page-info');
+  const prevBtn = document.getElementById('gallery-prev');
+  const nextBtn = document.getElementById('gallery-next');
+  
+  if (galleryTotalPages <= 1) {
+    paginationEl.classList.add('hidden');
+    return;
+  }
+  
+  paginationEl.classList.remove('hidden');
+  pageInfoEl.textContent = `Halaman ${galleryCurrentPage} dari ${galleryTotalPages} (${galleryTotalItems} gambar)`;
+  
+  prevBtn.disabled = galleryCurrentPage === 1;
+  nextBtn.disabled = galleryCurrentPage === galleryTotalPages;
+}
+
+async function loadAllGalleryItems() {
+  if (galleryLoading) return;
   const token = localStorage.getItem('token');
   if (!token) return;
+  
   galleryLoading = true;
   try {
-    const params = new URLSearchParams({ limit: String(GALLERY_PAGE_SIZE) });
-    if (galleryCursor) params.set('before', String(galleryCursor));
-    const res = await fetch(`/gallery?${params.toString()}`, {
+    // Load semua item sekaligus (tanpa limit)
+    const res = await fetch(`/gallery?limit=1000`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return;
+    
     const data = await res.json();
-    const items = (data && data.items) || [];
-    if (!galleryItems.length && !items.length) {
+    galleryAllItems = (data && data.items) || [];
+    galleryTotalItems = galleryAllItems.length;
+    galleryTotalPages = Math.ceil(galleryTotalItems / GALLERY_PAGE_SIZE);
+    
+    if (galleryAllItems.length === 0) {
       galleryEmpty.classList.remove('hidden');
+      document.getElementById('gallery-pagination').classList.add('hidden');
+      return;
     }
-    const startIdx = galleryItems.length;
-    items.forEach((it, i) => {
-      galleryItems.push(it);
-      appendGalleryCell(it, startIdx + i);
-    });
-    galleryHasMore = !!(data && data.hasMore);
-    if (data && data.nextBefore) galleryCursor = data.nextBefore;
-    if (!galleryHasMore && galleryObserver && gallerySentinel) {
-      galleryObserver.unobserve(gallerySentinel);
-    }
+    
+    galleryCurrentPage = 1;
+    renderGalleryPage();
+    
   } catch (_) {
   } finally {
     galleryLoading = false;
@@ -1072,46 +1096,51 @@ async function loadGalleryPage() {
 async function openGallery() {
   galleryGrid.innerHTML = '';
   galleryEmpty.classList.add('hidden');
+  document.getElementById('gallery-pagination').classList.add('hidden');
   galleryModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-  galleryCursor = null;
-  galleryHasMore = true;
+  
+  galleryCurrentPage = 1;
+  galleryTotalPages = 0;
+  galleryTotalItems = 0;
   galleryLoading = false;
   galleryItems = [];
-  gallerySentinel = document.createElement('div');
-  gallerySentinel.className = 'gallery-sentinel';
-  gallerySentinel.setAttribute('aria-hidden', 'true');
-  galleryGrid.appendChild(gallerySentinel);
-  if (galleryObserver) galleryObserver.disconnect();
-  galleryObserver = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) loadGalleryPage();
-      }
-    },
-    { root: galleryGrid, rootMargin: '200px' }
-  );
-  galleryObserver.observe(gallerySentinel);
-  await loadGalleryPage();
+  galleryAllItems = [];
+  
+  await loadAllGalleryItems();
+}
+
+function goToPrevPage() {
+  if (galleryCurrentPage > 1) {
+    galleryCurrentPage--;
+    renderGalleryPage();
+    galleryGrid.scrollTop = 0;
+  }
+}
+
+function goToNextPage() {
+  if (galleryCurrentPage < galleryTotalPages) {
+    galleryCurrentPage++;
+    renderGalleryPage();
+    galleryGrid.scrollTop = 0;
+  }
 }
 
 function closeGallery() {
   galleryModal.classList.add('hidden');
   galleryGrid.innerHTML = '';
-  galleryItems = [];
-  galleryCursor = null;
-  galleryHasMore = true;
+  galleryAllItems = [];
+  galleryCurrentPage = 1;
+  galleryTotalPages = 0;
+  galleryTotalItems = 0;
   galleryLoading = false;
-  if (galleryObserver) {
-    galleryObserver.disconnect();
-    galleryObserver = null;
-  }
-  gallerySentinel = null;
   if (imageViewer.classList.contains('hidden')) document.body.style.overflow = '';
 }
 
 galleryBtn.addEventListener('click', openGallery);
 galleryClose.addEventListener('click', closeGallery);
+document.getElementById('gallery-prev').addEventListener('click', goToPrevPage);
+document.getElementById('gallery-next').addEventListener('click', goToNextPage);
 
 function pickAudioMime() {
   if (typeof MediaRecorder === 'undefined') return null;

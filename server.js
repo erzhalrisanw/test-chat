@@ -367,8 +367,8 @@ app.post('/push-subscribe', async (req, res) => {
   }
 });
 
-const GALLERY_PAGE_DEFAULT = 24;
-const GALLERY_PAGE_MAX = 100;
+const GALLERY_PAGE_DEFAULT = 8;
+const GALLERY_PAGE_MAX = 1000;
 
 app.get('/gallery', async (req, res) => {
   const username = authFromReq(req);
