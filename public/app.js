@@ -398,6 +398,24 @@ function startChat(token, username) {
   });
 
   socket.on('message', (m) => {
+    // Cegah duplikasi: jika pesan dengan id ini sudah ada di DOM, skip
+    if (m.id && messagesEl.querySelector('.msg[data-id="' + m.id + '"]')) return;
+    // Jika ini pesan kita sendiri yang sudah pending, update pending ke sent
+    if (m.username === me && m.id) {
+      var pendingEl = messagesEl.querySelector('.msg[data-temp-id]');
+      if (pendingEl && pendingEl.querySelector('.tick.pending')) {
+        pendingEl.dataset.id = String(m.id);
+        delete pendingEl.dataset.tempId;
+        var tick = pendingEl.querySelector('.tick');
+        if (tick) {
+          tick.className = 'tick sent';
+          tick.setAttribute('aria-label', 'sent');
+          tick.innerHTML = '<svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        }
+        if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
+        return;
+      }
+    }
     addMessage(m);
     if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
     if (m.username !== me) {
@@ -578,7 +596,12 @@ function prependMessage(msg, anchor) {
 function jumpToMessage(targetId) {
   const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
   if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Scroll messages container to center the target element
+  const containerRect = messagesEl.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+  const relativeTop = elRect.top - containerRect.top;
+  messagesEl.scrollTop = messagesEl.scrollTop + relativeTop - (containerRect.height / 2) + (elRect.height / 2);
+  // Highlight animation
   el.classList.remove('highlight');
   void el.offsetWidth;
   el.classList.add('highlight');
