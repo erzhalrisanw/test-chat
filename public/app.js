@@ -635,20 +635,59 @@ function loadMoreHistory() {
   loader.id = 'history-loader';
   loader.textContent = 'Loading older messages...';
   messagesEl.insertBefore(loader, messagesEl.firstChild);
-  const prevHeight = messagesEl.scrollHeight;
-  const prevTop = messagesEl.scrollTop;
+  const prevScrollTop = messagesEl.scrollTop;
+  const prevScrollHeight = messagesEl.scrollHeight;
   socket.emit('loadMore', { beforeId: oldestLoadedId }, (resp) => {
-    loader.remove();
     const list = (resp && resp.messages) || [];
     hasMoreHistory = !!(resp && resp.hasMore);
     if (list.length) {
-      const anchor = messagesEl.firstChild;
-      list.forEach((m) => prependMessage(m, anchor));
+      // Insert date separator before first message if needed
+      const firstExisting = messagesEl.querySelector('.msg[data-day]');
+      const firstExistingDay = firstExisting ? firstExisting.dataset.day : null;
+      
+      // Track which day keys we've seen while inserting
+      const seenDays = new Set();
+      list.forEach(function(m) {
+        const day = dayKey(m.time);
+        if (!seenDays.has(day)) {
+          // Check if we need a date separator for this day
+          const sep = makeDateSeparator(m.time);
+          messagesEl.insertBefore(sep, firstExisting);
+          seenDays.add(day);
+        }
+        const nodes = buildMessageNodes(m);
+        nodes.forEach(function(n) { messagesEl.insertBefore(n, firstExisting); });
+      });
+      
       oldestLoadedId = list[0].id || oldestLoadedId;
-      renderDateSeparators();
-      const newHeight = messagesEl.scrollHeight;
-      messagesEl.scrollTop = prevTop + (newHeight - prevHeight);
+      
+      // Remove duplicate date separators that are next to each other
+      var allMsgs = messagesEl.querySelectorAll('.msg.date-sep, .msg[data-day]');
+      var prevDay = null;
+      allMsgs.forEach(function(el) {
+        if (el.classList.contains('date-sep')) {
+          var nextMsg = el.nextElementSibling;
+          while (nextMsg && !nextMsg.classList.contains('date-sep') && !nextMsg.matches('.msg[data-day]')) {
+            nextMsg = nextMsg.nextElementSibling;
+          }
+          var dayAttr = nextMsg ? nextMsg.dataset.day : null;
+          if (!dayAttr || dayAttr === prevDay) {
+            el.remove();
+          } else {
+            prevDay = dayAttr;
+          }
+        } else if (el.dataset.day) {
+          prevDay = el.dataset.day;
+        }
+      });
+      
+      // Adjust scroll position to compensate for added height
+      var newScrollHeight = messagesEl.scrollHeight;
+      messagesEl.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
     }
+    // Remove loader
+    const loaderEl = document.getElementById('history-loader');
+    if (loaderEl) loaderEl.remove();
     loadingMore = false;
   });
 }
