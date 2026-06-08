@@ -60,6 +60,12 @@ async function initDb() {
       last_read_id INTEGER NOT NULL
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS user_credentials (
+      username TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL
+    )
+  `);
 }
 
 async function loadAllReadState() {
@@ -217,6 +223,70 @@ const users = new Set(
     .filter(Boolean)
 );
 
+function parseUserPasswords(raw) {
+  const map = {};
+  if (!raw) return map;
+  for (const entry of raw.split(',')) {
+    const idx = entry.indexOf(':');
+    if (idx <= 0) continue;
+    const user = entry.slice(0, idx).trim();
+    const pass = entry.slice(idx + 1);
+    if (user && pass) map[user] = pass;
+  }
+  return map;
+}
+
+const PASSWORD_SEED = parseUserPasswords(process.env.USER_PASSWORDS);
+
+const passwordCache = new Map();
+
+function hashPassword(password, salt) {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+
+function makePasswordEntry(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `${salt}:${hashPassword(password, salt)}`;
+}
+
+async function loadPasswordCache() {
+  const result = await db.execute('SELECT username, password_hash FROM user_credentials');
+  passwordCache.clear();
+  for (const row of result.rows) {
+    passwordCache.set(String(row.username), String(row.password_hash));
+  }
+}
+
+async function seedPasswords() {
+  for (const [username, password] of Object.entries(PASSWORD_SEED)) {
+    const current = passwordCache.get(username);
+    if (current) {
+      const [salt, hash] = current.split(':');
+      if (salt && hash && hashPassword(password, salt) === hash) continue;
+    }
+    const entry = makePasswordEntry(password);
+    await db.execute({
+      sql: `INSERT INTO user_credentials (username, password_hash) VALUES (?, ?)
+            ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash`,
+      args: [username, entry],
+    });
+    passwordCache.set(username, entry);
+  }
+}
+
+function checkPassword(username, password) {
+  const stored = passwordCache.get(username);
+  if (!stored) return true;
+  if (typeof password !== 'string') return false;
+  const [salt, hash] = stored.split(':');
+  if (!salt || !hash) return false;
+  const provided = hashPassword(password, salt);
+  const a = Buffer.from(provided, 'hex');
+  const b = Buffer.from(hash, 'hex');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -250,12 +320,15 @@ function verifyToken(token) {
 }
 
 app.post('/login', (req, res) => {
-  const { username } = req.body || {};
+  const { username, password } = req.body || {};
   if (!username) {
     return res.status(400).json({ ok: false, error: 'Username is required' });
   }
   if (!users.has(username)) {
     return res.status(401).json({ ok: false, error: 'Invalid username' });
+  }
+  if (!checkPassword(username, password)) {
+    return res.status(401).json({ ok: false, error: 'Invalid password' });
   }
   const token = createToken(username);
   res.json({ ok: true, token, username });
@@ -294,16 +367,33 @@ app.post('/push-subscribe', async (req, res) => {
   }
 });
 
+const GALLERY_PAGE_DEFAULT = 24;
+const GALLERY_PAGE_MAX = 100;
+
 app.get('/gallery', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Math.min(
+    GALLERY_PAGE_MAX,
+    Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : GALLERY_PAGE_DEFAULT)
+  );
+  const parsedBefore = parseInt(req.query.before, 10);
+  const before = Number.isFinite(parsedBefore) && parsedBefore > 0 ? parsedBefore : null;
   try {
-    const result = await db.execute(`
-      SELECT id, username, image, video, time
-      FROM messages
-      WHERE image IS NOT NULL OR video IS NOT NULL
-      ORDER BY id ASC
-    `);
+    const sql = before
+      ? `SELECT id, username, image, video, time
+           FROM messages
+          WHERE (image IS NOT NULL OR video IS NOT NULL) AND id < ?
+          ORDER BY id DESC
+          LIMIT ?`
+      : `SELECT id, username, image, video, time
+           FROM messages
+          WHERE image IS NOT NULL OR video IS NOT NULL
+          ORDER BY id DESC
+          LIMIT ?`;
+    const args = before ? [before, limit] : [limit];
+    const result = await db.execute({ sql, args });
     const items = result.rows.map((r) => ({
       id: Number(r.id),
       username: r.username,
@@ -311,7 +401,9 @@ app.get('/gallery', async (req, res) => {
       type: r.image ? 'image' : 'video',
       src: r.image || r.video,
     }));
-    res.json({ ok: true, items });
+    const hasMore = items.length === limit;
+    const nextBefore = items.length ? items[items.length - 1].id : null;
+    res.json({ ok: true, items, hasMore, nextBefore });
   } catch (err) {
     console.error('gallery error:', err.message);
     res.status(500).json({ ok: false });
@@ -524,6 +616,8 @@ io.on('connection', async (socket) => {
 const PORT = process.env.PORT || 3000;
 
 initDb()
+  .then(() => loadPasswordCache())
+  .then(() => seedPasswords())
   .then(() => loadAllReadState())
   .then(() => {
     server.listen(PORT, () => {

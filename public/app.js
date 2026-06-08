@@ -292,12 +292,13 @@ loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';
   const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
 
   try {
     const res = await fetch('/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username }),
+      body: JSON.stringify({ username, password }),
     });
     const data = await res.json();
     if (!data.ok) {
@@ -314,8 +315,6 @@ loginForm.addEventListener('submit', async (e) => {
 
 function maybePlaySunrise() {
   const now = new Date();
-  const hour = now.getHours();
-  if (hour < 4 || hour >= 12) return;
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   if (localStorage.getItem('sunriseShown') === today) return;
   const overlay = document.getElementById('sunrise-overlay');
@@ -324,14 +323,14 @@ function maybePlaySunrise() {
   document.body.classList.add('sunrise-playing');
   overlay.classList.remove('hidden', 'fade-out');
   void overlay.offsetWidth;
-  // 0-4s sun rises, 4-5s overlay fades, 5-7s chat slides up (CSS delay 5s)
+  // 0-5s sun rises, 4.5-5.5s overlay fades, 5-7s chat slides up (CSS delay 5s)
   setTimeout(() => {
     overlay.classList.add('fade-out');
     setTimeout(() => {
       overlay.classList.add('hidden');
       overlay.classList.remove('fade-out');
     }, 1000);
-  }, 4000);
+  }, 4500);
   setTimeout(() => {
     document.body.classList.remove('sunrise-playing');
   }, 7000);
@@ -993,55 +992,119 @@ function updateGalleryBtn() {
   else galleryBtn.classList.add('hidden');
 }
 
+const GALLERY_PAGE_SIZE = 24;
+let galleryCursor = null;
+let galleryHasMore = true;
+let galleryLoading = false;
+let galleryItems = [];
+let gallerySentinel = null;
+let galleryObserver = null;
+
+function appendGalleryCell(it, idx) {
+  const cell = document.createElement('div');
+  cell.className = 'gallery-item';
+  if (it.type === 'video') {
+    const v = document.createElement('video');
+    v.src = it.src;
+    v.preload = 'metadata';
+    v.muted = true;
+    v.playsInline = true;
+    cell.appendChild(v);
+    const badge = document.createElement('span');
+    badge.className = 'gallery-badge';
+    badge.textContent = '▶';
+    cell.appendChild(badge);
+  } else {
+    const img = document.createElement('img');
+    img.src = it.src;
+    img.loading = 'lazy';
+    img.alt = 'photo';
+    cell.appendChild(img);
+  }
+  cell.addEventListener('click', () => {
+    viewerItems = galleryItems.map((g) => ({ type: g.type, src: g.src }));
+    viewerIndex = idx;
+    renderViewerItem();
+    imageViewer.classList.remove('hidden');
+  });
+  if (gallerySentinel && gallerySentinel.parentNode === galleryGrid) {
+    galleryGrid.insertBefore(cell, gallerySentinel);
+  } else {
+    galleryGrid.appendChild(cell);
+  }
+}
+
+async function loadGalleryPage() {
+  if (galleryLoading || !galleryHasMore) return;
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  galleryLoading = true;
+  try {
+    const params = new URLSearchParams({ limit: String(GALLERY_PAGE_SIZE) });
+    if (galleryCursor) params.set('before', String(galleryCursor));
+    const res = await fetch(`/gallery?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const items = (data && data.items) || [];
+    if (!galleryItems.length && !items.length) {
+      galleryEmpty.classList.remove('hidden');
+    }
+    const startIdx = galleryItems.length;
+    items.forEach((it, i) => {
+      galleryItems.push(it);
+      appendGalleryCell(it, startIdx + i);
+    });
+    galleryHasMore = !!(data && data.hasMore);
+    if (data && data.nextBefore) galleryCursor = data.nextBefore;
+    if (!galleryHasMore && galleryObserver && gallerySentinel) {
+      galleryObserver.unobserve(gallerySentinel);
+    }
+  } catch (_) {
+  } finally {
+    galleryLoading = false;
+  }
+}
+
 async function openGallery() {
   galleryGrid.innerHTML = '';
   galleryEmpty.classList.add('hidden');
   galleryModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-  const token = localStorage.getItem('token');
-  if (!token) return;
-  try {
-    const res = await fetch('/gallery', { headers: { Authorization: `Bearer ${token}` } });
-    if (!res.ok) return;
-    const data = await res.json();
-    const items = (data && data.items) || [];
-    if (!items.length) { galleryEmpty.classList.remove('hidden'); return; }
-    const viewerList = items.map((it) => ({ type: it.type, src: it.src }));
-    items.forEach((it, idx) => {
-      const cell = document.createElement('div');
-      cell.className = 'gallery-item';
-      if (it.type === 'video') {
-        const v = document.createElement('video');
-        v.src = it.src;
-        v.preload = 'metadata';
-        v.muted = true;
-        v.playsInline = true;
-        cell.appendChild(v);
-        const badge = document.createElement('span');
-        badge.className = 'gallery-badge';
-        badge.textContent = '▶';
-        cell.appendChild(badge);
-      } else {
-        const img = document.createElement('img');
-        img.src = it.src;
-        img.loading = 'lazy';
-        img.alt = 'photo';
-        cell.appendChild(img);
+  galleryCursor = null;
+  galleryHasMore = true;
+  galleryLoading = false;
+  galleryItems = [];
+  gallerySentinel = document.createElement('div');
+  gallerySentinel.className = 'gallery-sentinel';
+  gallerySentinel.setAttribute('aria-hidden', 'true');
+  galleryGrid.appendChild(gallerySentinel);
+  if (galleryObserver) galleryObserver.disconnect();
+  galleryObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) loadGalleryPage();
       }
-      cell.addEventListener('click', () => {
-        viewerItems = viewerList;
-        viewerIndex = idx;
-        renderViewerItem();
-        imageViewer.classList.remove('hidden');
-      });
-      galleryGrid.appendChild(cell);
-    });
-  } catch (_) {}
+    },
+    { root: galleryGrid, rootMargin: '200px' }
+  );
+  galleryObserver.observe(gallerySentinel);
+  await loadGalleryPage();
 }
 
 function closeGallery() {
   galleryModal.classList.add('hidden');
   galleryGrid.innerHTML = '';
+  galleryItems = [];
+  galleryCursor = null;
+  galleryHasMore = true;
+  galleryLoading = false;
+  if (galleryObserver) {
+    galleryObserver.disconnect();
+    galleryObserver = null;
+  }
+  gallerySentinel = null;
   if (imageViewer.classList.contains('hidden')) document.body.style.overflow = '';
 }
 
