@@ -373,27 +373,35 @@ const GALLERY_PAGE_MAX = 1000;
 app.get('/gallery', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
+  
   const parsedLimit = parseInt(req.query.limit, 10);
   const limit = Math.min(
     GALLERY_PAGE_MAX,
     Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : GALLERY_PAGE_DEFAULT)
   );
-  const parsedBefore = parseInt(req.query.before, 10);
-  const before = Number.isFinite(parsedBefore) && parsedBefore > 0 ? parsedBefore : null;
+  
+  const parsedPage = parseInt(req.query.page, 10);
+  const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const offset = (page - 1) * limit;
+  
   try {
-    const sql = before
-      ? `SELECT id, username, image, video, time
-           FROM messages
-          WHERE (image IS NOT NULL OR video IS NOT NULL) AND id < ?
-          ORDER BY id DESC
-          LIMIT ?`
-      : `SELECT id, username, image, video, time
-           FROM messages
-          WHERE image IS NOT NULL OR video IS NOT NULL
-          ORDER BY id DESC
-          LIMIT ?`;
-    const args = before ? [before, limit] : [limit];
-    const result = await db.execute({ sql, args });
+    // Hitung total items untuk pagination info
+    const countResult = await db.execute({
+      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE image IS NOT NULL OR video IS NOT NULL`,
+    });
+    const totalItems = Number(countResult.rows[0].cnt);
+    const totalPages = Math.ceil(totalItems / limit);
+    
+    // Ambil items untuk halaman tertentu (dari yang terbaru)
+    const result = await db.execute({
+      sql: `SELECT id, username, image, video, time
+             FROM messages
+            WHERE image IS NOT NULL OR video IS NOT NULL
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?`,
+      args: [limit, offset],
+    });
+    
     const items = result.rows.map((r) => ({
       id: Number(r.id),
       username: r.username,
@@ -401,9 +409,8 @@ app.get('/gallery', async (req, res) => {
       type: r.image ? 'image' : 'video',
       src: r.image || r.video,
     }));
-    const hasMore = items.length === limit;
-    const nextBefore = items.length ? items[items.length - 1].id : null;
-    res.json({ ok: true, items, hasMore, nextBefore });
+    
+    res.json({ ok: true, items, totalItems, totalPages, page });
   } catch (err) {
     console.error('gallery error:', err.message);
     res.status(500).json({ ok: false });
@@ -473,7 +480,7 @@ io.on('connection', async (socket) => {
   }
   socket.emit('readState', Object.fromEntries(lastRead));
 
-  socket.on('message', async (payload) => {
+  socket.on('message', async (payload, ack) => {
     let text, replyToId;
     if (typeof payload === 'string') {
       text = payload;
@@ -481,7 +488,10 @@ io.on('connection', async (socket) => {
       text = payload.text;
       replyToId = Number(payload.replyToId) || null;
     }
-    if (typeof text !== 'string' || !text.trim()) return;
+    if (typeof text !== 'string' || !text.trim()) {
+      if (typeof ack === 'function') ack({ error: 'No text' });
+      return;
+    }
     const msg = {
       username,
       text: text.slice(0, 1000),
@@ -497,17 +507,28 @@ io.on('connection', async (socket) => {
         body: msg.text,
         url: '/',
       }).catch(() => {});
+      if (typeof ack === 'function') ack({ id });
     } catch (e) {
       console.error('save error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
     }
   });
 
-  socket.on('image', async (payload) => {
-    if (!payload || typeof payload.dataUrl !== 'string') return;
+  socket.on('image', async (payload, ack) => {
+    if (!payload || typeof payload.dataUrl !== 'string') {
+      if (typeof ack === 'function') ack({ error: 'Invalid payload' });
+      return;
+    }
     const { dataUrl, caption, replyToId } = payload;
     const m = /^data:(image\/(png|jpeg|jpg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-    if (!m) return;
-    if (dataUrl.length > 15 * 1024 * 1024) return;
+    if (!m) {
+      if (typeof ack === 'function') ack({ error: 'Invalid image' });
+      return;
+    }
+    if (dataUrl.length > 15 * 1024 * 1024) {
+      if (typeof ack === 'function') ack({ error: 'Too large' });
+      return;
+    }
     const msg = {
       username,
       image: dataUrl,
@@ -524,17 +545,28 @@ io.on('connection', async (socket) => {
         body: msg.text || '📷 Sent a photo',
         url: '/',
       }).catch(() => {});
+      if (typeof ack === 'function') ack({ id });
     } catch (e) {
       console.error('save error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
     }
   });
 
-  socket.on('video', async (payload) => {
-    if (!payload || typeof payload.dataUrl !== 'string') return;
+  socket.on('video', async (payload, ack) => {
+    if (!payload || typeof payload.dataUrl !== 'string') {
+      if (typeof ack === 'function') ack({ error: 'Invalid payload' });
+      return;
+    }
     const { dataUrl, caption, replyToId } = payload;
     const m = /^data:(video\/(webm|mp4));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-    if (!m) return;
-    if (dataUrl.length > 15 * 1024 * 1024) return;
+    if (!m) {
+      if (typeof ack === 'function') ack({ error: 'Invalid video' });
+      return;
+    }
+    if (dataUrl.length > 15 * 1024 * 1024) {
+      if (typeof ack === 'function') ack({ error: 'Too large' });
+      return;
+    }
     const msg = {
       username,
       video: dataUrl,
@@ -551,8 +583,10 @@ io.on('connection', async (socket) => {
         body: msg.text || '🎬 Sent a video',
         url: '/',
       }).catch(() => {});
+      if (typeof ack === 'function') ack({ id });
     } catch (e) {
       console.error('save error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
     }
   });
 

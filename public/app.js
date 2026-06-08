@@ -14,11 +14,13 @@ const previewImg = document.getElementById('preview-img');
 const previewVideo = document.getElementById('preview-video');
 const previewCancel = document.getElementById('preview-cancel');
 
+let pendingImage = null;
+let pendingVideo = null;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
 const MAX_VIDEO_DURATION_MS = 15000;
-let pendingImage = null;
-let pendingVideo = null;
+let pendingQueue = [];
+let tempIdCounter = 0;
 
 const replyPreview = document.getElementById('reply-preview');
 const replyPreviewUser = document.getElementById('reply-preview-user');
@@ -95,6 +97,7 @@ let hasMoreHistory = false;
 let loadingMore = false;
 let notifEnabled = localStorage.getItem('notifEnabled') !== '0';
 let audioCtx = null;
+let reconnectTimer = null;
 
 function updateNotifBtn() {
   notifBtn.textContent = notifEnabled ? '🔔 On' : '🔕 Off';
@@ -420,6 +423,27 @@ function startChat(token, username) {
     }
     addSystem(`Connection failed: ${err.message}`);
   });
+
+  socket.on('disconnect', () => {
+    // Try reconnect with pending resend
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      if (!socket || !socket.connected) {
+        socket.connect();
+      }
+    }, 3000);
+  });
+
+  socket.on('connect', () => {
+    // Resend pending messages on reconnect
+    if (pendingQueue.length > 0) {
+      const toResend = pendingQueue.slice();
+      pendingQueue = [];
+      toResend.forEach((item) => {
+        emitWithAck(item);
+      });
+    }
+  });
 }
 
 function replySnippet(msg) {
@@ -434,36 +458,44 @@ function buildMessageNodes(msg) {
   const { id, username, text, time, image, replyTo } = msg;
   const div = document.createElement('div');
   div.className = 'msg ' + (username === me ? 'mine' : 'other');
+  const isPending = msg._pending || false;
+  const tempId = msg._tempId || null;
   if (id) div.dataset.id = String(id);
+  if (tempId) div.dataset.tempId = String(tempId);
   const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   div.dataset.day = dayKey(time);
-  const tick = username === me && id
-    ? `<span class="tick ${id <= lastReadByOthers ? 'read' : 'sent'}" data-id="${id}" aria-label="${id <= lastReadByOthers ? 'read' : 'sent'}"><svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
-    : '';
-  const meta = `<div class="meta">${escapeHtml(username)} • ${t}${tick}</div>`;
+  let tick = '';
+  if (username === me) {
+    if (isPending) {
+      tick = '<span class="tick pending" aria-label="pending">🕐</span>';
+    } else if (id) {
+      tick = `<span class="tick ${id <= lastReadByOthers ? 'read' : 'sent'}" data-id="${id}" aria-label="${id <= lastReadByOthers ? 'read' : 'sent'}"><svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+    }
+  }
+  const meta = '<div class="meta">' + escapeHtml(username) + ' • ' + t + tick + '</div>';
   let quote = '';
   if (replyTo) {
-    quote = `<div class="reply-quote" data-target="${replyTo.id}">
-      <div class="reply-quote-body">
-        <div class="reply-quote-user">${escapeHtml(replyTo.username || '')}</div>
-        <div class="reply-quote-text">${escapeHtml(replySnippet(replyTo))}</div>
-      </div>
-    </div>`;
+    quote = '<div class="reply-quote" data-target="' + replyTo.id + '">' +
+      '<div class="reply-quote-body">' +
+      '<div class="reply-quote-user">' + escapeHtml(replyTo.username || '') + '</div>' +
+      '<div class="reply-quote-text">' + escapeHtml(replySnippet(replyTo)) + '</div>' +
+      '</div>' +
+      '</div>';
   }
-  let body = text ? escapeHtml(text) : '';
+  let body = text ? linkify(text) : '';
   if (image && /^data:image\//.test(image)) {
-    const img = `<img class="chat-img" src="${image}" alt="photo" />`;
-    body = body ? `${body}${img}` : img;
+    const img = '<img class="chat-img" src="' + image + '" alt="photo" />';
+    body = body ? body + img : img;
   }
   if (msg.video && /^data:video\//.test(msg.video)) {
-    const vid = `<video class="chat-vid" src="${msg.video}" controls playsinline preload="metadata"></video>`;
-    body = body ? `${body}${vid}` : vid;
+    const vid = '<video class="chat-vid" src="' + msg.video + '" controls playsinline preload="metadata"></video>';
+    body = body ? body + vid : vid;
   }
   if (msg.audio && /^data:audio\//.test(msg.audio)) {
-    const aud = `<audio class="chat-aud" src="${msg.audio}" controls preload="metadata"></audio>`;
-    body = body ? `${body}${aud}` : aud;
+    const aud = '<audio class="chat-aud" src="' + msg.audio + '" controls preload="metadata"></audio>';
+    body = body ? body + aud : aud;
   }
-  const replyBtn = id ? `<button class="reply-btn" type="button" title="Reply">↩</button>` : '';
+  const replyBtn = id ? '<button class="reply-btn" type="button" title="Reply">↩</button>' : '';
   div.innerHTML = meta + quote + body + replyBtn;
   const imgEl = div.querySelector('img.chat-img');
   if (imgEl) {
@@ -488,7 +520,7 @@ function buildMessageNodes(msg) {
 
 function dayKey(time) {
   const d = new Date(time);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
 function dateSeparatorLabel(time) {
@@ -541,7 +573,7 @@ function prependMessage(msg, anchor) {
 }
 
 function jumpToMessage(targetId) {
-  const el = messagesEl.querySelector(`.msg[data-id="${targetId}"]`);
+  const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
   if (!el) return;
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   el.classList.remove('highlight');
@@ -653,7 +685,7 @@ function renderViewerItem() {
   }
   viewerContent.appendChild(node);
   if (viewerItems.length > 1) {
-    viewerCounter.textContent = `${viewerIndex + 1} / ${viewerItems.length}`;
+    viewerCounter.textContent = viewerIndex + 1 + ' / ' + viewerItems.length;
     viewerCounter.style.display = '';
     viewerPrev.style.display = '';
     viewerNext.style.display = '';
@@ -723,54 +755,163 @@ viewerContent.addEventListener('touchend', (e) => {
 
 function escapeHtml(s) {
   return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/&/g, '&#38;')
+    .replace(/</g, '&#60;')
+    .replace(/>/g, '&#62;')
+    .replace(/"/g, '&#34;')
     .replace(/'/g, '&#39;');
 }
 
-chatForm.addEventListener('submit', (e) => {
+function linkify(text) {
+  var escaped = escapeHtml(text);
+  return escaped.replace(
+    /(https?:\/\/[^\s<]+|(?:^|[^"'>])(www\.[^\s<]+))/gi,
+    function(match, url, prefix) {
+      var href = url.indexOf('http') === 0 ? url : 'https://' + url;
+      var display = url.indexOf('http') === 0 ? url : url;
+      return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + display + '</a>';
+    }
+  );
+}
+
+function showPendingLocally(msgData) {
+  tempIdCounter++;
+  var tempId = tempIdCounter;
+  var pendingMsg = {
+    dataUrl: msgData.dataUrl,
+    text: msgData.text,
+    caption: msgData.caption,
+    replyToId: msgData.replyToId,
+    _pending: true,
+    _tempId: tempId,
+    id: null,
+    username: me,
+    time: new Date().toISOString()
+  };
+  addMessage(pendingMsg);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return tempId;
+}
+
+function updatePendingToSent(tempId, realId) {
+  var el = messagesEl.querySelector('.msg[data-temp-id="' + tempId + '"]');
+  if (!el) return;
+  el.dataset.id = String(realId);
+  delete el.dataset.tempId;
+  var tick = el.querySelector('.tick');
+  if (tick) {
+    tick.className = 'tick sent';
+    tick.setAttribute('aria-label', 'sent');
+    tick.innerHTML = '<svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+}
+
+function emitWithAck(msgData) {
+  var tempId = msgData._tempId;
+  if (socket && socket.connected) {
+    var event = msgData._type || 'message';
+    var payload = {};
+    if (msgData.dataUrl) payload.dataUrl = msgData.dataUrl;
+    if (msgData.text) payload.text = msgData.text;
+    if (msgData.caption) payload.caption = msgData.caption;
+    if (msgData.replyToId) payload.replyToId = msgData.replyToId;
+    socket.emit(event, payload, function(ack) {
+      if (ack && ack.id) {
+        updatePendingToSent(tempId, ack.id);
+        if (ack.id) lastIncomingId = Math.max(lastIncomingId, ack.id);
+      } else {
+        if (!pendingQueue.some(function(p) { return p._tempId === tempId; })) {
+          pendingQueue.push(msgData);
+        }
+      }
+    });
+  } else {
+    if (!pendingQueue.some(function(p) { return p._tempId === tempId; })) {
+      pendingQueue.push(msgData);
+    }
+  }
+}
+
+function queueMessage(eventName, msgData) {
+  var data = {};
+  if (msgData.dataUrl) data.dataUrl = msgData.dataUrl;
+  if (msgData.text) data.text = msgData.text;
+  if (msgData.caption) data.caption = msgData.caption;
+  if (msgData.replyToId) data.replyToId = msgData.replyToId;
+  data._tempId = null;
+  data._pending = true;
+  data._type = eventName;
+  var tempId = showPendingLocally(data);
+  data._tempId = tempId;
+  emitWithAck(data);
+}
+
+chatForm.addEventListener('submit', function(e) {
   e.preventDefault();
   if (!socket) return;
-  const text = msgInput.value.trim();
-  const replyToId = replyTarget ? replyTarget.id : null;
+  var text = msgInput.value.trim();
+  var replyToId = replyTarget ? replyTarget.id : null;
   if (pendingVideo) {
-    socket.emit('video', { dataUrl: pendingVideo, caption: text, replyToId });
+    queueMessage('video', { dataUrl: pendingVideo, caption: text, replyToId: replyToId });
     clearPreview();
     clearReply();
     msgInput.value = '';
     return;
   }
   if (pendingImage) {
-    socket.emit('image', { dataUrl: pendingImage, caption: text, replyToId });
+    queueMessage('image', { dataUrl: pendingImage, caption: text, replyToId: replyToId });
     clearPreview();
     clearReply();
     msgInput.value = '';
     return;
   }
   if (!text) return;
-  socket.emit('message', { text, replyToId });
+  queueMessage('message', { text: text, replyToId: replyToId });
   msgInput.value = '';
   clearReply();
 });
 
-fileInput.addEventListener('change', () => {
-  const file = fileInput.files && fileInput.files[0];
+fileInput.addEventListener('change', function() {
+  var file = fileInput.files && fileInput.files[0];
   fileInput.value = '';
   if (!file) return;
+  if (file.type.startsWith('video/')) {
+    if (file.size > MAX_VIDEO_BYTES) {
+      alert('Maximum size is 12 MB');
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function() {
+      pendingVideo = reader.result;
+      pendingImage = null;
+      previewImg.classList.add('hidden');
+      previewImg.src = '';
+      previewVideo.src = pendingVideo;
+      previewVideo.classList.remove('hidden');
+      preview.classList.remove('hidden');
+      msgInput.placeholder = 'Add a caption (optional)...';
+      msgInput.focus();
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
   if (!file.type.startsWith('image/')) {
-    alert('File must be an image');
+    alert('File must be an image or video');
     return;
   }
   if (file.size > MAX_IMAGE_BYTES) {
     alert('Maximum size is 4 MB');
     return;
   }
-  const reader = new FileReader();
-  reader.onload = () => {
+  var reader = new FileReader();
+  reader.onload = function() {
     pendingImage = reader.result;
+    pendingVideo = null;
     previewImg.src = pendingImage;
+    previewImg.classList.remove('hidden');
+    previewVideo.classList.add('hidden');
+    previewVideo.removeAttribute('src');
+    previewVideo.load();
     preview.classList.remove('hidden');
     msgInput.placeholder = 'Add a caption (optional)...';
     msgInput.focus();
@@ -793,38 +934,38 @@ function clearPreview() {
   msgInput.placeholder = 'Type a message...';
 }
 
-cameraBtn.addEventListener('click', () => openCamera());
+cameraBtn.addEventListener('click', function() { openCamera(); });
 camClose.addEventListener('click', closeCamera);
-camSwitch.addEventListener('click', () => {
+camSwitch.addEventListener('click', function() {
   if (mediaRecorder && mediaRecorder.state === 'recording') return;
   camFacing = camFacing === 'user' ? 'environment' : 'user';
   openCamera();
 });
-camRecord.addEventListener('click', () => {
+camRecord.addEventListener('click', function() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     stopRecording();
   } else {
     startRecording();
   }
 });
-camSnap.addEventListener('click', () => {
+camSnap.addEventListener('click', function() {
   if (!camStream) return;
-  const w = camVideo.videoWidth;
-  const h = camVideo.videoHeight;
+  var w = camVideo.videoWidth;
+  var h = camVideo.videoHeight;
   if (!w || !h) return;
-  const canvas = document.createElement('canvas');
+  var canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext('2d');
+  var ctx = canvas.getContext('2d');
   ctx.drawImage(camVideo, 0, 0, w, h);
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.85);
   if (dataUrl.length > MAX_IMAGE_BYTES * 1.4) {
-    const shrink = canvas.getContext('2d');
-    const scale = Math.min(1, 1280 / Math.max(w, h));
-    const sw = Math.round(w * scale);
-    const sh = Math.round(h * scale);
+    var scale = Math.min(1, 1280 / Math.max(w, h));
+    var sw = Math.round(w * scale);
+    var sh = Math.round(h * scale);
     canvas.width = sw;
     canvas.height = sh;
+    var shrink = canvas.getContext('2d');
     shrink.drawImage(camVideo, 0, 0, sw, sh);
     pendingImage = canvas.toDataURL('image/jpeg', 0.8);
   } else {
@@ -871,7 +1012,7 @@ function closeCamera() {
 
 function stopCamStream() {
   if (camStream) {
-    camStream.getTracks().forEach((t) => t.stop());
+    camStream.getTracks().forEach(function(t) { t.stop(); });
     camStream = null;
   }
   camVideo.srcObject = null;
@@ -879,14 +1020,14 @@ function stopCamStream() {
 
 function pickVideoMime() {
   if (typeof MediaRecorder === 'undefined') return null;
-  const candidates = [
+  var candidates = [
     'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
     'video/webm',
-    'video/mp4',
+    'video/mp4'
   ];
-  for (const m of candidates) {
-    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  for (var i = 0; i < candidates.length; i++) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
   }
   return '';
 }
@@ -900,8 +1041,8 @@ function resetRecordUI() {
 }
 
 function updateRecordTimer() {
-  const s = Math.floor((Date.now() - recordStartTime) / 1000);
-  camTimer.textContent = `● 0:${String(s).padStart(2, '0')}`;
+  var s = Math.floor((Date.now() - recordStartTime) / 1000);
+  camTimer.textContent = '● 0:' + String(s).padStart(2, '0');
 }
 
 async function startRecording() {
@@ -923,17 +1064,17 @@ async function startRecording() {
       return;
     }
   }
-  const mime = pickVideoMime();
+  var mime = pickVideoMime();
   try {
     mediaRecorder = mime
-      ? new MediaRecorder(camStream, { mimeType: mime, videoBitsPerSecond: 800_000 })
-      : new MediaRecorder(camStream, { videoBitsPerSecond: 800_000 });
+      ? new MediaRecorder(camStream, { mimeType: mime, videoBitsPerSecond: 800000 })
+      : new MediaRecorder(camStream, { videoBitsPerSecond: 800000 });
   } catch (err) {
     camError.textContent = 'Cannot record: ' + (err.message || err.name);
     return;
   }
   recordChunks = [];
-  mediaRecorder.ondataavailable = (e) => {
+  mediaRecorder.ondataavailable = function(e) {
     if (e.data && e.data.size) recordChunks.push(e.data);
   };
   mediaRecorder.onstop = onRecordingStop;
@@ -954,18 +1095,18 @@ function stopRecording() {
 }
 
 function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
+  return new Promise(function(resolve, reject) {
+    var r = new FileReader();
+    r.onload = function() { resolve(r.result); };
     r.onerror = reject;
     r.readAsDataURL(blob);
   });
 }
 
 async function onRecordingStop() {
-  const mime = (mediaRecorder && mediaRecorder.mimeType) || 'video/webm';
-  const baseType = mime.split(';')[0];
-  const blob = new Blob(recordChunks, { type: baseType });
+  var mime = (mediaRecorder && mediaRecorder.mimeType) || 'video/webm';
+  var baseType = mime.split(';')[0];
+  var blob = new Blob(recordChunks, { type: baseType });
   recordChunks = [];
   if (!blob.size) return;
   if (blob.size > MAX_VIDEO_BYTES) {
@@ -973,7 +1114,7 @@ async function onRecordingStop() {
     return;
   }
   try {
-    const dataUrl = await blobToDataUrl(blob);
+    var dataUrl = await blobToDataUrl(blob);
     pendingVideo = dataUrl;
     pendingImage = null;
     previewImg.classList.add('hidden');
@@ -994,99 +1135,83 @@ function updateGalleryBtn() {
   else galleryBtn.classList.add('hidden');
 }
 
-const GALLERY_PAGE_SIZE = 8;
-let galleryCurrentPage = 1;
-let galleryTotalPages = 0;
-let galleryTotalItems = 0;
-let galleryLoading = false;
-let galleryItems = [];
-let galleryAllItems = [];
+var GALLERY_PAGE_SIZE = 8;
+var galleryCurrentPage = 1;
+var galleryTotalPages = 0;
+var galleryTotalItems = 0;
+var galleryLoading = false;
+var galleryItems = [];
 
 function renderGalleryPage() {
   galleryGrid.innerHTML = '';
-  
-  const startIdx = (galleryCurrentPage - 1) * GALLERY_PAGE_SIZE;
-  const endIdx = Math.min(startIdx + GALLERY_PAGE_SIZE, galleryAllItems.length);
-  const pageItems = galleryAllItems.slice(startIdx, endIdx);
-  
-  pageItems.forEach((it, i) => {
-    const cell = document.createElement('div');
+  galleryItems.forEach(function(it, i) {
+    var cell = document.createElement('div');
     cell.className = 'gallery-item';
     if (it.type === 'video') {
-      const v = document.createElement('video');
+      var v = document.createElement('video');
       v.src = it.src;
       v.preload = 'metadata';
       v.muted = true;
       v.playsInline = true;
       cell.appendChild(v);
-      const badge = document.createElement('span');
+      var badge = document.createElement('span');
       badge.className = 'gallery-badge';
       badge.textContent = '▶';
       cell.appendChild(badge);
     } else {
-      const img = document.createElement('img');
+      var img = document.createElement('img');
       img.src = it.src;
       img.loading = 'lazy';
       img.alt = 'photo';
       cell.appendChild(img);
     }
-    cell.addEventListener('click', () => {
-      viewerItems = galleryAllItems.map((g) => ({ type: g.type, src: g.src }));
-      viewerIndex = startIdx + i;
+    cell.addEventListener('click', function() {
+      viewerItems = galleryItems.map(function(g) { return { type: g.type, src: g.src }; });
+      viewerIndex = i;
       renderViewerItem();
       imageViewer.classList.remove('hidden');
     });
     galleryGrid.appendChild(cell);
   });
-  
   updatePaginationControls();
 }
 
 function updatePaginationControls() {
-  const paginationEl = document.getElementById('gallery-pagination');
-  const pageInfoEl = document.getElementById('gallery-page-info');
-  const prevBtn = document.getElementById('gallery-prev');
-  const nextBtn = document.getElementById('gallery-next');
-  
+  var paginationEl = document.getElementById('gallery-pagination');
+  var pageInfoEl = document.getElementById('gallery-page-info');
+  var prevBtn = document.getElementById('gallery-prev');
+  var nextBtn = document.getElementById('gallery-next');
   if (galleryTotalPages <= 1) {
     paginationEl.classList.add('hidden');
     return;
   }
-  
   paginationEl.classList.remove('hidden');
-  pageInfoEl.textContent = `Halaman ${galleryCurrentPage} dari ${galleryTotalPages} (${galleryTotalItems} gambar)`;
-  
+  pageInfoEl.textContent = 'Halaman ' + galleryCurrentPage + ' dari ' + galleryTotalPages + ' (' + galleryTotalItems + ' gambar)';
   prevBtn.disabled = galleryCurrentPage === 1;
   nextBtn.disabled = galleryCurrentPage === galleryTotalPages;
 }
 
-async function loadAllGalleryItems() {
+async function loadGalleryPage(page) {
   if (galleryLoading) return;
-  const token = localStorage.getItem('token');
+  var token = localStorage.getItem('token');
   if (!token) return;
-  
   galleryLoading = true;
   try {
-    // Load semua item sekaligus (tanpa limit)
-    const res = await fetch(`/gallery?limit=1000`, {
-      headers: { Authorization: `Bearer ${token}` },
+    var res = await fetch('/gallery?limit=' + GALLERY_PAGE_SIZE + '&page=' + page, {
+      headers: { Authorization: 'Bearer ' + token }
     });
     if (!res.ok) return;
-    
-    const data = await res.json();
-    galleryAllItems = (data && data.items) || [];
-    galleryTotalItems = galleryAllItems.length;
-    galleryTotalPages = Math.ceil(galleryTotalItems / GALLERY_PAGE_SIZE);
-    
-    if (galleryAllItems.length === 0) {
+    var data = await res.json();
+    galleryItems = (data && data.items) || [];
+    galleryTotalItems = data.totalItems || 0;
+    galleryTotalPages = data.totalPages || 0;
+    galleryCurrentPage = data.page || page;
+    if (galleryTotalItems === 0) {
       galleryEmpty.classList.remove('hidden');
       document.getElementById('gallery-pagination').classList.add('hidden');
       return;
     }
-    
-    galleryCurrentPage = 1;
     renderGalleryPage();
-    
   } catch (_) {
   } finally {
     galleryLoading = false;
@@ -1099,37 +1224,32 @@ async function openGallery() {
   document.getElementById('gallery-pagination').classList.add('hidden');
   galleryModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-  
   galleryCurrentPage = 1;
   galleryTotalPages = 0;
   galleryTotalItems = 0;
   galleryLoading = false;
   galleryItems = [];
-  galleryAllItems = [];
-  
-  await loadAllGalleryItems();
+  await loadGalleryPage(1);
 }
 
 function goToPrevPage() {
   if (galleryCurrentPage > 1) {
-    galleryCurrentPage--;
-    renderGalleryPage();
-    galleryGrid.scrollTop = 0;
+    galleryGrid.innerHTML = '';
+    loadGalleryPage(galleryCurrentPage - 1);
   }
 }
 
 function goToNextPage() {
   if (galleryCurrentPage < galleryTotalPages) {
-    galleryCurrentPage++;
-    renderGalleryPage();
-    galleryGrid.scrollTop = 0;
+    galleryGrid.innerHTML = '';
+    loadGalleryPage(galleryCurrentPage + 1);
   }
 }
 
 function closeGallery() {
   galleryModal.classList.add('hidden');
   galleryGrid.innerHTML = '';
-  galleryAllItems = [];
+  galleryItems = [];
   galleryCurrentPage = 1;
   galleryTotalPages = 0;
   galleryTotalItems = 0;
@@ -1144,27 +1264,27 @@ document.getElementById('gallery-next').addEventListener('click', goToNextPage);
 
 function pickAudioMime() {
   if (typeof MediaRecorder === 'undefined') return null;
-  const candidates = [
+  var candidates = [
     'audio/webm;codecs=opus',
     'audio/webm',
     'audio/mp4;codecs=mp4a.40.2',
     'audio/mp4',
-    'audio/ogg;codecs=opus',
+    'audio/ogg;codecs=opus'
   ];
-  for (const m of candidates) {
-    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) return m;
+  for (var i = 0; i < candidates.length; i++) {
+    if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
   }
   return '';
 }
 
 function updateAudioTimer() {
-  const s = Math.floor((Date.now() - audioStartTime) / 1000);
-  recTimerEl.textContent = `0:${String(s).padStart(2, '0')}`;
+  var s = Math.floor((Date.now() - audioStartTime) / 1000);
+  recTimerEl.textContent = '0:' + String(s).padStart(2, '0');
 }
 
 function stopAudioStream() {
   if (audioStream) {
-    audioStream.getTracks().forEach((t) => t.stop());
+    audioStream.getTracks().forEach(function(t) { t.stop(); });
     audioStream = null;
   }
 }
@@ -1192,11 +1312,11 @@ async function startVoiceRecording() {
     alert('Cannot access microphone: ' + (err.message || err.name));
     return;
   }
-  const mime = pickAudioMime();
+  var mime = pickAudioMime();
   try {
     audioRecorder = mime
-      ? new MediaRecorder(audioStream, { mimeType: mime, audioBitsPerSecond: 32_000 })
-      : new MediaRecorder(audioStream, { audioBitsPerSecond: 32_000 });
+      ? new MediaRecorder(audioStream, { mimeType: mime, audioBitsPerSecond: 32000 })
+      : new MediaRecorder(audioStream, { audioBitsPerSecond: 32000 });
   } catch (err) {
     stopAudioStream();
     alert('Cannot record: ' + (err.message || err.name));
@@ -1204,7 +1324,7 @@ async function startVoiceRecording() {
   }
   audioChunks = [];
   audioCancelled = false;
-  audioRecorder.ondataavailable = (e) => {
+  audioRecorder.ondataavailable = function(e) {
     if (e.data && e.data.size) audioChunks.push(e.data);
   };
   audioRecorder.onstop = onVoiceRecordingStop;
@@ -1229,9 +1349,9 @@ function cancelVoiceRecording() {
 }
 
 async function onVoiceRecordingStop() {
-  const mime = (audioRecorder && audioRecorder.mimeType) || 'audio/webm';
-  const baseType = mime.split(';')[0];
-  const blob = new Blob(audioChunks, { type: baseType });
+  var mime = (audioRecorder && audioRecorder.mimeType) || 'audio/webm';
+  var baseType = mime.split(';')[0];
+  var blob = new Blob(audioChunks, { type: baseType });
   audioChunks = [];
   audioRecorder = null;
   stopAudioStream();
@@ -1242,23 +1362,23 @@ async function onVoiceRecordingStop() {
     return;
   }
   try {
-    const dataUrl = await blobToDataUrl(blob);
-    const replyToId = replyTarget ? replyTarget.id : null;
-    if (socket) socket.emit('audio', { dataUrl, replyToId });
+    var dataUrl = await blobToDataUrl(blob);
+    var replyToId = replyTarget ? replyTarget.id : null;
+    if (socket) socket.emit('audio', { dataUrl: dataUrl, replyToId: replyToId });
     clearReply();
   } catch (err) {
     alert('Failed to process voice note: ' + (err.message || err));
   }
 }
 
-micBtn.addEventListener('click', () => {
+micBtn.addEventListener('click', function() {
   if (audioRecorder) finishVoiceRecording();
   else startVoiceRecording();
 });
 recSendBtn.addEventListener('click', finishVoiceRecording);
 recCancelBtn.addEventListener('click', cancelVoiceRecording);
 
-logoutBtn.addEventListener('click', () => {
+logoutBtn.addEventListener('click', function() {
   if (socket) socket.disconnect();
   localStorage.removeItem('token');
   localStorage.removeItem('username');
@@ -1266,8 +1386,8 @@ logoutBtn.addEventListener('click', () => {
   loginView.classList.remove('hidden');
 });
 
-const savedToken = localStorage.getItem('token');
-const savedUser = localStorage.getItem('username');
+var savedToken = localStorage.getItem('token');
+var savedUser = localStorage.getItem('username');
 if (savedToken && savedUser) {
   startChat(savedToken, savedUser);
 }
