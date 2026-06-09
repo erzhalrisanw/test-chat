@@ -1170,6 +1170,11 @@ function markPendingFailed(tempId, errorMsg) {
     tick.setAttribute('title', errorMsg || 'Failed to send');
     tick.textContent = '❌';
   }
+  var status = el.querySelector('.upload-status');
+  if (status) {
+    status.classList.add('failed');
+    status.textContent = 'Failed: ' + (errorMsg || 'Upload error');
+  }
 }
 
 function emitWithAck(msgData) {
