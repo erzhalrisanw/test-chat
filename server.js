@@ -5,6 +5,8 @@ const crypto = require('crypto');
 const webPush = require('web-push');
 const { createClient } = require('@libsql/client');
 const { Server } = require('socket.io');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const app = express();
 const server = http.createServer(app);
@@ -108,6 +110,28 @@ const pushEnabled = !!(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
 if (pushEnabled) {
   webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
+
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
+const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || '';
+const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || '';
+const R2_BUCKET = process.env.R2_BUCKET || '';
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || '').replace(/\/+$/, '');
+const r2Enabled = !!(R2_ACCOUNT_ID && R2_ACCESS_KEY_ID && R2_SECRET_ACCESS_KEY && R2_BUCKET && R2_PUBLIC_URL);
+
+const r2Client = r2Enabled
+  ? new S3Client({
+      region: 'auto',
+      endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY_ID,
+        secretAccessKey: R2_SECRET_ACCESS_KEY,
+      },
+    })
+  : null;
+
+const VIDEO_MAX_BYTES = 10 * 1024 * 1024;
+const ALLOWED_VIDEO_MIME = new Set(['video/webm', 'video/mp4']);
+const R2_PUBLIC_VIDEO_PREFIX = r2Enabled ? `${R2_PUBLIC_URL}/videos/` : '';
 
 async function saveSubscription(username, sub) {
   await db.execute({
@@ -367,6 +391,44 @@ app.post('/push-subscribe', async (req, res) => {
   }
 });
 
+app.get('/r2-status', (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  res.json({ ok: true, enabled: r2Enabled });
+});
+
+app.post('/r2-presign-video', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  if (!r2Enabled) return res.status(503).json({ ok: false, error: 'R2 not configured' });
+  const { contentType, size } = req.body || {};
+  if (typeof contentType !== 'string' || !ALLOWED_VIDEO_MIME.has(contentType)) {
+    return res.status(400).json({ ok: false, error: 'Invalid content type' });
+  }
+  const sz = Number(size);
+  if (!Number.isFinite(sz) || sz <= 0 || sz > VIDEO_MAX_BYTES) {
+    return res.status(400).json({ ok: false, error: 'Invalid size' });
+  }
+  try {
+    const ext = contentType === 'video/mp4' ? 'mp4' : 'webm';
+    const date = new Date().toISOString().slice(0, 10);
+    const rand = crypto.randomBytes(16).toString('hex');
+    const key = `videos/${date}/${rand}.${ext}`;
+    const cmd = new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+      ContentType: contentType,
+      ContentLength: sz,
+    });
+    const uploadUrl = await getSignedUrl(r2Client, cmd, { expiresIn: 300 });
+    const publicUrl = `${R2_PUBLIC_URL}/${key}`;
+    res.json({ ok: true, uploadUrl, publicUrl, key, contentType });
+  } catch (err) {
+    console.error('presign error:', err.message);
+    res.status(500).json({ ok: false, error: 'Presign failed' });
+  }
+});
+
 const GALLERY_PAGE_DEFAULT = 8;
 const GALLERY_PAGE_MAX = 1000;
 
@@ -558,23 +620,40 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('video', async (payload, ack) => {
-    if (!payload || typeof payload.dataUrl !== 'string') {
+    if (!payload) {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const { dataUrl, caption, replyToId, clientId } = payload;
-    const m = /^data:(video\/(webm|mp4));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-    if (!m) {
-      if (typeof ack === 'function') ack({ error: 'Invalid video' });
-      return;
-    }
-    if (dataUrl.length > 15 * 1024 * 1024) {
-      if (typeof ack === 'function') ack({ error: 'Too large' });
+    const { url, dataUrl, caption, replyToId, clientId } = payload;
+    let videoVal = null;
+    if (typeof url === 'string' && url) {
+      if (!r2Enabled || !url.startsWith(R2_PUBLIC_VIDEO_PREFIX)) {
+        if (typeof ack === 'function') ack({ error: 'Invalid video URL' });
+        return;
+      }
+      if (url.length > 500) {
+        if (typeof ack === 'function') ack({ error: 'URL too long' });
+        return;
+      }
+      videoVal = url;
+    } else if (typeof dataUrl === 'string') {
+      const m = /^data:(video\/(webm|mp4));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+      if (!m) {
+        if (typeof ack === 'function') ack({ error: 'Invalid video' });
+        return;
+      }
+      if (dataUrl.length > 15 * 1024 * 1024) {
+        if (typeof ack === 'function') ack({ error: 'Too large' });
+        return;
+      }
+      videoVal = dataUrl;
+    } else {
+      if (typeof ack === 'function') ack({ error: 'No video' });
       return;
     }
     const msg = {
       username,
-      video: dataUrl,
+      video: videoVal,
       text: typeof caption === 'string' ? caption.slice(0, 500) : '',
       time: new Date().toISOString(),
       replyToId: Number(replyToId) || null,
@@ -678,6 +757,7 @@ initDb()
       console.log(`Chat running at http://localhost:${PORT}`);
       console.log(`DB: ${process.env.TURSO_DATABASE_URL ? 'Turso (remote)' : 'local file (chat.db)'}`);
       console.log(`Push notifications: ${pushEnabled ? 'enabled' : 'disabled (set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)'}`);
+      console.log(`R2 video storage: ${r2Enabled ? `enabled (${R2_BUCKET})` : 'disabled (set R2_* env vars)'}`);
       console.log('Available users:', [...users].join(', '));
     });
   })

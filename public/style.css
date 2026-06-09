@@ -200,6 +200,8 @@ line-height: 1;
 .msg.other .tick.pending { color: #94a3b8; }
 .tick.failed { color: #fca5a5; font-size: 12px; line-height: 1; cursor: help; }
 .msg.other .tick.failed { color: #dc2626; }
+.upload-status { font-size: 11px; opacity: .75; margin-top: 4px; font-style: italic; }
+.msg.other .upload-status { color: #475569; }
 .msg.mine { align-self: flex-end; background: #2563eb; color: #fff; }
 .msg.other { align-self: flex-start; background: #fff; border: 1px solid #e5e7eb; }
 .msg.system { align-self: center; background: transparent; color: #6b7280; font-size: 12px; font-style: italic; }

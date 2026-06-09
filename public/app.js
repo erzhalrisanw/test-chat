@@ -17,7 +17,7 @@ const previewCancel = document.getElementById('preview-cancel');
 let pendingImage = null;
 let pendingVideo = null;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 12 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_DURATION_MS = 15000;
 let pendingQueue = [];
 let tempIdCounter = 0;
@@ -98,6 +98,168 @@ let loadingMore = false;
 let notifEnabled = localStorage.getItem('notifEnabled') !== '0';
 let audioCtx = null;
 let reconnectTimer = null;
+
+function canCaptureVideoStream() {
+  const v = document.createElement('video');
+  return typeof v.captureStream === 'function' || typeof v.mozCaptureStream === 'function';
+}
+
+function captureStreamFrom(videoEl) {
+  if (typeof videoEl.captureStream === 'function') return videoEl.captureStream();
+  if (typeof videoEl.mozCaptureStream === 'function') return videoEl.mozCaptureStream();
+  return null;
+}
+
+function pickRecorderMime() {
+  const candidates = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+    'video/mp4',
+  ];
+  for (const m of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m;
+  }
+  return '';
+}
+
+async function compressVideoFile(file, opts) {
+  opts = opts || {};
+  var videoBps = opts.videoBitsPerSecond || 700000;
+  var audioBps = opts.audioBitsPerSecond || 64000;
+  if (!canCaptureVideoStream() || !window.MediaRecorder) {
+    throw new Error('Browser does not support video compression');
+  }
+  var mime = pickRecorderMime();
+  if (!mime) throw new Error('No supported video codec for compression');
+
+  var url = URL.createObjectURL(file);
+  var video = document.createElement('video');
+  video.src = url;
+  video.playsInline = true;
+  video.muted = true;
+  video.preload = 'auto';
+  video.style.position = 'fixed';
+  video.style.left = '-9999px';
+  video.style.top = '0';
+  document.body.appendChild(video);
+
+  function cleanup() {
+    try { video.pause(); } catch (_) {}
+    video.removeAttribute('src');
+    try { video.load(); } catch (_) {}
+    if (video.parentNode) video.parentNode.removeChild(video);
+    URL.revokeObjectURL(url);
+  }
+
+  try {
+    await new Promise(function(resolve, reject) {
+      var to = setTimeout(function() { reject(new Error('Video load timeout')); }, 30000);
+      video.onloadedmetadata = function() { clearTimeout(to); resolve(); };
+      video.onerror = function() { clearTimeout(to); reject(new Error('Failed to load video')); };
+    });
+
+    await video.play();
+    var stream = captureStreamFrom(video);
+    if (!stream) throw new Error('captureStream returned no stream');
+
+    var recorder = new MediaRecorder(stream, {
+      mimeType: mime,
+      videoBitsPerSecond: videoBps,
+      audioBitsPerSecond: audioBps,
+    });
+    var chunks = [];
+    recorder.ondataavailable = function(e) {
+      if (e.data && e.data.size) chunks.push(e.data);
+    };
+
+    var blob = await new Promise(function(resolve, reject) {
+      var done = false;
+      recorder.onstop = function() {
+        if (done) return;
+        done = true;
+        var baseType = mime.split(';')[0];
+        resolve(new Blob(chunks, { type: baseType }));
+      };
+      recorder.onerror = function(e) {
+        if (done) return;
+        done = true;
+        reject((e && e.error) || new Error('Recording error'));
+      };
+      video.onended = function() {
+        try { recorder.stop(); } catch (_) {}
+      };
+      recorder.start(250);
+    });
+
+    return blob;
+  } finally {
+    cleanup();
+  }
+}
+
+function authHeader() {
+  var t = localStorage.getItem('token');
+  return t ? { Authorization: 'Bearer ' + t } : {};
+}
+
+async function uploadVideoToR2(blob, onProgress) {
+  var contentType = blob.type || 'video/webm';
+  if (contentType !== 'video/webm' && contentType !== 'video/mp4') {
+    var base = contentType.split(';')[0];
+    contentType = base === 'video/mp4' ? 'video/mp4' : 'video/webm';
+  }
+  var headers = Object.assign(
+    { 'Content-Type': 'application/json' },
+    authHeader()
+  );
+  var presignRes = await fetch('/r2-presign-video', {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify({ contentType: contentType, size: blob.size }),
+  });
+  if (!presignRes.ok) {
+    var errData = null;
+    try { errData = await presignRes.json(); } catch (_) {}
+    throw new Error((errData && errData.error) || 'Failed to get upload URL');
+  }
+  var data = await presignRes.json();
+  if (!data.ok || !data.uploadUrl || !data.publicUrl) {
+    throw new Error((data && data.error) || 'Presign response invalid');
+  }
+
+  await new Promise(function(resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('PUT', data.uploadUrl);
+    xhr.setRequestHeader('Content-Type', contentType);
+    if (typeof onProgress === 'function') {
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+    }
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error('Upload failed (' + xhr.status + ')'));
+    };
+    xhr.onerror = function() { reject(new Error('Upload network error')); };
+    xhr.onabort = function() { reject(new Error('Upload aborted')); };
+    xhr.send(blob);
+  });
+
+  return data.publicUrl;
+}
+
+async function prepareVideoForUpload(file, onStage) {
+  var blob = file;
+  if (blob.size > MAX_VIDEO_BYTES) {
+    if (typeof onStage === 'function') onStage('compress');
+    blob = await compressVideoFile(file, { videoBitsPerSecond: 700000 });
+    if (blob.size > MAX_VIDEO_BYTES) {
+      throw new Error('Compressed video still over 10 MB. Try a shorter clip.');
+    }
+  }
+  return blob;
+}
 
 function updateNotifBtn() {
   notifBtn.textContent = notifEnabled ? '🔔 On' : '🔕 Off';
@@ -498,8 +660,8 @@ function buildMessageNodes(msg) {
     const img = '<img class="chat-img" src="' + image + '" alt="photo" />';
     body = body ? body + img : img;
   }
-  if (msg.video && /^data:video\//.test(msg.video)) {
-    const vid = '<video class="chat-vid" src="' + msg.video + '" controls playsinline preload="metadata"></video>';
+  if (msg.video && isPlayableVideoSrc(msg.video)) {
+    const vid = '<video class="chat-vid" src="' + escapeHtml(msg.video) + '" controls playsinline preload="metadata"></video>';
     body = body ? body + vid : vid;
   }
   if (msg.audio && /^data:audio\//.test(msg.audio)) {
@@ -835,6 +997,13 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
+function isPlayableVideoSrc(src) {
+  if (typeof src !== 'string') return false;
+  return src.indexOf('data:video/') === 0
+    || src.indexOf('blob:') === 0
+    || src.indexOf('https://') === 0;
+}
+
 function linkify(text) {
   var escaped = escapeHtml(text);
   return escaped.replace(
@@ -937,13 +1106,91 @@ function queueMessage(eventName, msgData) {
   emitWithAck(data);
 }
 
+function setUploadStatus(tempId, stage, percent) {
+  var el = messagesEl.querySelector('.msg[data-temp-id="' + tempId + '"]');
+  if (!el) return;
+  var status = el.querySelector('.upload-status');
+  if (!status) {
+    status = document.createElement('div');
+    status.className = 'upload-status';
+    var tick = el.querySelector('.tick');
+    if (tick && tick.parentNode) tick.parentNode.insertBefore(status, tick);
+    else el.appendChild(status);
+  }
+  var label = '';
+  if (stage === 'compress') label = 'Compressing video...';
+  else if (stage === 'uploading') label = 'Uploading' + (percent != null ? ' ' + percent + '%' : '...');
+  else if (stage === 'sending') label = 'Sending...';
+  else label = stage;
+  status.textContent = label;
+}
+
+function clearUploadStatus(tempId) {
+  var el = messagesEl.querySelector('.msg[data-temp-id="' + tempId + '"]');
+  if (!el) return;
+  var status = el.querySelector('.upload-status');
+  if (status && status.parentNode) status.parentNode.removeChild(status);
+}
+
+async function queueVideoUpload(pv, caption, replyToId) {
+  tempIdCounter++;
+  var tempId = tempIdCounter;
+  var pendingMsg = {
+    text: caption || '',
+    replyToId: replyToId || null,
+    _pending: true,
+    _tempId: tempId,
+    id: null,
+    username: me,
+    time: new Date().toISOString(),
+    video: pv.previewUrl,
+  };
+  addMessage(pendingMsg);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  setUploadStatus(tempId, pv.blob.size > MAX_VIDEO_BYTES ? 'compress' : 'uploading');
+
+  try {
+    var uploadBlob = await prepareVideoForUpload(pv.blob, function(stage) {
+      setUploadStatus(tempId, stage);
+    });
+    setUploadStatus(tempId, 'uploading', 0);
+    var publicUrl = await uploadVideoToR2(uploadBlob, function(p) {
+      setUploadStatus(tempId, 'uploading', Math.round(p * 100));
+    });
+    setUploadStatus(tempId, 'sending');
+
+    if (!socket || !socket.connected) {
+      markPendingFailed(tempId, 'Disconnected');
+      return;
+    }
+    var payload = { url: publicUrl, clientId: tempId };
+    if (caption) payload.caption = caption;
+    if (replyToId) payload.replyToId = replyToId;
+    socket.emit('video', payload, function(ack) {
+      if (ack && ack.id) {
+        updatePendingToSent(tempId, ack.id);
+        lastIncomingId = Math.max(lastIncomingId, ack.id);
+        clearUploadStatus(tempId);
+      } else if (ack && ack.error) {
+        markPendingFailed(tempId, ack.error);
+      } else {
+        markPendingFailed(tempId, 'No response from server');
+      }
+    });
+  } catch (err) {
+    markPendingFailed(tempId, (err && err.message) || 'Upload failed');
+  }
+}
+
 chatForm.addEventListener('submit', function(e) {
   e.preventDefault();
   if (!socket) return;
   var text = msgInput.value.trim();
   var replyToId = replyTarget ? replyTarget.id : null;
   if (pendingVideo) {
-    queueMessage('video', { dataUrl: pendingVideo, caption: text, replyToId: replyToId });
+    var pv = pendingVideo;
+    pendingVideo = null;
+    queueVideoUpload(pv, text, replyToId);
     clearPreview();
     clearReply();
     msgInput.value = '';
@@ -967,23 +1214,16 @@ fileInput.addEventListener('change', function() {
   fileInput.value = '';
   if (!file) return;
   if (file.type.startsWith('video/')) {
-    if (file.size > MAX_VIDEO_BYTES) {
-      alert('Maximum size is 12 MB');
+    var ABS_MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+    if (file.size > ABS_MAX_VIDEO_BYTES) {
+      alert('Maximum video size is 200 MB');
       return;
     }
-    var reader = new FileReader();
-    reader.onload = function() {
-      pendingVideo = reader.result;
-      pendingImage = null;
-      previewImg.classList.add('hidden');
-      previewImg.src = '';
-      previewVideo.src = pendingVideo;
-      previewVideo.classList.remove('hidden');
-      preview.classList.remove('hidden');
-      msgInput.placeholder = 'Add a caption (optional)...';
-      msgInput.focus();
-    };
-    reader.readAsDataURL(file);
+    if (file.size > MAX_VIDEO_BYTES && !canCaptureVideoStream()) {
+      alert('Maximum size is 10 MB (browser cannot compress larger videos)');
+      return;
+    }
+    setPendingVideo(file);
     return;
   }
   if (!file.type.startsWith('image/')) {
@@ -997,6 +1237,9 @@ fileInput.addEventListener('change', function() {
   var reader = new FileReader();
   reader.onload = function() {
     pendingImage = reader.result;
+    if (pendingVideo && pendingVideo.previewUrl) {
+      try { URL.revokeObjectURL(pendingVideo.previewUrl); } catch (_) {}
+    }
     pendingVideo = null;
     previewImg.src = pendingImage;
     previewImg.classList.remove('hidden');
@@ -1012,8 +1255,26 @@ fileInput.addEventListener('change', function() {
 
 previewCancel.addEventListener('click', clearPreview);
 
+function setPendingVideo(blob) {
+  if (pendingVideo && pendingVideo.previewUrl) {
+    try { URL.revokeObjectURL(pendingVideo.previewUrl); } catch (_) {}
+  }
+  var previewUrl = URL.createObjectURL(blob);
+  pendingVideo = { blob: blob, previewUrl: previewUrl };
+  pendingImage = null;
+  previewImg.classList.add('hidden');
+  previewImg.src = '';
+  previewVideo.src = previewUrl;
+  previewVideo.classList.remove('hidden');
+  preview.classList.remove('hidden');
+  msgInput.placeholder = 'Add a caption (optional)...';
+}
+
 function clearPreview() {
   pendingImage = null;
+  if (pendingVideo && pendingVideo.previewUrl) {
+    try { URL.revokeObjectURL(pendingVideo.previewUrl); } catch (_) {}
+  }
   pendingVideo = null;
   previewImg.src = '';
   previewImg.classList.remove('hidden');
@@ -1158,8 +1419,8 @@ async function startRecording() {
   var mime = pickVideoMime();
   try {
     mediaRecorder = mime
-      ? new MediaRecorder(camStream, { mimeType: mime, videoBitsPerSecond: 800000 })
-      : new MediaRecorder(camStream, { videoBitsPerSecond: 800000 });
+      ? new MediaRecorder(camStream, { mimeType: mime, videoBitsPerSecond: 600000 })
+      : new MediaRecorder(camStream, { videoBitsPerSecond: 600000 });
   } catch (err) {
     camError.textContent = 'Cannot record: ' + (err.message || err.name);
     return;
@@ -1200,20 +1461,12 @@ async function onRecordingStop() {
   var blob = new Blob(recordChunks, { type: baseType });
   recordChunks = [];
   if (!blob.size) return;
-  if (blob.size > MAX_VIDEO_BYTES) {
+  if (blob.size > MAX_VIDEO_BYTES && !canCaptureVideoStream()) {
     camError.textContent = 'Video too large; try a shorter clip.';
     return;
   }
   try {
-    var dataUrl = await blobToDataUrl(blob);
-    pendingVideo = dataUrl;
-    pendingImage = null;
-    previewImg.classList.add('hidden');
-    previewImg.src = '';
-    previewVideo.src = dataUrl;
-    previewVideo.classList.remove('hidden');
-    preview.classList.remove('hidden');
-    msgInput.placeholder = 'Add a caption (optional)...';
+    setPendingVideo(blob);
     closeCamera();
     msgInput.focus();
   } catch (err) {
