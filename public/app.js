@@ -735,7 +735,7 @@ function buildMessageNodes(msg) {
     body = body ? body + img : img;
   }
   if (msg.video && isPlayableVideoSrc(msg.video)) {
-    const vid = '<video class="chat-vid" src="' + escapeHtml(msg.video) + '" controls playsinline preload="metadata"></video>';
+    const vid = '<video class="chat-vid" src="' + escapeHtml(msg.video) + '" controls controlslist="nodownload noplaybackrate" playsinline preload="metadata" oncontextmenu="return false"></video>';
     body = body ? body + vid : vid;
   }
   if (msg.audio && /^data:audio\//.test(msg.audio)) {
@@ -1024,6 +1024,8 @@ function renderViewerItem() {
     node.controls = true;
     node.playsInline = true;
     node.preload = 'metadata';
+    node.setAttribute('controlslist', 'nodownload noplaybackrate');
+    node.addEventListener('contextmenu', (e) => e.preventDefault());
   } else {
     node = document.createElement('img');
     node.src = item.src;
