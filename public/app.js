@@ -126,6 +126,7 @@ async function compressVideoFile(file, opts) {
   opts = opts || {};
   var videoBps = opts.videoBitsPerSecond || 700000;
   var audioBps = opts.audioBitsPerSecond || 64000;
+  var maxDim = opts.maxDimension || 720;
   if (!canCaptureVideoStream() || !window.MediaRecorder) {
     throw new Error('Browser does not support video compression');
   }
@@ -143,7 +144,23 @@ async function compressVideoFile(file, opts) {
   video.style.top = '0';
   document.body.appendChild(video);
 
+  var canvas = document.createElement('canvas');
+  var ctx = canvas.getContext('2d');
+  var rafId = null;
+  var rvfcId = null;
+  var renderRunning = false;
+
+  function stopRender() {
+    renderRunning = false;
+    if (rafId) { try { cancelAnimationFrame(rafId); } catch (_) {} rafId = null; }
+    if (rvfcId && typeof video.cancelVideoFrameCallback === 'function') {
+      try { video.cancelVideoFrameCallback(rvfcId); } catch (_) {}
+      rvfcId = null;
+    }
+  }
+
   function cleanup() {
+    stopRender();
     try { video.pause(); } catch (_) {}
     video.removeAttribute('src');
     try { video.load(); } catch (_) {}
@@ -158,11 +175,49 @@ async function compressVideoFile(file, opts) {
       video.onerror = function() { clearTimeout(to); reject(new Error('Failed to load video')); };
     });
 
-    await video.play();
-    var stream = captureStreamFrom(video);
-    if (!stream) throw new Error('captureStream returned no stream');
+    var srcW = video.videoWidth || 1280;
+    var srcH = video.videoHeight || 720;
+    var scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+    var w = Math.max(2, Math.round(srcW * scale));
+    var h = Math.max(2, Math.round(srcH * scale));
+    if (w % 2) w--;
+    if (h % 2) h--;
+    canvas.width = w;
+    canvas.height = h;
 
-    var recorder = new MediaRecorder(stream, {
+    await video.play();
+
+    var canvasStream = canvas.captureStream(30);
+    if (!canvasStream) throw new Error('canvas.captureStream not supported');
+    try {
+      var srcStream = captureStreamFrom(video);
+      if (srcStream) {
+        var audioTracks = srcStream.getAudioTracks();
+        for (var i = 0; i < audioTracks.length; i++) {
+          canvasStream.addTrack(audioTracks[i]);
+        }
+      }
+    } catch (_) {}
+
+    renderRunning = true;
+    var useRvfc = typeof video.requestVideoFrameCallback === 'function';
+    function drawRvfc() {
+      if (!renderRunning) return;
+      try { ctx.drawImage(video, 0, 0, w, h); } catch (_) {}
+      try { rvfcId = video.requestVideoFrameCallback(drawRvfc); } catch (_) {}
+    }
+    function drawRaf() {
+      if (!renderRunning) return;
+      try { ctx.drawImage(video, 0, 0, w, h); } catch (_) {}
+      rafId = requestAnimationFrame(drawRaf);
+    }
+    if (useRvfc) {
+      try { rvfcId = video.requestVideoFrameCallback(drawRvfc); } catch (_) { drawRaf(); }
+    } else {
+      drawRaf();
+    }
+
+    var recorder = new MediaRecorder(canvasStream, {
       mimeType: mime,
       videoBitsPerSecond: videoBps,
       audioBitsPerSecond: audioBps,
@@ -186,6 +241,7 @@ async function compressVideoFile(file, opts) {
         reject((e && e.error) || new Error('Recording error'));
       };
       video.onended = function() {
+        stopRender();
         try { recorder.stop(); } catch (_) {}
       };
       recorder.start(250);
@@ -252,9 +308,13 @@ async function uploadVideoToR2(blob, onProgress) {
 async function prepareVideoForUpload(file, onStage) {
   if (file.size <= MAX_VIDEO_BYTES) return file;
   if (!canCaptureVideoStream()) return file;
-  if (typeof onStage === 'function') onStage('compress');
+  if (typeof onStage === 'function') onStage('compress', file.size);
   try {
-    var compressed = await compressVideoFile(file, { videoBitsPerSecond: 700000 });
+    var isLarge = file.size > 50 * 1024 * 1024;
+    var compressed = await compressVideoFile(file, {
+      videoBitsPerSecond: isLarge ? 600000 : 700000,
+      maxDimension: isLarge ? 480 : 720,
+    });
     if (compressed.size >= file.size) return file;
     return compressed;
   } catch (err) {
@@ -1175,8 +1235,11 @@ function setUploadStatus(tempId, stage, percent, totalBytes) {
     else el.appendChild(status);
   }
   var label = '';
-  if (stage === 'compress') label = 'Compressing video... (may take a while)';
-  else if (stage === 'uploading') {
+  if (stage === 'compress') {
+    label = 'Compressing video';
+    if (totalBytes != null) label += ' ' + formatMB(totalBytes);
+    label += '... please wait';
+  } else if (stage === 'uploading') {
     label = 'Uploading';
     if (percent != null) label += ' ' + percent + '%';
     if (totalBytes != null) label += ' of ' + formatMB(totalBytes);
@@ -1211,8 +1274,8 @@ async function queueVideoUpload(pv, caption, replyToId) {
   setUploadStatus(tempId, willCompress ? 'compress' : 'uploading', null, pv.blob.size);
 
   try {
-    var uploadBlob = await prepareVideoForUpload(pv.blob, function(stage) {
-      setUploadStatus(tempId, stage);
+    var uploadBlob = await prepareVideoForUpload(pv.blob, function(stage, size) {
+      setUploadStatus(tempId, stage, null, size != null ? size : pv.blob.size);
     });
     setUploadStatus(tempId, 'uploading', 0, uploadBlob.size);
     var publicUrl = await uploadVideoToR2(uploadBlob, function(p) {
