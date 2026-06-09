@@ -129,8 +129,8 @@ const r2Client = r2Enabled
     })
   : null;
 
-const VIDEO_MAX_BYTES = 10 * 1024 * 1024;
-const ALLOWED_VIDEO_MIME = new Set(['video/webm', 'video/mp4']);
+const VIDEO_MAX_BYTES = 500 * 1024 * 1024;
+const ALLOWED_VIDEO_MIME = new Set(['video/webm', 'video/mp4', 'video/quicktime']);
 const R2_PUBLIC_VIDEO_PREFIX = r2Enabled ? `${R2_PUBLIC_URL}/videos/` : '';
 
 async function saveSubscription(username, sub) {
@@ -410,7 +410,9 @@ app.post('/r2-presign-video', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Invalid size' });
   }
   try {
-    const ext = contentType === 'video/mp4' ? 'mp4' : 'webm';
+    var ext = 'webm';
+    if (contentType === 'video/mp4') ext = 'mp4';
+    else if (contentType === 'video/quicktime') ext = 'mov';
     const date = new Date().toISOString().slice(0, 10);
     const rand = crypto.randomBytes(16).toString('hex');
     const key = `videos/${date}/${rand}.${ext}`;
@@ -420,7 +422,7 @@ app.post('/r2-presign-video', async (req, res) => {
       ContentType: contentType,
       ContentLength: sz,
     });
-    const uploadUrl = await getSignedUrl(r2Client, cmd, { expiresIn: 300 });
+    const uploadUrl = await getSignedUrl(r2Client, cmd, { expiresIn: 1800 });
     const publicUrl = `${R2_PUBLIC_URL}/${key}`;
     res.json({ ok: true, uploadUrl, publicUrl, key, contentType });
   } catch (err) {

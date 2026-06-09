@@ -97,7 +97,6 @@ let hasMoreHistory = false;
 let loadingMore = false;
 let notifEnabled = localStorage.getItem('notifEnabled') !== '0';
 let audioCtx = null;
-let reconnectTimer = null;
 
 function canCaptureVideoStream() {
   const v = document.createElement('video');
@@ -204,11 +203,12 @@ function authHeader() {
 }
 
 async function uploadVideoToR2(blob, onProgress) {
-  var contentType = blob.type || 'video/webm';
-  if (contentType !== 'video/webm' && contentType !== 'video/mp4') {
-    var base = contentType.split(';')[0];
-    contentType = base === 'video/mp4' ? 'video/mp4' : 'video/webm';
-  }
+  var rawType = blob.type || 'video/webm';
+  var base = rawType.split(';')[0].trim().toLowerCase();
+  var contentType;
+  if (base === 'video/mp4') contentType = 'video/mp4';
+  else if (base === 'video/quicktime' || base === 'video/mov') contentType = 'video/quicktime';
+  else contentType = 'video/webm';
   var headers = Object.assign(
     { 'Content-Type': 'application/json' },
     authHeader()
@@ -250,15 +250,17 @@ async function uploadVideoToR2(blob, onProgress) {
 }
 
 async function prepareVideoForUpload(file, onStage) {
-  var blob = file;
-  if (blob.size > MAX_VIDEO_BYTES) {
-    if (typeof onStage === 'function') onStage('compress');
-    blob = await compressVideoFile(file, { videoBitsPerSecond: 700000 });
-    if (blob.size > MAX_VIDEO_BYTES) {
-      throw new Error('Compressed video still over 10 MB. Try a shorter clip.');
-    }
+  if (file.size <= MAX_VIDEO_BYTES) return file;
+  if (!canCaptureVideoStream()) return file;
+  if (typeof onStage === 'function') onStage('compress');
+  try {
+    var compressed = await compressVideoFile(file, { videoBitsPerSecond: 700000 });
+    if (compressed.size >= file.size) return file;
+    return compressed;
+  } catch (err) {
+    console.warn('Compression failed, uploading raw:', err && err.message);
+    return file;
   }
-  return blob;
 }
 
 function updateNotifBtn() {
@@ -521,7 +523,14 @@ function startChat(token, username) {
     }
   }
 
-  socket = io({ auth: { token } });
+  socket = io({
+    auth: { token },
+    timeout: 30000,
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+  });
 
   socket.on('history', (payload) => {
     const list = Array.isArray(payload) ? payload : (payload && payload.messages) || [];
@@ -594,21 +603,18 @@ function startChat(token, username) {
       loginError.textContent = 'Session expired, please log in again';
       return;
     }
-    addSystem(`Connection failed: ${err.message}`);
+    showConnState('reconnecting');
   });
 
-  socket.on('disconnect', () => {
-    // Try reconnect with pending resend
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => {
-      if (!socket || !socket.connected) {
-        socket.connect();
-      }
-    }, 3000);
+  socket.on('disconnect', (reason) => {
+    if (reason === 'io server disconnect') {
+      socket.connect();
+    }
+    showConnState('reconnecting');
   });
 
   socket.on('connect', () => {
-    // Resend pending messages on reconnect
+    clearConnState();
     if (pendingQueue.length > 0) {
       const toResend = pendingQueue.slice();
       pendingQueue = [];
@@ -616,6 +622,14 @@ function startChat(token, username) {
         emitWithAck(item);
       });
     }
+  });
+
+  socket.io.on('reconnect_attempt', () => {
+    showConnState('reconnecting');
+  });
+
+  socket.io.on('reconnect', () => {
+    clearConnState();
   });
 }
 
@@ -814,6 +828,43 @@ function updateReceipts() {
 
 document.addEventListener('visibilitychange', maybeMarkRead);
 window.addEventListener('focus', maybeMarkRead);
+
+function forceReconnectIfNeeded() {
+  if (!socket) return;
+  if (socket.connected) return;
+  showConnState('reconnecting');
+  try {
+    if (socket.io && typeof socket.io.engine !== 'undefined') {
+      try { socket.disconnect(); } catch (_) {}
+    }
+    socket.connect();
+  } catch (_) {}
+}
+
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') forceReconnectIfNeeded();
+});
+window.addEventListener('focus', forceReconnectIfNeeded);
+window.addEventListener('online', forceReconnectIfNeeded);
+
+let connStateEl = null;
+function showConnState(state) {
+  if (!connStateEl) {
+    connStateEl = document.createElement('div');
+    connStateEl.id = 'conn-state';
+    connStateEl.className = 'conn-state';
+    document.body.appendChild(connStateEl);
+  }
+  if (state === 'reconnecting') {
+    connStateEl.textContent = 'Reconnecting…';
+    connStateEl.classList.remove('hidden');
+  } else {
+    connStateEl.classList.add('hidden');
+  }
+}
+function clearConnState() {
+  if (connStateEl) connStateEl.classList.add('hidden');
+}
 
 function loadMoreHistory() {
   if (!socket || loadingMore || !hasMoreHistory || !oldestLoadedId) return Promise.resolve();
@@ -1106,7 +1157,13 @@ function queueMessage(eventName, msgData) {
   emitWithAck(data);
 }
 
-function setUploadStatus(tempId, stage, percent) {
+function formatMB(bytes) {
+  if (!Number.isFinite(bytes)) return '';
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  return Math.round(bytes / 1024) + ' KB';
+}
+
+function setUploadStatus(tempId, stage, percent, totalBytes) {
   var el = messagesEl.querySelector('.msg[data-temp-id="' + tempId + '"]');
   if (!el) return;
   var status = el.querySelector('.upload-status');
@@ -1118,9 +1175,12 @@ function setUploadStatus(tempId, stage, percent) {
     else el.appendChild(status);
   }
   var label = '';
-  if (stage === 'compress') label = 'Compressing video...';
-  else if (stage === 'uploading') label = 'Uploading' + (percent != null ? ' ' + percent + '%' : '...');
-  else if (stage === 'sending') label = 'Sending...';
+  if (stage === 'compress') label = 'Compressing video... (may take a while)';
+  else if (stage === 'uploading') {
+    label = 'Uploading';
+    if (percent != null) label += ' ' + percent + '%';
+    if (totalBytes != null) label += ' of ' + formatMB(totalBytes);
+  } else if (stage === 'sending') label = 'Sending...';
   else label = stage;
   status.textContent = label;
 }
@@ -1147,15 +1207,16 @@ async function queueVideoUpload(pv, caption, replyToId) {
   };
   addMessage(pendingMsg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
-  setUploadStatus(tempId, pv.blob.size > MAX_VIDEO_BYTES ? 'compress' : 'uploading');
+  var willCompress = pv.blob.size > MAX_VIDEO_BYTES && canCaptureVideoStream();
+  setUploadStatus(tempId, willCompress ? 'compress' : 'uploading', null, pv.blob.size);
 
   try {
     var uploadBlob = await prepareVideoForUpload(pv.blob, function(stage) {
       setUploadStatus(tempId, stage);
     });
-    setUploadStatus(tempId, 'uploading', 0);
+    setUploadStatus(tempId, 'uploading', 0, uploadBlob.size);
     var publicUrl = await uploadVideoToR2(uploadBlob, function(p) {
-      setUploadStatus(tempId, 'uploading', Math.round(p * 100));
+      setUploadStatus(tempId, 'uploading', Math.round(p * 100), uploadBlob.size);
     });
     setUploadStatus(tempId, 'sending');
 
@@ -1214,13 +1275,9 @@ fileInput.addEventListener('change', function() {
   fileInput.value = '';
   if (!file) return;
   if (file.type.startsWith('video/')) {
-    var ABS_MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+    var ABS_MAX_VIDEO_BYTES = 500 * 1024 * 1024;
     if (file.size > ABS_MAX_VIDEO_BYTES) {
-      alert('Maximum video size is 200 MB');
-      return;
-    }
-    if (file.size > MAX_VIDEO_BYTES && !canCaptureVideoStream()) {
-      alert('Maximum size is 10 MB (browser cannot compress larger videos)');
+      alert('Maximum video size is 500 MB');
       return;
     }
     setPendingVideo(file);
