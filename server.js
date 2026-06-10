@@ -178,6 +178,14 @@ async function sendPushToOfflineUsers(sender, payload) {
   }));
 }
 
+function applyUserTextTransforms(username, text) {
+  if (typeof text !== 'string' || !text) return text;
+  if (username === 'occupatus') {
+    return text.replace(/\bayang(?!nya\b)/gi, (m) => (m[0] === 'A' ? 'Sayang' : 'sayang'));
+  }
+  return text;
+}
+
 async function saveMessage(msg) {
   const result = await db.execute({
     sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -559,7 +567,7 @@ io.on('connection', async (socket) => {
     }
     const msg = {
       username,
-      text: text.slice(0, 1000),
+      text: applyUserTextTransforms(username, text.slice(0, 1000)),
       time: new Date().toISOString(),
       replyToId,
     };
@@ -599,7 +607,7 @@ io.on('connection', async (socket) => {
     const msg = {
       username,
       image: dataUrl,
-      text: typeof caption === 'string' ? caption.slice(0, 500) : '',
+      text: applyUserTextTransforms(username, typeof caption === 'string' ? caption.slice(0, 500) : ''),
       time: new Date().toISOString(),
       replyToId: Number(replyToId) || null,
     };
@@ -656,7 +664,7 @@ io.on('connection', async (socket) => {
     const msg = {
       username,
       video: videoVal,
-      text: typeof caption === 'string' ? caption.slice(0, 500) : '',
+      text: applyUserTextTransforms(username, typeof caption === 'string' ? caption.slice(0, 500) : ''),
       time: new Date().toISOString(),
       replyToId: Number(replyToId) || null,
     };
