@@ -635,6 +635,10 @@ function startChat(token, username) {
     if (m.username === me && m.id && m.clientId != null) {
       var pendingEl = messagesEl.querySelector('.msg[data-temp-id="' + m.clientId + '"]');
       if (pendingEl) {
+        if (typeof m.text === 'string') {
+          var textEl = pendingEl.querySelector('.msg-text');
+          if (textEl) textEl.innerHTML = linkify(m.text);
+        }
         updatePendingToSent(m.clientId, m.id);
         lastIncomingId = Math.max(lastIncomingId, m.id);
         return;
@@ -729,7 +733,7 @@ function buildMessageNodes(msg) {
       '</div>' +
       '</div>';
   }
-  let body = text ? linkify(text) : '';
+  let body = text ? '<span class="msg-text">' + linkify(text) + '</span>' : '';
   if (image && /^data:image\//.test(image)) {
     const img = '<img class="chat-img" src="' + image + '" alt="photo" />';
     body = body ? body + img : img;
