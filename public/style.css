@@ -28,6 +28,35 @@ justify-content: center;
 }
 .hidden { display: none !important; }
 
+#panic-btn {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  background: #ff3b3b;
+  border: 3px solid var(--toon-ink);
+  color: #fff;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 26px;
+  line-height: 1;
+  box-shadow: 0 4px 0 0 var(--toon-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: transform .08s, box-shadow .08s, filter .08s;
+}
+#panic-btn:hover { filter: brightness(1.05); }
+#panic-btn:active {
+  transform: translateX(-50%) translateY(4px);
+  box-shadow: 0 0 0 0 var(--toon-ink);
+}
+
 .card {
 background: var(--toon-cream);
 padding: 28px 26px 30px;

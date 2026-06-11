@@ -8,6 +8,7 @@ const msgInput = document.getElementById('msg');
 const meEl = document.getElementById('me');
 const logoutBtn = document.getElementById('logout');
 const notifBtn = document.getElementById('notif-toggle');
+const panicBtn = document.getElementById('panic-btn');
 const fileInput = document.getElementById('file-input');
 const preview = document.getElementById('preview');
 const previewImg = document.getElementById('preview-img');
@@ -95,7 +96,7 @@ let lastReadByOthers = 0;
 let oldestLoadedId = null;
 let hasMoreHistory = false;
 let loadingMore = false;
-let notifEnabled = localStorage.getItem('notifEnabled') !== '0';
+let notifEnabled = localStorage.getItem('notifEnabled') === '1';
 let audioCtx = null;
 
 function canCaptureVideoStream() {
@@ -570,6 +571,8 @@ function startChat(token, username) {
   meEl.textContent = `— ${username}`;
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
+  if (GALLERY_ALLOWED.has(me)) panicBtn.classList.remove('hidden');
+  else panicBtn.classList.add('hidden');
   maybePlaySunrise();
   messagesEl.innerHTML = '';
   updateNotifBtn();
@@ -663,6 +666,7 @@ function startChat(token, username) {
       localStorage.removeItem('username');
       socket.disconnect();
       chatView.classList.add('hidden');
+      panicBtn.classList.add('hidden');
       loginView.classList.remove('hidden');
       loginError.textContent = 'Session expired, please log in again';
       return;
@@ -1875,7 +1879,20 @@ logoutBtn.addEventListener('click', function() {
   localStorage.removeItem('token');
   localStorage.removeItem('username');
   chatView.classList.add('hidden');
+  panicBtn.classList.add('hidden');
   loginView.classList.remove('hidden');
+});
+
+panicBtn.addEventListener('click', function() {
+  try { if (socket) socket.disconnect(); } catch (_) {}
+  try { localStorage.clear(); } catch (_) {}
+  try { sessionStorage.clear(); } catch (_) {}
+  try { window.close(); } catch (_) {}
+  try {
+    location.replace('https://www.google.com');
+  } catch (_) {
+    location.href = 'https://www.google.com';
+  }
 });
 
 var savedToken = localStorage.getItem('token');
