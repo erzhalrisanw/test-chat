@@ -1143,6 +1143,7 @@ function showPendingLocally(msgData) {
   var pendingMsg = {
     text: msgData.text || msgData.caption || '',
     replyToId: msgData.replyToId,
+    replyTo: msgData.replyTo || null,
     _pending: true,
     _tempId: tempId,
     id: null,
@@ -1224,6 +1225,7 @@ function queueMessage(eventName, msgData) {
   if (msgData.text) data.text = msgData.text;
   if (msgData.caption) data.caption = msgData.caption;
   if (msgData.replyToId) data.replyToId = msgData.replyToId;
+  if (msgData.replyTo) data.replyTo = msgData.replyTo;
   data._tempId = null;
   data._pending = true;
   data._type = eventName;
@@ -1270,12 +1272,13 @@ function clearUploadStatus(tempId) {
   if (status && status.parentNode) status.parentNode.removeChild(status);
 }
 
-async function queueVideoUpload(pv, caption, replyToId) {
+async function queueVideoUpload(pv, caption, replyToId, replyTo) {
   tempIdCounter++;
   var tempId = tempIdCounter;
   var pendingMsg = {
     text: caption || '',
     replyToId: replyToId || null,
+    replyTo: replyTo || null,
     _pending: true,
     _tempId: tempId,
     id: null,
@@ -1326,24 +1329,25 @@ chatForm.addEventListener('submit', function(e) {
   if (!socket) return;
   var text = msgInput.value.trim();
   var replyToId = replyTarget ? replyTarget.id : null;
+  var replyToSnap = replyTarget ? Object.assign({}, replyTarget) : null;
   if (pendingVideo) {
     var pv = pendingVideo;
     pendingVideo = null;
-    queueVideoUpload(pv, text, replyToId);
+    queueVideoUpload(pv, text, replyToId, replyToSnap);
     clearPreview();
     clearReply();
     msgInput.value = '';
     return;
   }
   if (pendingImage) {
-    queueMessage('image', { dataUrl: pendingImage, caption: text, replyToId: replyToId });
+    queueMessage('image', { dataUrl: pendingImage, caption: text, replyToId: replyToId, replyTo: replyToSnap });
     clearPreview();
     clearReply();
     msgInput.value = '';
     return;
   }
   if (!text) return;
-  queueMessage('message', { text: text, replyToId: replyToId });
+  queueMessage('message', { text: text, replyToId: replyToId, replyTo: replyToSnap });
   msgInput.value = '';
   clearReply();
 });
@@ -1860,7 +1864,8 @@ async function onVoiceRecordingStop() {
   try {
     var dataUrl = await blobToDataUrl(blob);
     var replyToId = replyTarget ? replyTarget.id : null;
-    queueMessage('audio', { dataUrl: dataUrl, replyToId: replyToId });
+    var replyToSnap = replyTarget ? Object.assign({}, replyTarget) : null;
+    queueMessage('audio', { dataUrl: dataUrl, replyToId: replyToId, replyTo: replyToSnap });
     clearReply();
   } catch (err) {
     alert('Failed to process voice note: ' + (err.message || err));
