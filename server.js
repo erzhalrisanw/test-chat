@@ -68,6 +68,12 @@ async function initDb() {
       password_hash TEXT NOT NULL
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS presence (
+      username TEXT PRIMARY KEY,
+      last_seen TEXT NOT NULL
+    )
+  `);
 }
 
 async function loadAllReadState() {
@@ -75,6 +81,21 @@ async function loadAllReadState() {
   for (const row of result.rows) {
     lastRead.set(String(row.username), Number(row.last_read_id));
   }
+}
+
+async function loadAllPresence() {
+  const result = await db.execute('SELECT username, last_seen FROM presence');
+  for (const row of result.rows) {
+    lastSeen.set(String(row.username), String(row.last_seen));
+  }
+}
+
+async function persistLastSeen(username, iso) {
+  await db.execute({
+    sql: `INSERT INTO presence (username, last_seen) VALUES (?, ?)
+          ON CONFLICT(username) DO UPDATE SET last_seen = excluded.last_seen`,
+    args: [username, iso],
+  });
 }
 
 async function persistReadState(username, id) {
@@ -537,11 +558,29 @@ io.use((socket, next) => {
 });
 
 const onlineUsers = new Set();
+const socketCounts = new Map();
 const lastRead = new Map();
+const lastSeen = new Map();
+
+function presenceSnapshot() {
+  const snap = {};
+  for (const u of users) {
+    snap[u] = {
+      online: onlineUsers.has(u),
+      lastSeen: lastSeen.get(u) || null,
+    };
+  }
+  return snap;
+}
 
 io.on('connection', async (socket) => {
   const username = socket.data.username;
-  onlineUsers.add(username);
+  const prev = socketCounts.get(username) || 0;
+  socketCounts.set(username, prev + 1);
+  const wasOffline = prev === 0;
+  if (wasOffline) {
+    onlineUsers.add(username);
+  }
 
   try {
     const list = await getHistory(50);
@@ -551,6 +590,10 @@ io.on('connection', async (socket) => {
     socket.emit('history', { messages: [], hasMore: false });
   }
   socket.emit('readState', Object.fromEntries(lastRead));
+  socket.emit('presence:init', presenceSnapshot());
+  if (wasOffline) {
+    socket.broadcast.emit('presence:update', { username, online: true, lastSeen: lastSeen.get(username) || null });
+  }
 
   socket.on('message', async (payload, ack) => {
     let text, replyToId, clientId;
@@ -751,8 +794,24 @@ io.on('connection', async (socket) => {
     io.emit('read', { username, lastReadId: id });
   });
 
+  socket.on('typing', (payload) => {
+    const typing = !!(payload && payload.typing);
+    socket.broadcast.emit('typing', { username, typing });
+  });
+
   socket.on('disconnect', () => {
+    socket.broadcast.emit('typing', { username, typing: false });
+    const count = (socketCounts.get(username) || 1) - 1;
+    if (count > 0) {
+      socketCounts.set(username, count);
+      return;
+    }
+    socketCounts.delete(username);
     onlineUsers.delete(username);
+    const iso = new Date().toISOString();
+    lastSeen.set(username, iso);
+    persistLastSeen(username, iso).catch((e) => console.error('persist last seen:', e.message));
+    io.emit('presence:update', { username, online: false, lastSeen: iso });
   });
 });
 
@@ -762,6 +821,7 @@ initDb()
   .then(() => loadPasswordCache())
   .then(() => seedPasswords())
   .then(() => loadAllReadState())
+  .then(() => loadAllPresence())
   .then(() => {
     server.listen(PORT, () => {
       console.log(`Chat running at http://localhost:${PORT}`);

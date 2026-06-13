@@ -35,6 +35,83 @@ const galleryGrid = document.getElementById('gallery-grid');
 const galleryClose = document.getElementById('gallery-close');
 const galleryEmpty = document.getElementById('gallery-empty');
 const GALLERY_ALLOWED = new Set(['occupatus', 'london']);
+const PRESENCE_PARTNERS = { occupatus: 'london', london: 'occupatus' };
+const presenceEl = document.getElementById('presence-status');
+const typingIndicatorEl = document.getElementById('typing-indicator');
+const typingNameEl = typingIndicatorEl.querySelector('.typing-name');
+const presenceState = {};
+const typingState = {};
+const typingExpireTimers = {};
+let presenceTimerId = null;
+let typingSending = false;
+let typingStopTimerId = null;
+const TYPING_IDLE_MS = 3000;
+const TYPING_EXPIRE_MS = 6000;
+
+function sendTypingStart() {
+  if (!socket) return;
+  if (!typingSending) {
+    typingSending = true;
+    socket.emit('typing', { typing: true });
+  }
+  if (typingStopTimerId) clearTimeout(typingStopTimerId);
+  typingStopTimerId = setTimeout(() => sendTypingStop(), TYPING_IDLE_MS);
+}
+
+function sendTypingStop() {
+  if (typingStopTimerId) { clearTimeout(typingStopTimerId); typingStopTimerId = null; }
+  if (!typingSending) return;
+  typingSending = false;
+  if (socket) socket.emit('typing', { typing: false });
+}
+
+function formatLastSeen(iso) {
+  if (!iso) return 'belum pernah online';
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return 'belum pernah online';
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 45) return 'baru saja';
+  if (diffSec < 3600) return Math.max(1, Math.floor(diffSec / 60)) + ' menit lalu';
+  if (diffSec < 86400) return Math.floor(diffSec / 3600) + ' jam lalu';
+  if (diffSec < 7 * 86400) return Math.floor(diffSec / 86400) + ' hari lalu';
+  const d = new Date(iso);
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+}
+
+function renderPresence() {
+  const partner = PRESENCE_PARTNERS[me];
+  if (!partner) {
+    presenceEl.classList.add('hidden');
+    return;
+  }
+  const info = presenceState[partner] || {};
+  presenceEl.classList.remove('hidden');
+  if (info.online) {
+    presenceEl.classList.add('online');
+    presenceEl.textContent = partner + ' • Online';
+  } else {
+    presenceEl.classList.remove('online');
+    presenceEl.textContent = partner + ' • ' + formatLastSeen(info.lastSeen);
+  }
+}
+
+function renderTyping() {
+  const names = Object.keys(typingState).filter((u) => u !== me);
+  if (!names.length) {
+    typingIndicatorEl.classList.add('hidden');
+    typingNameEl.textContent = '';
+    return;
+  }
+  typingNameEl.textContent = names.length === 1 ? names[0] : names.join(', ');
+  typingIndicatorEl.classList.remove('hidden');
+}
+
+function startPresenceTimer() {
+  if (presenceTimerId) return;
+  presenceTimerId = setInterval(() => {
+    if (PRESENCE_PARTNERS[me]) renderPresence();
+  }, 30000);
+}
 
 const attachMenuBtn = document.getElementById('attach-menu-btn');
 const attachMenu = document.getElementById('attach-menu');
@@ -577,6 +654,8 @@ function startChat(token, username) {
   messagesEl.innerHTML = '';
   updateNotifBtn();
   updateGalleryBtn();
+  renderPresence();
+  startPresenceTimer();
   loadNotifEnabled();
   if (notifEnabled && 'Notification' in window) {
     if (Notification.permission === 'default') {
@@ -610,6 +689,54 @@ function startChat(token, username) {
       if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
     });
     maybeMarkRead();
+  });
+
+  socket.on('presence:init', (snap) => {
+    if (!snap || typeof snap !== 'object') return;
+    Object.keys(presenceState).forEach((k) => delete presenceState[k]);
+    Object.entries(snap).forEach(([u, info]) => {
+      presenceState[u] = {
+        online: !!(info && info.online),
+        lastSeen: info && info.lastSeen ? info.lastSeen : null,
+      };
+    });
+    renderPresence();
+  });
+
+  socket.on('typing', ({ username, typing }) => {
+    if (!username || username === me) return;
+    if (typingExpireTimers[username]) {
+      clearTimeout(typingExpireTimers[username]);
+      delete typingExpireTimers[username];
+    }
+    if (typing) {
+      typingState[username] = true;
+      typingExpireTimers[username] = setTimeout(() => {
+        delete typingState[username];
+        delete typingExpireTimers[username];
+        renderTyping();
+      }, TYPING_EXPIRE_MS);
+    } else {
+      delete typingState[username];
+    }
+    renderTyping();
+  });
+
+  socket.on('presence:update', ({ username, online, lastSeen }) => {
+    if (!username) return;
+    presenceState[username] = {
+      online: !!online,
+      lastSeen: lastSeen || (presenceState[username] && presenceState[username].lastSeen) || null,
+    };
+    if (!online) {
+      delete typingState[username];
+      if (typingExpireTimers[username]) {
+        clearTimeout(typingExpireTimers[username]);
+        delete typingExpireTimers[username];
+      }
+      renderTyping();
+    }
+    renderPresence();
   });
 
   socket.on('readState', (state) => {
@@ -1324,9 +1451,19 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
   }
 }
 
+msgInput.addEventListener('input', function() {
+  if (msgInput.value.length === 0) {
+    sendTypingStop();
+  } else {
+    sendTypingStart();
+  }
+});
+msgInput.addEventListener('blur', function() { sendTypingStop(); });
+
 chatForm.addEventListener('submit', function(e) {
   e.preventDefault();
   if (!socket) return;
+  sendTypingStop();
   var text = msgInput.value.trim();
   var replyToId = replyTarget ? replyTarget.id : null;
   var replyToSnap = replyTarget ? Object.assign({}, replyTarget) : null;
@@ -1886,6 +2023,15 @@ logoutBtn.addEventListener('click', function() {
   chatView.classList.add('hidden');
   panicBtn.classList.add('hidden');
   loginView.classList.remove('hidden');
+  if (presenceTimerId) { clearInterval(presenceTimerId); presenceTimerId = null; }
+  sendTypingStop();
+  Object.keys(typingExpireTimers).forEach((k) => { clearTimeout(typingExpireTimers[k]); delete typingExpireTimers[k]; });
+  Object.keys(typingState).forEach((k) => delete typingState[k]);
+  presenceEl.classList.add('hidden');
+  presenceEl.classList.remove('online');
+  presenceEl.textContent = '';
+  typingIndicatorEl.classList.add('hidden');
+  typingNameEl.textContent = '';
 });
 
 panicBtn.addEventListener('click', function() {

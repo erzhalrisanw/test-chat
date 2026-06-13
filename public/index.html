@@ -41,9 +41,12 @@
 
   <div id="chat-view" class="hidden">
     <header>
-      <div>
-        <strong>AJjpxFsIsk</strong>
-        <span id="me"></span>
+      <div class="header-left">
+        <div class="header-title">
+          <strong>AJjpxFsIsk</strong>
+          <span id="me"></span>
+        </div>
+        <div id="presence-status" class="hidden"></div>
       </div>
       <div class="right">
         <button id="gallery-btn" class="hidden" title="Gallery">🖼️</button>
@@ -52,6 +55,12 @@
       </div>
     </header>
     <main id="messages"></main>
+    <div id="typing-indicator" class="hidden">
+      <span class="typing-bubble">
+        <span class="typing-name"></span>
+        <span class="typing-dots"><span></span><span></span><span></span></span>
+      </span>
+    </div>
     <div id="reply-preview" class="hidden">
       <div class="reply-preview-bar"></div>
       <div class="reply-preview-content">
