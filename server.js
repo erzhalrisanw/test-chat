@@ -573,6 +573,11 @@ function presenceSnapshot() {
   return snap;
 }
 
+function touchLastSeen(username, iso) {
+  lastSeen.set(username, iso);
+  persistLastSeen(username, iso).catch((e) => console.error('persist last seen:', e.message));
+}
+
 io.on('connection', async (socket) => {
   const username = socket.data.username;
   const prev = socketCounts.get(username) || 0;
@@ -580,6 +585,7 @@ io.on('connection', async (socket) => {
   const wasOffline = prev === 0;
   if (wasOffline) {
     onlineUsers.add(username);
+    touchLastSeen(username, new Date().toISOString());
   }
 
   try {
@@ -620,6 +626,7 @@ io.on('connection', async (socket) => {
       const broadcast = full || { ...msg, id };
       if (clientId != null) broadcast.clientId = clientId;
       io.emit('message', broadcast);
+      touchLastSeen(username, msg.time);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text,
@@ -660,6 +667,7 @@ io.on('connection', async (socket) => {
       const broadcast = full || { ...msg, id };
       if (clientId != null) broadcast.clientId = clientId;
       io.emit('message', broadcast);
+      touchLastSeen(username, msg.time);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text || '📷 Sent a photo',
@@ -717,6 +725,7 @@ io.on('connection', async (socket) => {
       const broadcast = full || { ...msg, id };
       if (clientId != null) broadcast.clientId = clientId;
       io.emit('message', broadcast);
+      touchLastSeen(username, msg.time);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: msg.text || '🎬 Sent a video',
@@ -756,6 +765,7 @@ io.on('connection', async (socket) => {
       const broadcast = full || { ...msg, id };
       if (clientId != null) broadcast.clientId = clientId;
       io.emit('message', broadcast);
+      touchLastSeen(username, msg.time);
       sendPushToOfflineUsers(username, {
         title: `Message from ${username}`,
         body: '🎤 Sent a voice note',
@@ -809,8 +819,7 @@ io.on('connection', async (socket) => {
     socketCounts.delete(username);
     onlineUsers.delete(username);
     const iso = new Date().toISOString();
-    lastSeen.set(username, iso);
-    persistLastSeen(username, iso).catch((e) => console.error('persist last seen:', e.message));
+    touchLastSeen(username, iso);
     io.emit('presence:update', { username, online: false, lastSeen: iso });
   });
 });
