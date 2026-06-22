@@ -2008,13 +2008,14 @@ function updatePaginationControls() {
 async function loadGalleryPage(page) {
   if (galleryLoading) return;
   var token = localStorage.getItem('token');
-  if (!token) return;
+  if (!token || !currentPeer) return;
   galleryLoading = true;
   var loadingEl = document.getElementById('gallery-loading');
   if (loadingEl) loadingEl.classList.remove('hidden');
   galleryEmpty.classList.add('hidden');
   try {
-    var res = await fetch('/gallery?limit=' + GALLERY_PAGE_SIZE + '&page=' + page, {
+    var url = '/gallery?limit=' + GALLERY_PAGE_SIZE + '&page=' + page + '&peer=' + encodeURIComponent(currentPeer);
+    var res = await fetch(url, {
       headers: { Authorization: 'Bearer ' + token }
     });
     if (!res.ok) return;

@@ -562,35 +562,37 @@ const GALLERY_PAGE_MAX = 1000;
 app.get('/gallery', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
-  
+
+  const peer = resolvePeer(username, req.query.peer);
+  if (!peer) return res.status(400).json({ ok: false, error: 'Invalid peer' });
+
   const parsedLimit = parseInt(req.query.limit, 10);
   const limit = Math.min(
     GALLERY_PAGE_MAX,
     Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : GALLERY_PAGE_DEFAULT)
   );
-  
+
   const parsedPage = parseInt(req.query.page, 10);
   const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const offset = (page - 1) * limit;
-  
+
   try {
-    // Hitung total items untuk pagination info
     const countResult = await db.execute({
-      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE image IS NOT NULL OR video IS NOT NULL`,
+      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)`,
+      args: [peer],
     });
     const totalItems = Number(countResult.rows[0].cnt);
     const totalPages = Math.ceil(totalItems / limit);
-    
-    // Ambil items untuk halaman tertentu (dari yang terbaru)
+
     const result = await db.execute({
       sql: `SELECT id, username, image, video, time
              FROM messages
-            WHERE image IS NOT NULL OR video IS NOT NULL
+            WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)
             ORDER BY id DESC
             LIMIT ? OFFSET ?`,
-      args: [limit, offset],
+      args: [peer, limit, offset],
     });
-    
+
     const items = result.rows.map((r) => ({
       id: Number(r.id),
       username: r.username,
@@ -598,8 +600,8 @@ app.get('/gallery', async (req, res) => {
       type: r.image ? 'image' : 'video',
       src: r.image || r.video,
     }));
-    
-    res.json({ ok: true, items, totalItems, totalPages, page });
+
+    res.json({ ok: true, items, totalItems, totalPages, page, peer });
   } catch (err) {
     console.error('gallery error:', err.message);
     res.status(500).json({ ok: false });
