@@ -35,7 +35,19 @@ const galleryGrid = document.getElementById('gallery-grid');
 const galleryClose = document.getElementById('gallery-close');
 const galleryEmpty = document.getElementById('gallery-empty');
 const GALLERY_ALLOWED = new Set(['occupatus', 'london']);
-const PRESENCE_PARTNERS = { occupatus: 'mutatio', london: 'tokyo' };
+const HUB_USER = 'occupatus';
+const DEFAULT_PEER = 'mutatio';
+let currentPeer = null;
+let availablePeers = [];
+const unreadByPeer = {};
+const readStateMap = {};
+const peerSwitcherEl = document.getElementById('peer-switcher');
+const peerSwitcherBtn = document.getElementById('peer-switcher-btn');
+const peerSwitcherLabel = document.getElementById('peer-switcher-label');
+const peerSwitcherBadge = document.getElementById('peer-switcher-badge');
+const peerSwitcherMenu = document.getElementById('peer-switcher-menu');
+function isHub() { return me === HUB_USER; }
+function getPartner() { return isHub() ? currentPeer : HUB_USER; }
 const presenceEl = document.getElementById('presence-status');
 const typingIndicatorEl = document.getElementById('typing-indicator');
 const typingNameEl = typingIndicatorEl.querySelector('.typing-name');
@@ -49,10 +61,10 @@ const TYPING_IDLE_MS = 3000;
 const TYPING_EXPIRE_MS = 6000;
 
 function sendTypingStart() {
-  if (!socket) return;
+  if (!socket || !currentPeer) return;
   if (!typingSending) {
     typingSending = true;
-    socket.emit('typing', { typing: true });
+    socket.emit('typing', { typing: true, peer: currentPeer });
   }
   if (typingStopTimerId) clearTimeout(typingStopTimerId);
   typingStopTimerId = setTimeout(() => sendTypingStop(), TYPING_IDLE_MS);
@@ -62,7 +74,7 @@ function sendTypingStop() {
   if (typingStopTimerId) { clearTimeout(typingStopTimerId); typingStopTimerId = null; }
   if (!typingSending) return;
   typingSending = false;
-  if (socket) socket.emit('typing', { typing: false });
+  if (socket && currentPeer) socket.emit('typing', { typing: false, peer: currentPeer });
 }
 
 function formatLastSeen(iso) {
@@ -79,7 +91,7 @@ function formatLastSeen(iso) {
 }
 
 function renderPresence() {
-  const partner = PRESENCE_PARTNERS[me];
+  const partner = getPartner();
   if (!partner) {
     presenceEl.classList.add('hidden');
     return;
@@ -109,8 +121,120 @@ function renderTyping() {
 function startPresenceTimer() {
   if (presenceTimerId) return;
   presenceTimerId = setInterval(() => {
-    if (PRESENCE_PARTNERS[me]) renderPresence();
+    if (getPartner()) renderPresence();
   }, 30000);
+}
+
+function totalUnread() {
+  let sum = 0;
+  for (const k in unreadByPeer) {
+    if (k !== currentPeer) sum += unreadByPeer[k] || 0;
+  }
+  return sum;
+}
+
+function renderPeerSwitcherButton() {
+  if (!isHub()) {
+    peerSwitcherEl.classList.add('hidden');
+    return;
+  }
+  peerSwitcherEl.classList.remove('hidden');
+  peerSwitcherLabel.textContent = currentPeer || '—';
+  const total = totalUnread();
+  if (total > 0) {
+    peerSwitcherBadge.textContent = total > 99 ? '99+' : String(total);
+    peerSwitcherBadge.classList.remove('hidden');
+  } else {
+    peerSwitcherBadge.classList.add('hidden');
+  }
+}
+
+function renderPeerSwitcherMenu() {
+  peerSwitcherMenu.innerHTML = '';
+  availablePeers.forEach((peer) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'peer-menu-item' + (peer === currentPeer ? ' active' : '');
+    btn.setAttribute('role', 'menuitem');
+    const name = document.createElement('span');
+    name.className = 'peer-menu-name';
+    const dot = document.createElement('span');
+    dot.className = 'peer-menu-dot' + (presenceState[peer] && presenceState[peer].online ? ' online' : '');
+    name.appendChild(dot);
+    name.appendChild(document.createTextNode(peer));
+    btn.appendChild(name);
+    const unread = unreadByPeer[peer] || 0;
+    if (unread > 0 && peer !== currentPeer) {
+      const badge = document.createElement('span');
+      badge.className = 'peer-badge';
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      btn.appendChild(badge);
+    }
+    btn.addEventListener('click', () => {
+      closePeerMenu();
+      if (peer !== currentPeer) switchPeer(peer);
+    });
+    peerSwitcherMenu.appendChild(btn);
+  });
+}
+
+function openPeerMenu() {
+  renderPeerSwitcherMenu();
+  peerSwitcherMenu.classList.remove('hidden');
+  peerSwitcherBtn.setAttribute('aria-expanded', 'true');
+}
+function closePeerMenu() {
+  peerSwitcherMenu.classList.add('hidden');
+  peerSwitcherBtn.setAttribute('aria-expanded', 'false');
+}
+function togglePeerMenu() {
+  if (peerSwitcherMenu.classList.contains('hidden')) openPeerMenu();
+  else closePeerMenu();
+}
+peerSwitcherBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  togglePeerMenu();
+});
+document.addEventListener('click', (e) => {
+  if (peerSwitcherMenu.classList.contains('hidden')) return;
+  if (!peerSwitcherMenu.contains(e.target) && e.target !== peerSwitcherBtn) closePeerMenu();
+});
+
+function resetThreadView() {
+  messagesEl.innerHTML = '';
+  lastIncomingId = 0;
+  lastReadByOthers = 0;
+  oldestLoadedId = null;
+  hasMoreHistory = false;
+  loadingMore = false;
+  Object.keys(typingState).forEach((k) => delete typingState[k]);
+  Object.keys(typingExpireTimers).forEach((k) => {
+    clearTimeout(typingExpireTimers[k]);
+    delete typingExpireTimers[k];
+  });
+  renderTyping();
+  clearReply();
+  sendTypingStop();
+}
+
+function switchPeer(peer) {
+  if (!socket || !peer || peer === currentPeer) return;
+  currentPeer = peer;
+  if (isHub()) localStorage.setItem('activePeer', peer);
+  unreadByPeer[peer] = 0;
+  resetThreadView();
+  renderPeerSwitcherButton();
+  renderPresence();
+  applyReadStateForCurrentPeer();
+  socket.emit('selectPeer', { peer });
+}
+
+function applyReadStateForCurrentPeer() {
+  if (!currentPeer) return;
+  const other = isHub() ? currentPeer : HUB_USER;
+  const otherMap = readStateMap[other] || {};
+  lastReadByOthers = otherMap[currentPeer] || 0;
+  updateReceipts();
 }
 
 const attachMenuBtn = document.getElementById('attach-menu-btn');
@@ -652,6 +776,15 @@ function startChat(token, username) {
   else panicBtn.classList.add('hidden');
   maybePlaySunrise();
   messagesEl.innerHTML = '';
+  Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
+  Object.keys(readStateMap).forEach((k) => delete readStateMap[k]);
+  if (isHub()) {
+    const saved = localStorage.getItem('activePeer');
+    currentPeer = saved || DEFAULT_PEER;
+  } else {
+    currentPeer = me;
+  }
+  renderPeerSwitcherButton();
   updateNotifBtn();
   updateGalleryBtn();
   renderPresence();
@@ -675,8 +808,11 @@ function startChat(token, username) {
   });
 
   socket.on('history', (payload) => {
+    const peer = payload && payload.peer;
+    if (peer && peer !== currentPeer) return;
     const list = Array.isArray(payload) ? payload : (payload && payload.messages) || [];
     hasMoreHistory = !!(payload && payload.hasMore);
+    messagesEl.innerHTML = '';
     if (list.length) {
       const sep = document.createElement('div');
       sep.className = 'msg system';
@@ -688,7 +824,20 @@ function startChat(token, username) {
       addMessage(m);
       if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
     });
+    applyReadStateForCurrentPeer();
     maybeMarkRead();
+  });
+
+  socket.on('peers', (list) => {
+    if (!Array.isArray(list)) return;
+    availablePeers = list.filter((p) => typeof p === 'string');
+    if (isHub() && availablePeers.length && !availablePeers.includes(currentPeer)) {
+      currentPeer = availablePeers[0];
+      localStorage.setItem('activePeer', currentPeer);
+      resetThreadView();
+      socket.emit('selectPeer', { peer: currentPeer });
+    }
+    renderPeerSwitcherButton();
   });
 
   socket.on('presence:init', (snap) => {
@@ -703,8 +852,9 @@ function startChat(token, username) {
     renderPresence();
   });
 
-  socket.on('typing', ({ username, typing }) => {
+  socket.on('typing', ({ username, peer, typing }) => {
     if (!username || username === me) return;
+    if (peer && peer !== currentPeer) return;
     if (typingExpireTimers[username]) {
       clearTimeout(typingExpireTimers[username]);
       delete typingExpireTimers[username];
@@ -737,21 +887,28 @@ function startChat(token, username) {
       renderTyping();
     }
     renderPresence();
+    if (isHub() && !peerSwitcherMenu.classList.contains('hidden')) renderPeerSwitcherMenu();
   });
 
   socket.on('readState', (state) => {
     if (!state || typeof state !== 'object') return;
-    Object.entries(state).forEach(([u, id]) => {
-      if (u !== me && typeof id === 'number' && id > lastReadByOthers) {
-        lastReadByOthers = id;
+    Object.keys(readStateMap).forEach((k) => delete readStateMap[k]);
+    Object.entries(state).forEach(([u, peerMap]) => {
+      if (peerMap && typeof peerMap === 'object') {
+        readStateMap[u] = { ...peerMap };
       }
     });
-    updateReceipts();
+    applyReadStateForCurrentPeer();
   });
 
-  socket.on('read', ({ username, lastReadId }) => {
+  socket.on('read', ({ username, peer, lastReadId }) => {
+    if (typeof lastReadId !== 'number' || !peer) return;
+    if (!readStateMap[username]) readStateMap[username] = {};
+    if ((readStateMap[username][peer] || 0) < lastReadId) {
+      readStateMap[username][peer] = lastReadId;
+    }
     if (username === me) return;
-    if (typeof lastReadId !== 'number') return;
+    if (peer !== currentPeer) return;
     if (lastReadId > lastReadByOthers) {
       lastReadByOthers = lastReadId;
       updateReceipts();
@@ -759,9 +916,17 @@ function startChat(token, username) {
   });
 
   socket.on('message', (m) => {
-    // Cegah duplikasi: jika pesan dengan id ini sudah ada di DOM, skip
+    const msgPeer = m && m.peer;
+    if (msgPeer && msgPeer !== currentPeer) {
+      if (isHub() && m.username !== me) {
+        unreadByPeer[msgPeer] = (unreadByPeer[msgPeer] || 0) + 1;
+        renderPeerSwitcherButton();
+        if (!peerSwitcherMenu.classList.contains('hidden')) renderPeerSwitcherMenu();
+      }
+      notify(m);
+      return;
+    }
     if (m.id && messagesEl.querySelector('.msg[data-id="' + m.id + '"]')) return;
-    // Jika ini pesan kita sendiri yang sudah pending, update pending ke sent (match by clientId/tempId)
     if (m.username === me && m.id && m.clientId != null) {
       var pendingEl = messagesEl.querySelector('.msg[data-temp-id="' + m.clientId + '"]');
       if (pendingEl) {
@@ -810,6 +975,9 @@ function startChat(token, username) {
 
   socket.on('connect', () => {
     clearConnState();
+    if (isHub() && currentPeer && currentPeer !== DEFAULT_PEER) {
+      socket.emit('selectPeer', { peer: currentPeer });
+    }
     if (pendingQueue.length > 0) {
       const toResend = pendingQueue.slice();
       pendingQueue = [];
@@ -1004,10 +1172,10 @@ function addSystem(text) {
 }
 
 function maybeMarkRead() {
-  if (!socket || !lastIncomingId) return;
+  if (!socket || !lastIncomingId || !currentPeer) return;
   if (document.visibilityState !== 'visible') return;
   if (chatView.classList.contains('hidden')) return;
-  socket.emit('read', lastIncomingId);
+  socket.emit('read', { msgId: lastIncomingId, peer: currentPeer });
 }
 
 function updateReceipts() {
@@ -1062,7 +1230,7 @@ function clearConnState() {
 }
 
 function loadMoreHistory() {
-  if (!socket || loadingMore || !hasMoreHistory || !oldestLoadedId) return Promise.resolve();
+  if (!socket || loadingMore || !hasMoreHistory || !oldestLoadedId || !currentPeer) return Promise.resolve();
   loadingMore = true;
   const loader = document.createElement('div');
   loader.className = 'msg system';
@@ -1071,8 +1239,16 @@ function loadMoreHistory() {
   messagesEl.insertBefore(loader, messagesEl.firstChild);
   const prevScrollTop = messagesEl.scrollTop;
   const prevScrollHeight = messagesEl.scrollHeight;
+  const requestedPeer = currentPeer;
   return new Promise((resolve) => {
-  socket.emit('loadMore', { beforeId: oldestLoadedId }, (resp) => {
+  socket.emit('loadMore', { beforeId: oldestLoadedId, peer: requestedPeer }, (resp) => {
+    if (requestedPeer !== currentPeer) {
+      const loaderEl = document.getElementById('history-loader');
+      if (loaderEl) loaderEl.remove();
+      loadingMore = false;
+      resolve();
+      return;
+    }
     const list = (resp && resp.messages) || [];
     hasMoreHistory = !!(resp && resp.hasMore);
     if (list.length) {
@@ -1324,6 +1500,7 @@ function emitWithAck(msgData) {
     if (msgData.text) payload.text = msgData.text;
     if (msgData.caption) payload.caption = msgData.caption;
     if (msgData.replyToId) payload.replyToId = msgData.replyToId;
+    if (msgData.peer) payload.peer = msgData.peer;
     if (tempId != null) payload.clientId = tempId;
     socket.emit(event, payload, function(ack) {
       if (ack && ack.id) {
@@ -1353,6 +1530,7 @@ function queueMessage(eventName, msgData) {
   if (msgData.caption) data.caption = msgData.caption;
   if (msgData.replyToId) data.replyToId = msgData.replyToId;
   if (msgData.replyTo) data.replyTo = msgData.replyTo;
+  data.peer = currentPeer;
   data._tempId = null;
   data._pending = true;
   data._type = eventName;
@@ -1402,6 +1580,7 @@ function clearUploadStatus(tempId) {
 async function queueVideoUpload(pv, caption, replyToId, replyTo) {
   tempIdCounter++;
   var tempId = tempIdCounter;
+  var capturedPeer = currentPeer;
   var pendingMsg = {
     text: caption || '',
     replyToId: replyToId || null,
@@ -1412,6 +1591,7 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
     username: me,
     time: new Date().toISOString(),
     video: pv.previewUrl,
+    peer: capturedPeer,
   };
   addMessage(pendingMsg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -1435,6 +1615,7 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
     var payload = { url: publicUrl, clientId: tempId };
     if (caption) payload.caption = caption;
     if (replyToId) payload.replyToId = replyToId;
+    if (capturedPeer) payload.peer = capturedPeer;
     socket.emit('video', payload, function(ack) {
       if (ack && ack.id) {
         updatePendingToSent(tempId, ack.id);
@@ -2032,6 +2213,12 @@ logoutBtn.addEventListener('click', function() {
   presenceEl.textContent = '';
   typingIndicatorEl.classList.add('hidden');
   typingNameEl.textContent = '';
+  peerSwitcherEl.classList.add('hidden');
+  closePeerMenu();
+  currentPeer = null;
+  availablePeers = [];
+  Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
+  Object.keys(readStateMap).forEach((k) => delete readStateMap[k]);
 });
 
 panicBtn.addEventListener('click', function() {

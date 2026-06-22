@@ -20,6 +20,9 @@ const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
+const HUB_USER = 'occupatus';
+const LEGACY_PEER = 'mutatio';
+
 async function initDb() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -30,7 +33,8 @@ async function initDb() {
       video TEXT,
       audio TEXT,
       time TEXT NOT NULL,
-      reply_to_id INTEGER
+      reply_to_id INTEGER,
+      peer TEXT
     )
   `);
   try {
@@ -42,6 +46,14 @@ async function initDb() {
   try {
     await db.execute(`ALTER TABLE messages ADD COLUMN audio TEXT`);
   } catch (_) {}
+  try {
+    await db.execute(`ALTER TABLE messages ADD COLUMN peer TEXT`);
+  } catch (_) {}
+  await db.execute({
+    sql: `UPDATE messages SET peer = CASE WHEN username = ? THEN ? ELSE username END WHERE peer IS NULL`,
+    args: [HUB_USER, LEGACY_PEER],
+  });
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_messages_peer_id ON messages (peer, id)`);
   await db.execute(`
     CREATE TABLE IF NOT EXISTS push_subscriptions (
       endpoint TEXT PRIMARY KEY,
@@ -58,10 +70,32 @@ async function initDb() {
   `);
   await db.execute(`
     CREATE TABLE IF NOT EXISTS read_state (
-      username TEXT PRIMARY KEY,
-      last_read_id INTEGER NOT NULL
+      username TEXT NOT NULL,
+      peer TEXT NOT NULL,
+      last_read_id INTEGER NOT NULL,
+      PRIMARY KEY (username, peer)
     )
   `);
+  const rsCols = await db.execute(`PRAGMA table_info(read_state)`);
+  const hasPeerCol = rsCols.rows.some((r) => String(r.name) === 'peer');
+  if (!hasPeerCol) {
+    await db.execute(`
+      CREATE TABLE read_state_v2 (
+        username TEXT NOT NULL,
+        peer TEXT NOT NULL,
+        last_read_id INTEGER NOT NULL,
+        PRIMARY KEY (username, peer)
+      )
+    `);
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO read_state_v2 (username, peer, last_read_id)
+            SELECT username, CASE WHEN username = ? THEN ? ELSE username END, last_read_id
+            FROM read_state`,
+      args: [HUB_USER, LEGACY_PEER],
+    });
+    await db.execute(`DROP TABLE read_state`);
+    await db.execute(`ALTER TABLE read_state_v2 RENAME TO read_state`);
+  }
   await db.execute(`
     CREATE TABLE IF NOT EXISTS user_credentials (
       username TEXT PRIMARY KEY,
@@ -77,10 +111,25 @@ async function initDb() {
 }
 
 async function loadAllReadState() {
-  const result = await db.execute('SELECT username, last_read_id FROM read_state');
+  const result = await db.execute('SELECT username, peer, last_read_id FROM read_state');
   for (const row of result.rows) {
-    lastRead.set(String(row.username), Number(row.last_read_id));
+    setLastRead(String(row.username), String(row.peer), Number(row.last_read_id));
   }
+}
+
+function setLastRead(username, peer, id) {
+  let inner = lastRead.get(username);
+  if (!inner) {
+    inner = new Map();
+    lastRead.set(username, inner);
+  }
+  inner.set(peer, id);
+}
+
+function getLastRead(username, peer) {
+  const inner = lastRead.get(username);
+  if (!inner) return 0;
+  return inner.get(peer) || 0;
 }
 
 async function loadAllPresence() {
@@ -98,11 +147,11 @@ async function persistLastSeen(username, iso) {
   });
 }
 
-async function persistReadState(username, id) {
+async function persistReadState(username, peer, id) {
   await db.execute({
-    sql: `INSERT INTO read_state (username, last_read_id) VALUES (?, ?)
-          ON CONFLICT(username) DO UPDATE SET last_read_id = excluded.last_read_id`,
-    args: [username, id],
+    sql: `INSERT INTO read_state (username, peer, last_read_id) VALUES (?, ?, ?)
+          ON CONFLICT(username, peer) DO UPDATE SET last_read_id = excluded.last_read_id`,
+    args: [username, peer, id],
   });
 }
 
@@ -180,23 +229,68 @@ async function getSubscriptionsFor(username) {
   }).filter(Boolean);
 }
 
-async function sendPushToOfflineUsers(sender, payload) {
+async function sendPushToRecipient(recipient, payload) {
   if (!pushEnabled) return;
-  const recipients = [...users].filter((u) => u !== sender && !onlineUsers.has(u));
-  await Promise.all(recipients.map(async (u) => {
-    const subs = await getSubscriptionsFor(u);
-    await Promise.all(subs.map(async (sub) => {
-      try {
-        await webPush.sendNotification(sub, JSON.stringify(payload));
-      } catch (err) {
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await deleteSubscription(sub.endpoint).catch(() => {});
-        } else {
-          console.error('push error:', err.statusCode, err.body);
-        }
+  if (!recipient || onlineUsers.has(recipient)) return;
+  const subs = await getSubscriptionsFor(recipient);
+  await Promise.all(subs.map(async (sub) => {
+    try {
+      await webPush.sendNotification(sub, JSON.stringify(payload));
+    } catch (err) {
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        await deleteSubscription(sub.endpoint).catch(() => {});
+      } else {
+        console.error('push error:', err.statusCode, err.body);
       }
-    }));
+    }
   }));
+}
+
+function resolvePeer(sender, requested) {
+  if (sender === HUB_USER) {
+    if (typeof requested !== 'string') return null;
+    if (!users.has(requested)) return null;
+    if (requested === HUB_USER) return null;
+    return requested;
+  }
+  return sender;
+}
+
+function userRoom(u) {
+  return 'user:' + u;
+}
+
+function recipientOf(sender, peer) {
+  return sender === HUB_USER ? peer : HUB_USER;
+}
+
+function emitToThread(peer, event, payload) {
+  io.to(userRoom(HUB_USER)).to(userRoom(peer)).emit(event, payload);
+}
+
+function defaultPeerFor(username) {
+  if (username !== HUB_USER) return username;
+  return LEGACY_PEER;
+}
+
+function peersList() {
+  return [...users].filter((u) => u !== HUB_USER);
+}
+
+function readStateSnapshot(username) {
+  if (username === HUB_USER) {
+    const out = {};
+    for (const [u, inner] of lastRead) {
+      out[u] = Object.fromEntries(inner);
+    }
+    return out;
+  }
+  const meId = getLastRead(username, username);
+  const hubId = getLastRead(HUB_USER, username);
+  return {
+    [username]: { [username]: meId },
+    [HUB_USER]: { [username]: hubId },
+  };
 }
 
 function applyUserTextTransforms(username, text) {
@@ -209,8 +303,8 @@ function applyUserTextTransforms(username, text) {
 
 async function saveMessage(msg) {
   const result = await db.execute({
-    sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.audio || null, msg.time, msg.replyToId || null],
+    sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id, peer) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.audio || null, msg.time, msg.replyToId || null, msg.peer],
   });
   return Number(result.lastInsertRowid);
 }
@@ -224,6 +318,7 @@ function mapRow(r) {
     video: r.video,
     audio: r.audio,
     time: r.time,
+    peer: r.peer,
   };
   if (r.reply_to_id) {
     out.replyTo = {
@@ -240,7 +335,7 @@ function mapRow(r) {
 
 async function getMessageById(id) {
   const result = await db.execute({
-    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id,
+    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer,
                  p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
           FROM messages m
           LEFT JOIN messages p ON m.reply_to_id = p.id
@@ -251,20 +346,21 @@ async function getMessageById(id) {
   return mapRow(result.rows[0]);
 }
 
-async function getHistory(limit = 50, beforeId = null) {
+async function getHistory(peer, limit = 50, beforeId = null) {
   const sql = beforeId
-    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id,
+    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
-       WHERE m.id < ?
+       WHERE m.peer = ? AND m.id < ?
        ORDER BY m.id DESC LIMIT ?`
-    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id,
+    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
+       WHERE m.peer = ?
        ORDER BY m.id DESC LIMIT ?`;
-  const args = beforeId ? [beforeId, limit] : [limit];
+  const args = beforeId ? [peer, beforeId, limit] : [peer, limit];
   const result = await db.execute({ sql, args });
   return result.rows.reverse().map(mapRow);
 }
@@ -580,6 +676,7 @@ function touchLastSeen(username, iso) {
 
 io.on('connection', async (socket) => {
   const username = socket.data.username;
+  socket.join(userRoom(username));
   const prev = socketCounts.get(username) || 0;
   socketCounts.set(username, prev + 1);
   const wasOffline = prev === 0;
@@ -588,55 +685,95 @@ io.on('connection', async (socket) => {
     touchLastSeen(username, new Date().toISOString());
   }
 
-  try {
-    const list = await getHistory(50);
-    socket.emit('history', { messages: list, hasMore: list.length === 50 });
-  } catch (err) {
-    console.error('history error:', err.message);
-    socket.emit('history', { messages: [], hasMore: false });
+  const initialPeer = defaultPeerFor(username);
+  socket.data.activePeer = initialPeer;
+
+  async function emitHistoryFor(peer) {
+    try {
+      const list = await getHistory(peer, 50);
+      socket.emit('history', { peer, messages: list, hasMore: list.length === 50 });
+    } catch (err) {
+      console.error('history error:', err.message);
+      socket.emit('history', { peer, messages: [], hasMore: false });
+    }
   }
-  socket.emit('readState', Object.fromEntries(lastRead));
+
+  await emitHistoryFor(initialPeer);
+  socket.emit('readState', readStateSnapshot(username));
   socket.emit('presence:init', presenceSnapshot());
+  if (username === HUB_USER) socket.emit('peers', peersList());
   if (wasOffline) {
     socket.broadcast.emit('presence:update', { username, online: true, lastSeen: lastSeen.get(username) || null });
   }
 
-  socket.on('message', async (payload, ack) => {
-    let text, replyToId, clientId;
-    if (typeof payload === 'string') {
-      text = payload;
-    } else if (payload && typeof payload === 'object') {
-      text = payload.text;
-      replyToId = Number(payload.replyToId) || null;
-      clientId = payload.clientId;
-    }
-    if (typeof text !== 'string' || !text.trim()) {
-      if (typeof ack === 'function') ack({ error: 'No text' });
+  socket.on('selectPeer', async (payload, ack) => {
+    const requested = payload && typeof payload.peer === 'string' ? payload.peer : null;
+    if (username !== HUB_USER) {
+      socket.data.activePeer = username;
+      if (typeof ack === 'function') ack({ ok: true, peer: username });
       return;
     }
-    const msg = {
-      username,
-      text: applyUserTextTransforms(username, text.slice(0, 1000)),
-      time: new Date().toISOString(),
-      replyToId,
-    };
+    if (!requested || !users.has(requested) || requested === HUB_USER) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid peer' });
+      return;
+    }
+    socket.data.activePeer = requested;
+    await emitHistoryFor(requested);
+    if (typeof ack === 'function') ack({ ok: true, peer: requested });
+  });
+
+  async function handleOutgoing(payload, ack, build) {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const built = build(peer);
+    if (built && built.error) {
+      if (typeof ack === 'function') ack({ error: built.error });
+      return;
+    }
+    const { msg, pushBody } = built;
+    const clientId = payload && payload.clientId;
     try {
       const id = await saveMessage(msg);
       const full = await getMessageById(id);
       const broadcast = full || { ...msg, id };
       if (clientId != null) broadcast.clientId = clientId;
-      io.emit('message', broadcast);
+      emitToThread(peer, 'message', broadcast);
       touchLastSeen(username, msg.time);
-      sendPushToOfflineUsers(username, {
+      sendPushToRecipient(recipientOf(username, peer), {
         title: `Message from ${username}`,
-        body: msg.text,
+        body: pushBody,
         url: '/',
       }).catch(() => {});
-      if (typeof ack === 'function') ack({ id });
+      if (typeof ack === 'function') ack({ id, peer });
     } catch (e) {
       console.error('save error:', e.message);
       if (typeof ack === 'function') ack({ error: e.message });
     }
+  }
+
+  socket.on('message', async (payload, ack) => {
+    let text;
+    let replyToId = null;
+    if (typeof payload === 'string') {
+      text = payload;
+    } else if (payload && typeof payload === 'object') {
+      text = payload.text;
+      replyToId = Number(payload.replyToId) || null;
+    }
+    if (typeof text !== 'string' || !text.trim()) {
+      if (typeof ack === 'function') ack({ error: 'No text' });
+      return;
+    }
+    await handleOutgoing(payload && typeof payload === 'object' ? payload : {}, ack, (peer) => {
+      const safe = applyUserTextTransforms(username, text.slice(0, 1000));
+      return {
+        msg: { username, text: safe, time: new Date().toISOString(), replyToId, peer },
+        pushBody: safe,
+      };
+    });
   });
 
   socket.on('image', async (payload, ack) => {
@@ -644,7 +781,7 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const { dataUrl, caption, replyToId, clientId } = payload;
+    const { dataUrl, caption, replyToId } = payload;
     const m = /^data:(image\/(png|jpeg|jpg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!m) {
       if (typeof ack === 'function') ack({ error: 'Invalid image' });
@@ -654,30 +791,20 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Too large' });
       return;
     }
-    const msg = {
-      username,
-      image: dataUrl,
-      text: applyUserTextTransforms(username, typeof caption === 'string' ? caption.slice(0, 500) : ''),
-      time: new Date().toISOString(),
-      replyToId: Number(replyToId) || null,
-    };
-    try {
-      const id = await saveMessage(msg);
-      const full = await getMessageById(id);
-      const broadcast = full || { ...msg, id };
-      if (clientId != null) broadcast.clientId = clientId;
-      io.emit('message', broadcast);
-      touchLastSeen(username, msg.time);
-      sendPushToOfflineUsers(username, {
-        title: `Message from ${username}`,
-        body: msg.text || '📷 Sent a photo',
-        url: '/',
-      }).catch(() => {});
-      if (typeof ack === 'function') ack({ id });
-    } catch (e) {
-      console.error('save error:', e.message);
-      if (typeof ack === 'function') ack({ error: e.message });
-    }
+    await handleOutgoing(payload, ack, (peer) => {
+      const safe = applyUserTextTransforms(username, typeof caption === 'string' ? caption.slice(0, 500) : '');
+      return {
+        msg: {
+          username,
+          image: dataUrl,
+          text: safe,
+          time: new Date().toISOString(),
+          replyToId: Number(replyToId) || null,
+          peer,
+        },
+        pushBody: safe || '📷 Sent a photo',
+      };
+    });
   });
 
   socket.on('video', async (payload, ack) => {
@@ -685,7 +812,7 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const { url, dataUrl, caption, replyToId, clientId } = payload;
+    const { url, dataUrl, caption, replyToId } = payload;
     let videoVal = null;
     if (typeof url === 'string' && url) {
       if (!r2Enabled || !url.startsWith(R2_PUBLIC_VIDEO_PREFIX)) {
@@ -712,30 +839,20 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'No video' });
       return;
     }
-    const msg = {
-      username,
-      video: videoVal,
-      text: applyUserTextTransforms(username, typeof caption === 'string' ? caption.slice(0, 500) : ''),
-      time: new Date().toISOString(),
-      replyToId: Number(replyToId) || null,
-    };
-    try {
-      const id = await saveMessage(msg);
-      const full = await getMessageById(id);
-      const broadcast = full || { ...msg, id };
-      if (clientId != null) broadcast.clientId = clientId;
-      io.emit('message', broadcast);
-      touchLastSeen(username, msg.time);
-      sendPushToOfflineUsers(username, {
-        title: `Message from ${username}`,
-        body: msg.text || '🎬 Sent a video',
-        url: '/',
-      }).catch(() => {});
-      if (typeof ack === 'function') ack({ id });
-    } catch (e) {
-      console.error('save error:', e.message);
-      if (typeof ack === 'function') ack({ error: e.message });
-    }
+    await handleOutgoing(payload, ack, (peer) => {
+      const safe = applyUserTextTransforms(username, typeof caption === 'string' ? caption.slice(0, 500) : '');
+      return {
+        msg: {
+          username,
+          video: videoVal,
+          text: safe,
+          time: new Date().toISOString(),
+          replyToId: Number(replyToId) || null,
+          peer,
+        },
+        pushBody: safe || '🎬 Sent a video',
+      };
+    });
   });
 
   socket.on('audio', async (payload, ack) => {
@@ -743,7 +860,7 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const { dataUrl, replyToId, clientId } = payload;
+    const { dataUrl, replyToId } = payload;
     const m = /^data:(audio\/(webm|mp4|ogg|mpeg|wav))(;codecs=[A-Za-z0-9.,-]+)?;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!m) {
       if (typeof ack === 'function') ack({ error: 'Invalid audio' });
@@ -753,64 +870,67 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Too large' });
       return;
     }
-    const msg = {
-      username,
-      audio: dataUrl,
-      time: new Date().toISOString(),
-      replyToId: Number(replyToId) || null,
-    };
-    try {
-      const id = await saveMessage(msg);
-      const full = await getMessageById(id);
-      const broadcast = full || { ...msg, id };
-      if (clientId != null) broadcast.clientId = clientId;
-      io.emit('message', broadcast);
-      touchLastSeen(username, msg.time);
-      sendPushToOfflineUsers(username, {
-        title: `Message from ${username}`,
-        body: '🎤 Sent a voice note',
-        url: '/',
-      }).catch(() => {});
-      if (typeof ack === 'function') ack({ id });
-    } catch (e) {
-      console.error('save error:', e.message);
-      if (typeof ack === 'function') ack({ error: e.message });
-    }
+    await handleOutgoing(payload, ack, (peer) => ({
+      msg: {
+        username,
+        audio: dataUrl,
+        time: new Date().toISOString(),
+        replyToId: Number(replyToId) || null,
+        peer,
+      },
+      pushBody: '🎤 Sent a voice note',
+    }));
   });
 
   socket.on('loadMore', async (payload, ack) => {
     const beforeId = Number(payload && payload.beforeId);
-    if (!Number.isFinite(beforeId) || beforeId <= 0) {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer || !Number.isFinite(beforeId) || beforeId <= 0) {
       if (typeof ack === 'function') ack({ messages: [], hasMore: false });
       return;
     }
     try {
-      const list = await getHistory(50, beforeId);
+      const list = await getHistory(peer, 50, beforeId);
       const hasMore = list.length === 50;
-      if (typeof ack === 'function') ack({ messages: list, hasMore });
+      if (typeof ack === 'function') ack({ peer, messages: list, hasMore });
     } catch (e) {
       console.error('loadMore error:', e.message);
       if (typeof ack === 'function') ack({ messages: [], hasMore: false });
     }
   });
 
-  socket.on('read', (msgId) => {
-    const id = Number(msgId);
+  socket.on('read', (payload) => {
+    let id, requestedPeer;
+    if (payload && typeof payload === 'object') {
+      id = Number(payload.msgId);
+      requestedPeer = payload.peer;
+    } else {
+      id = Number(payload);
+    }
     if (!Number.isFinite(id) || id <= 0) return;
-    const prev = lastRead.get(username) || 0;
+    const peer = resolvePeer(username, requestedPeer);
+    if (!peer) return;
+    const prev = getLastRead(username, peer);
     if (id <= prev) return;
-    lastRead.set(username, id);
-    persistReadState(username, id).catch((e) => console.error('persist read state:', e.message));
-    io.emit('read', { username, lastReadId: id });
+    setLastRead(username, peer, id);
+    persistReadState(username, peer, id).catch((e) => console.error('persist read state:', e.message));
+    emitToThread(peer, 'read', { username, peer, lastReadId: id });
   });
 
   socket.on('typing', (payload) => {
     const typing = !!(payload && payload.typing);
-    socket.broadcast.emit('typing', { username, typing });
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) return;
+    const recipient = recipientOf(username, peer);
+    io.to(userRoom(recipient)).emit('typing', { username, peer, typing });
   });
 
   socket.on('disconnect', () => {
-    socket.broadcast.emit('typing', { username, typing: false });
+    const peer = socket.data.activePeer;
+    if (peer) {
+      const recipient = recipientOf(username, peer);
+      io.to(userRoom(recipient)).emit('typing', { username, peer, typing: false });
+    }
     const count = (socketCounts.get(username) || 1) - 1;
     if (count > 0) {
       socketCounts.set(username, count);
