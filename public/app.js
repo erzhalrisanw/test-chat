@@ -201,6 +201,14 @@ document.addEventListener('click', (e) => {
   if (!peerSwitcherMenu.contains(e.target) && e.target !== peerSwitcherBtn) closePeerMenu();
 });
 
+const messagesLoadingEl = document.getElementById('messages-loading');
+function showMessagesLoading() {
+  if (messagesLoadingEl) messagesLoadingEl.classList.remove('hidden');
+}
+function hideMessagesLoading() {
+  if (messagesLoadingEl) messagesLoadingEl.classList.add('hidden');
+}
+
 function resetThreadView() {
   messagesEl.innerHTML = '';
   lastIncomingId = 0;
@@ -216,6 +224,7 @@ function resetThreadView() {
   renderTyping();
   clearReply();
   sendTypingStop();
+  showMessagesLoading();
 }
 
 function switchPeer(peer) {
@@ -783,6 +792,7 @@ function startChat(token, username) {
   else panicBtn.classList.add('hidden');
   maybePlaySunrise();
   messagesEl.innerHTML = '';
+  showMessagesLoading();
   Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
   Object.keys(readStateMap).forEach((k) => delete readStateMap[k]);
   if (isHub()) {
@@ -820,6 +830,7 @@ function startChat(token, username) {
     const list = Array.isArray(payload) ? payload : (payload && payload.messages) || [];
     hasMoreHistory = !!(payload && payload.hasMore);
     messagesEl.innerHTML = '';
+    hideMessagesLoading();
     if (list.length) {
       const sep = document.createElement('div');
       sep.className = 'msg system';
@@ -2209,6 +2220,7 @@ logoutBtn.addEventListener('click', function() {
   if (socket) socket.disconnect();
   localStorage.removeItem('token');
   localStorage.removeItem('username');
+  hideMessagesLoading();
   chatView.classList.add('hidden');
   panicBtn.classList.add('hidden');
   loginView.classList.remove('hidden');

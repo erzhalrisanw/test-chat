@@ -62,7 +62,13 @@
         <button id="logout">Logout</button>
       </div>
     </header>
-    <main id="messages"></main>
+    <div class="messages-wrap">
+      <main id="messages"></main>
+      <div id="messages-loading" class="hidden">
+        <div class="spinner"></div>
+        <span>Loading chat...</span>
+      </div>
+    </div>
     <div id="typing-indicator" class="hidden">
       <span class="typing-bubble">
         <span class="typing-name"></span>
