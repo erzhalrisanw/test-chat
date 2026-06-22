@@ -1,8 +1,9 @@
 node_modules/
-chat.db
-chat.db-journal
-chat.db-wal
-chat.db-shm
+*.db
+*.db.bak
+*.db-journal
+*.db-wal
+*.db-shm
 .env
 .env.local
 !.env.example
