@@ -173,6 +173,7 @@ function renderPeerSwitcherMenu() {
     btn.addEventListener('click', () => {
       closePeerMenu();
       if (peer !== currentPeer) switchPeer(peer);
+      else reloadCurrentPeer();
     });
     peerSwitcherMenu.appendChild(btn);
   });
@@ -227,6 +228,12 @@ function switchPeer(peer) {
   renderPresence();
   applyReadStateForCurrentPeer();
   socket.emit('selectPeer', { peer });
+}
+
+function reloadCurrentPeer() {
+  if (!socket || !currentPeer) return;
+  resetThreadView();
+  socket.emit('selectPeer', { peer: currentPeer });
 }
 
 function applyReadStateForCurrentPeer() {
