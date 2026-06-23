@@ -49,6 +49,9 @@ async function initDb() {
   try {
     await db.execute(`ALTER TABLE messages ADD COLUMN peer TEXT`);
   } catch (_) {}
+  try {
+    await db.execute(`ALTER TABLE messages ADD COLUMN unsent INTEGER NOT NULL DEFAULT 0`);
+  } catch (_) {}
   await db.execute({
     sql: `UPDATE messages SET peer = CASE WHEN username = ? THEN ? ELSE username END WHERE peer IS NULL`,
     args: [HUB_USER, LEGACY_PEER],
@@ -319,6 +322,7 @@ function mapRow(r) {
     audio: r.audio,
     time: r.time,
     peer: r.peer,
+    unsent: !!Number(r.unsent || 0),
   };
   if (r.reply_to_id) {
     out.replyTo = {
@@ -328,6 +332,7 @@ function mapRow(r) {
       hasImage: !!r.reply_image,
       hasVideo: !!r.reply_video,
       hasAudio: !!r.reply_audio,
+      unsent: !!Number(r.reply_unsent || 0),
     };
   }
   return out;
@@ -335,8 +340,8 @@ function mapRow(r) {
 
 async function getMessageById(id) {
   const result = await db.execute({
-    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer,
-                 p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
+    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
+                 p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
           FROM messages m
           LEFT JOIN messages p ON m.reply_to_id = p.id
           WHERE m.id = ?`,
@@ -348,14 +353,14 @@ async function getMessageById(id) {
 
 async function getHistory(peer, limit = 50, beforeId = null) {
   const sql = beforeId
-    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer,
-              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
+    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
+              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
        WHERE m.peer = ? AND m.id < ?
        ORDER BY m.id DESC LIMIT ?`
-    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer,
-              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio
+    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
+              p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
        WHERE m.peer = ?
@@ -576,9 +581,10 @@ app.get('/gallery', async (req, res) => {
   const page = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const offset = (page - 1) * limit;
 
+  const unsentFilter = username === HUB_USER ? '' : ' AND unsent = 0';
   try {
     const countResult = await db.execute({
-      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)`,
+      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)${unsentFilter}`,
       args: [peer],
     });
     const totalItems = Number(countResult.rows[0].cnt);
@@ -587,7 +593,7 @@ app.get('/gallery', async (req, res) => {
     const result = await db.execute({
       sql: `SELECT id, username, image, video, time
              FROM messages
-            WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)
+            WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)${unsentFilter}
             ORDER BY id DESC
             LIMIT ? OFFSET ?`,
       args: [peer, limit, offset],
@@ -917,6 +923,36 @@ io.on('connection', async (socket) => {
     setLastRead(username, peer, id);
     persistReadState(username, peer, id).catch((e) => console.error('persist read state:', e.message));
     emitToThread(peer, 'read', { username, peer, lastReadId: id });
+  });
+
+  socket.on('unsend', async (payload, ack) => {
+    const id = Number(payload && payload.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      if (typeof ack === 'function') ack({ error: 'Invalid id' });
+      return;
+    }
+    try {
+      const msg = await getMessageById(id);
+      if (!msg) {
+        if (typeof ack === 'function') ack({ error: 'Not found' });
+        return;
+      }
+      if (msg.username !== username) {
+        if (typeof ack === 'function') ack({ error: 'Forbidden' });
+        return;
+      }
+      if (!msg.unsent) {
+        await db.execute({
+          sql: 'UPDATE messages SET unsent = 1 WHERE id = ?',
+          args: [id],
+        });
+      }
+      emitToThread(msg.peer, 'unsend', { id, peer: msg.peer });
+      if (typeof ack === 'function') ack({ ok: true, id, peer: msg.peer });
+    } catch (e) {
+      console.error('unsend error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
+    }
   });
 
   socket.on('typing', (payload) => {

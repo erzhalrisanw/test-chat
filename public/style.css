@@ -360,10 +360,9 @@ overflow: hidden;
 text-overflow: ellipsis;
 opacity: .85;
 }
-.msg .reply-btn {
+.msg .msg-menu-btn {
 position: absolute;
-top: 50%;
-transform: translateY(-50%);
+top: 6px;
 background: var(--toon-yellow);
 color: var(--toon-ink);
 border: 2px solid var(--toon-ink);
@@ -372,24 +371,80 @@ height: 26px;
 border-radius: 50%;
 cursor: pointer;
 font-family: inherit;
-font-size: 12px;
-font-weight: 700;
+font-size: 14px;
+font-weight: 800;
 line-height: 1;
 opacity: 0;
 transition: opacity .15s;
 display: flex;
 align-items: center;
 justify-content: center;
+padding: 0;
 box-shadow: 0 2px 0 0 var(--toon-ink);
 }
-.msg.mine .reply-btn { left: -34px; }
-.msg.other .reply-btn { right: -34px; }
-.msg:hover .reply-btn { opacity: 1; }
+.msg.mine .msg-menu-btn { right: 6px; }
+.msg.other .msg-menu-btn { right: 6px; }
+.msg:hover .msg-menu-btn { opacity: 1; }
+.msg .msg-menu-btn[aria-expanded="true"] { opacity: 1; }
+.msg .msg-menu {
+position: absolute;
+top: 38px;
+min-width: 140px;
+background: var(--toon-cream);
+border: 2px solid var(--toon-ink);
+border-radius: 12px;
+box-shadow: var(--toon-shadow-sm);
+padding: 4px;
+display: flex;
+flex-direction: column;
+gap: 2px;
+z-index: 30;
+}
+.msg.mine .msg-menu { right: 6px; }
+.msg.other .msg-menu { right: 6px; }
+.msg .msg-menu-item {
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 6px 10px;
+background: transparent;
+border: none;
+border-radius: 8px;
+font-family: inherit;
+font-size: 13px;
+color: var(--toon-ink);
+cursor: pointer;
+text-align: left;
+}
+.msg .msg-menu-item:hover { background: var(--toon-yellow); }
+.msg .msg-menu-item-danger { color: var(--toon-pink-dark); font-weight: 600; }
+.msg .msg-menu-item-danger:hover { background: var(--toon-pink); color: #fff; }
+.msg .msg-menu-icon { font-size: 14px; line-height: 1; }
+.msg.unsent .unsent-tag {
+display: inline-block;
+margin-left: 6px;
+padding: 1px 6px;
+border-radius: 8px;
+background: var(--toon-pink);
+color: #fff;
+border: 1.5px solid var(--toon-ink);
+font-size: 9px;
+font-weight: 700;
+letter-spacing: .3px;
+text-transform: uppercase;
+vertical-align: middle;
+}
+.msg.unsent-hidden { opacity: .85; }
+.msg.unsent-hidden .msg-text.unsent-placeholder {
+font-style: italic;
+opacity: .9;
+}
+.msg.unsent-hidden { padding-right: 14px; }
+.reply-quote.reply-quote-unsent .reply-quote-text { font-style: italic; opacity: .75; }
 @media (hover: none) {
 .msg { padding-right: 38px; }
-.msg .reply-btn { opacity: .9; top: 6px; transform: none; }
-.msg.mine .reply-btn { left: auto; right: 6px; }
-.msg.other .reply-btn { right: 6px; }
+.msg .msg-menu-btn { opacity: .9; }
+.msg.unsent-hidden { padding-right: 14px; }
 }
 .msg.highlight { animation: msg-flash 1.2s ease-out; }
 @keyframes msg-flash {

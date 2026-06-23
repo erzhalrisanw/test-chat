@@ -966,6 +966,15 @@ function startChat(token, username) {
     notify(m);
   });
 
+  socket.on('unsend', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = Number(payload.id);
+    const peer = payload.peer;
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (peer && peer !== currentPeer) return;
+    applyUnsendToView(id);
+  });
+
   socket.on('system', (m) => {
     if (m.text) addSystem(m.text);
   });
@@ -1014,7 +1023,14 @@ function startChat(token, username) {
   });
 }
 
+const UNSENT_PLACEHOLDER_TEXT = '🚫 Pesan ditarik';
+
+function shouldHideUnsentContent(msg) {
+  return !!(msg && msg.unsent) && !isHub();
+}
+
 function replySnippet(msg) {
+  if (msg && msg.unsent && !isHub()) return UNSENT_PLACEHOLDER_TEXT;
   if (msg.text) return msg.text;
   if (msg.image || msg.hasImage) return '📷 Photo';
   if (msg.video || msg.hasVideo) return '🎬 Video';
@@ -1025,50 +1041,74 @@ function replySnippet(msg) {
 function buildMessageNodes(msg) {
   const { id, username, text, time, image, replyTo } = msg;
   const div = document.createElement('div');
-  div.className = 'msg ' + (username === me ? 'mine' : 'other');
   const isPending = msg._pending || false;
   const tempId = msg._tempId || null;
+  const isUnsent = !!msg.unsent;
+  const hideContent = shouldHideUnsentContent(msg);
+  const cls = ['msg', username === me ? 'mine' : 'other'];
+  if (isUnsent) cls.push('unsent');
+  if (hideContent) cls.push('unsent-hidden');
+  div.className = cls.join(' ');
   if (id) div.dataset.id = String(id);
   if (tempId) div.dataset.tempId = String(tempId);
   const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   div.dataset.day = dayKey(time);
   let tick = '';
-  if (username === me) {
+  if (username === me && !hideContent) {
     if (isPending) {
       tick = '<span class="tick pending" aria-label="pending">🕐</span>';
     } else if (id) {
       tick = `<span class="tick ${id <= lastReadByOthers ? 'read' : 'sent'}" data-id="${id}" aria-label="${id <= lastReadByOthers ? 'read' : 'sent'}"><svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
     }
   }
-  const meta = '<div class="meta">' + escapeHtml(username) + ' • ' + t + tick + '</div>';
+  const unsentTag = (isUnsent && !hideContent) ? '<span class="unsent-tag" title="Pesan ditarik oleh pengirim">ditarik</span>' : '';
+  const meta = '<div class="meta">' + escapeHtml(username) + ' • ' + t + tick + unsentTag + '</div>';
   let quote = '';
-  if (replyTo) {
-    quote = '<div class="reply-quote" data-target="' + replyTo.id + '">' +
+  if (replyTo && !hideContent) {
+    const replyHide = !!(replyTo.unsent && !isHub());
+    const replyText = replyHide ? UNSENT_PLACEHOLDER_TEXT : replySnippet(replyTo);
+    const replyUser = replyHide ? '' : escapeHtml(replyTo.username || '');
+    const quoteCls = 'reply-quote' + (replyHide ? ' reply-quote-unsent' : '');
+    quote = '<div class="' + quoteCls + '" data-target="' + replyTo.id + '">' +
       '<div class="reply-quote-body">' +
-      '<div class="reply-quote-user">' + escapeHtml(replyTo.username || '') + '</div>' +
-      '<div class="reply-quote-text">' + escapeHtml(replySnippet(replyTo)) + '</div>' +
+      '<div class="reply-quote-user">' + replyUser + '</div>' +
+      '<div class="reply-quote-text">' + escapeHtml(replyText) + '</div>' +
       '</div>' +
       '</div>';
   }
-  let body = text ? '<span class="msg-text">' + linkify(text) + '</span>' : '';
-  if (image && /^data:image\//.test(image)) {
-    const img = '<img class="chat-img" src="' + image + '" alt="photo" />';
-    body = body ? body + img : img;
+  let body = '';
+  if (hideContent) {
+    body = '<span class="msg-text unsent-placeholder">' + escapeHtml(UNSENT_PLACEHOLDER_TEXT) + '</span>';
+  } else {
+    body = text ? '<span class="msg-text">' + linkify(text) + '</span>' : '';
+    if (image && /^data:image\//.test(image)) {
+      const img = '<img class="chat-img" src="' + image + '" alt="photo" />';
+      body = body ? body + img : img;
+    }
+    if (msg.video && isPlayableVideoSrc(msg.video)) {
+      const vid = '<video class="chat-vid" src="' + escapeHtml(msg.video) + '" controls controlslist="nodownload noplaybackrate" playsinline preload="metadata" oncontextmenu="return false"></video>';
+      body = body ? body + vid : vid;
+    }
+    if (msg.audio && /^data:audio\//.test(msg.audio)) {
+      const aud = '<audio class="chat-aud" src="' + msg.audio + '" controls preload="metadata"></audio>';
+      body = body ? body + aud : aud;
+    }
   }
-  if (msg.video && isPlayableVideoSrc(msg.video)) {
-    const vid = '<video class="chat-vid" src="' + escapeHtml(msg.video) + '" controls controlslist="nodownload noplaybackrate" playsinline preload="metadata" oncontextmenu="return false"></video>';
-    body = body ? body + vid : vid;
+  const canReply = id && !hideContent;
+  const canUnsend = id && username === me && !isUnsent;
+  let menuMarkup = '';
+  if (canReply || canUnsend) {
+    const items = [];
+    if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
+    if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
+    menuMarkup =
+      '<button class="msg-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Aksi pesan" title="Aksi pesan">⋯</button>' +
+      '<div class="msg-menu hidden" role="menu">' + items.join('') + '</div>';
   }
-  if (msg.audio && /^data:audio\//.test(msg.audio)) {
-    const aud = '<audio class="chat-aud" src="' + msg.audio + '" controls preload="metadata"></audio>';
-    body = body ? body + aud : aud;
-  }
-  const replyBtn = id ? '<button class="reply-btn" type="button" title="Reply">↩</button>' : '';
-  div.innerHTML = meta + quote + body + replyBtn;
+  div.innerHTML = meta + quote + body + menuMarkup;
   const imgEl = div.querySelector('img.chat-img');
   if (imgEl) {
     imgEl.addEventListener('click', () => openImageViewer(image));
-    // Hanya scroll ke bottom jika ini pesan baru (bukan history lama)
     if (!msg._history) {
       imgEl.addEventListener('load', () => {
         messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -1079,14 +1119,101 @@ function buildMessageNodes(msg) {
   if (quoteEl && replyTo) {
     quoteEl.addEventListener('click', () => jumpToMessage(replyTo.id));
   }
-  const btn = div.querySelector('.reply-btn');
-  if (btn && id) {
-    btn.addEventListener('click', (e) => {
+  const menuBtn = div.querySelector('.msg-menu-btn');
+  const menuEl = div.querySelector('.msg-menu');
+  if (menuBtn && menuEl) {
+    menuBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      setReplyTarget({ id, username, text, hasImage: !!image, hasVideo: !!msg.video, hasAudio: !!msg.audio });
+      const isOpen = !menuEl.classList.contains('hidden');
+      closeOpenMsgMenu();
+      if (!isOpen) {
+        menuEl.classList.remove('hidden');
+        menuBtn.setAttribute('aria-expanded', 'true');
+        openMsgMenu = menuEl;
+        openMsgMenuBtn = menuBtn;
+      }
+    });
+    menuEl.querySelectorAll('.msg-menu-item').forEach((item) => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = item.dataset.action;
+        closeOpenMsgMenu();
+        if (action === 'reply' && id) {
+          setReplyTarget({ id, username, text, hasImage: !!image, hasVideo: !!msg.video, hasAudio: !!msg.audio });
+        } else if (action === 'unsend' && id) {
+          requestUnsend(id);
+        }
+      });
     });
   }
   return [div];
+}
+
+let openMsgMenu = null;
+let openMsgMenuBtn = null;
+function closeOpenMsgMenu() {
+  if (!openMsgMenu) return;
+  openMsgMenu.classList.add('hidden');
+  if (openMsgMenuBtn) openMsgMenuBtn.setAttribute('aria-expanded', 'false');
+  openMsgMenu = null;
+  openMsgMenuBtn = null;
+}
+document.addEventListener('click', () => closeOpenMsgMenu());
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeOpenMsgMenu();
+});
+
+function requestUnsend(id) {
+  if (!socket || !id) return;
+  if (!confirm('Tarik pesan ini? Pesan akan diganti placeholder.')) return;
+  socket.emit('unsend', { id }, (resp) => {
+    if (resp && resp.error) {
+      console.error('unsend failed:', resp.error);
+      addSystem('Gagal menarik pesan: ' + resp.error);
+    }
+  });
+}
+
+function applyUnsendToView(id) {
+  const targetId = String(id);
+  const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+  if (el) {
+    if (replyTarget && Number(replyTarget.id) === Number(id)) clearReply();
+    el.classList.add('unsent');
+    if (openMsgMenu && el.contains(openMsgMenu)) closeOpenMsgMenu();
+    const unsendItem = el.querySelector('.msg-menu-item[data-action="unsend"]');
+    if (unsendItem) unsendItem.remove();
+    if (isHub()) {
+      const meta = el.querySelector('.meta');
+      if (meta && !meta.querySelector('.unsent-tag')) {
+        const span = document.createElement('span');
+        span.className = 'unsent-tag';
+        span.title = 'Pesan ditarik oleh pengirim';
+        span.textContent = 'ditarik';
+        meta.appendChild(span);
+      }
+    } else {
+      el.classList.add('unsent-hidden');
+      const meta = el.querySelector('.meta');
+      if (meta) {
+        meta.querySelectorAll('.tick, .unsent-tag').forEach((n) => n.remove());
+      }
+      el.querySelectorAll('.reply-quote, .msg-text, .chat-img, .chat-vid, .chat-aud, .msg-menu-btn, .msg-menu').forEach((n) => n.remove());
+      const placeholder = document.createElement('span');
+      placeholder.className = 'msg-text unsent-placeholder';
+      placeholder.textContent = UNSENT_PLACEHOLDER_TEXT;
+      el.appendChild(placeholder);
+    }
+  }
+  if (!isHub()) {
+    messagesEl.querySelectorAll('.reply-quote[data-target="' + targetId + '"]').forEach((quoteEl) => {
+      quoteEl.classList.add('reply-quote-unsent');
+      const userEl = quoteEl.querySelector('.reply-quote-user');
+      const textEl = quoteEl.querySelector('.reply-quote-text');
+      if (userEl) userEl.textContent = '';
+      if (textEl) textEl.textContent = UNSENT_PLACEHOLDER_TEXT;
+    });
+  }
 }
 
 function dayKey(time) {
