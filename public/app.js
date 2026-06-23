@@ -1094,7 +1094,7 @@ function buildMessageNodes(msg) {
       body = body ? body + aud : aud;
     }
   }
-  const canReply = id && !hideContent;
+  const canReply = id && !hideContent && !isUnsent;
   const canUnsend = id && username === me && !isUnsent;
   let menuMarkup = '';
   if (canReply || canUnsend) {
@@ -1181,8 +1181,7 @@ function applyUnsendToView(id) {
     if (replyTarget && Number(replyTarget.id) === Number(id)) clearReply();
     el.classList.add('unsent');
     if (openMsgMenu && el.contains(openMsgMenu)) closeOpenMsgMenu();
-    const unsendItem = el.querySelector('.msg-menu-item[data-action="unsend"]');
-    if (unsendItem) unsendItem.remove();
+    el.querySelectorAll('.msg-menu-btn, .msg-menu').forEach((n) => n.remove());
     if (isHub()) {
       const meta = el.querySelector('.meta');
       if (meta && !meta.querySelector('.unsent-tag')) {
@@ -1198,7 +1197,7 @@ function applyUnsendToView(id) {
       if (meta) {
         meta.querySelectorAll('.tick, .unsent-tag').forEach((n) => n.remove());
       }
-      el.querySelectorAll('.reply-quote, .msg-text, .chat-img, .chat-vid, .chat-aud, .msg-menu-btn, .msg-menu').forEach((n) => n.remove());
+      el.querySelectorAll('.reply-quote, .msg-text, .chat-img, .chat-vid, .chat-aud').forEach((n) => n.remove());
       const placeholder = document.createElement('span');
       placeholder.className = 'msg-text unsent-placeholder';
       placeholder.textContent = UNSENT_PLACEHOLDER_TEXT;
