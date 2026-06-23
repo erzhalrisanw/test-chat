@@ -1094,18 +1094,7 @@ function buildMessageNodes(msg) {
       body = body ? body + aud : aud;
     }
   }
-  const canReply = id && !hideContent && !isUnsent;
-  const canUnsend = id && username === me && !isUnsent;
-  let menuMarkup = '';
-  if (canReply || canUnsend) {
-    const items = [];
-    if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
-    if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
-    menuMarkup =
-      '<button class="msg-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Aksi pesan" title="Aksi pesan">⋯</button>' +
-      '<div class="msg-menu hidden" role="menu">' + items.join('') + '</div>';
-  }
-  div.innerHTML = meta + quote + body + menuMarkup;
+  div.innerHTML = meta + quote + body;
   const imgEl = div.querySelector('img.chat-img');
   if (imgEl) {
     imgEl.addEventListener('click', () => openImageViewer(image));
@@ -1119,34 +1108,55 @@ function buildMessageNodes(msg) {
   if (quoteEl && replyTo) {
     quoteEl.addEventListener('click', () => jumpToMessage(replyTo.id));
   }
+  attachMsgMenu(div, { id, username, isUnsent, hideContent });
+  return [div];
+}
+
+function attachMsgMenu(div, opts) {
+  if (div.querySelector('.msg-menu-btn')) return;
+  const { id, username, isUnsent, hideContent } = opts;
+  const canReply = id && !hideContent && !isUnsent;
+  const canUnsend = id && username === me && !isUnsent;
+  if (!canReply && !canUnsend) return;
+  const items = [];
+  if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
+  if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
+  const menuMarkup =
+    '<button class="msg-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Aksi pesan" title="Aksi pesan">⋯</button>' +
+    '<div class="msg-menu hidden" role="menu">' + items.join('') + '</div>';
+  div.insertAdjacentHTML('beforeend', menuMarkup);
   const menuBtn = div.querySelector('.msg-menu-btn');
   const menuEl = div.querySelector('.msg-menu');
-  if (menuBtn && menuEl) {
-    menuBtn.addEventListener('click', (e) => {
+  if (!menuBtn || !menuEl) return;
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = !menuEl.classList.contains('hidden');
+    closeOpenMsgMenu();
+    if (!isOpen) {
+      menuEl.classList.remove('hidden');
+      menuBtn.setAttribute('aria-expanded', 'true');
+      openMsgMenu = menuEl;
+      openMsgMenuBtn = menuBtn;
+    }
+  });
+  menuEl.querySelectorAll('.msg-menu-item').forEach((item) => {
+    item.addEventListener('click', (e) => {
       e.stopPropagation();
-      const isOpen = !menuEl.classList.contains('hidden');
+      const action = item.dataset.action;
       closeOpenMsgMenu();
-      if (!isOpen) {
-        menuEl.classList.remove('hidden');
-        menuBtn.setAttribute('aria-expanded', 'true');
-        openMsgMenu = menuEl;
-        openMsgMenuBtn = menuBtn;
+      const currentId = Number(div.dataset.id) || id;
+      if (action === 'reply' && currentId) {
+        const textEl = div.querySelector('.msg-text');
+        const replyText = textEl ? textEl.textContent : '';
+        const hasImage = !!div.querySelector('img.chat-img');
+        const hasVideo = !!div.querySelector('video.chat-vid');
+        const hasAudio = !!div.querySelector('audio.chat-aud');
+        setReplyTarget({ id: currentId, username, text: replyText, hasImage, hasVideo, hasAudio });
+      } else if (action === 'unsend' && currentId) {
+        requestUnsend(currentId);
       }
     });
-    menuEl.querySelectorAll('.msg-menu-item').forEach((item) => {
-      item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const action = item.dataset.action;
-        closeOpenMsgMenu();
-        if (action === 'reply' && id) {
-          setReplyTarget({ id, username, text, hasImage: !!image, hasVideo: !!msg.video, hasAudio: !!msg.audio });
-        } else if (action === 'unsend' && id) {
-          requestUnsend(id);
-        }
-      });
-    });
-  }
-  return [div];
+  });
 }
 
 let openMsgMenu = null;
@@ -1616,6 +1626,7 @@ function updatePendingToSent(tempId, realId) {
     tick.setAttribute('aria-label', 'sent');
     tick.innerHTML = '<svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   }
+  attachMsgMenu(el, { id: realId, username: me, isUnsent: false, hideContent: false });
 }
 
 function markPendingFailed(tempId, errorMsg) {
