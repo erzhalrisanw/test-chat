@@ -305,6 +305,8 @@ let recordChunks = [];
 let recordTimerId = null;
 let recordAutoStopId = null;
 let recordStartTime = 0;
+let mirrorCanvasStream = null;
+let mirrorRafId = null;
 
 let socket = null;
 let me = null;
@@ -1957,6 +1959,7 @@ async function openCamera() {
       audio: false,
     });
     camVideo.srcObject = camStream;
+    camVideo.classList.toggle('mirrored', camFacing === 'user');
   } catch (err) {
     camError.textContent = 'Cannot access camera: ' + (err.message || err.name);
   }
@@ -2002,6 +2005,37 @@ function resetRecordUI() {
   camRecord.classList.remove('recording');
   camRecord.textContent = '🎥';
   camTimer.classList.add('hidden');
+  stopMirrorStream();
+}
+
+function buildMirroredStream(srcStream) {
+  var vw = camVideo.videoWidth;
+  var vh = camVideo.videoHeight;
+  if (!vw || !vh) return null;
+  var canvas = document.createElement('canvas');
+  canvas.width = vw;
+  canvas.height = vh;
+  var ctx = canvas.getContext('2d');
+  if (!ctx || typeof canvas.captureStream !== 'function') return null;
+  ctx.translate(vw, 0);
+  ctx.scale(-1, 1);
+  function draw() {
+    ctx.drawImage(camVideo, 0, 0, vw, vh);
+    mirrorRafId = requestAnimationFrame(draw);
+  }
+  draw();
+  var stream = canvas.captureStream(30);
+  srcStream.getAudioTracks().forEach(function(t) { stream.addTrack(t); });
+  mirrorCanvasStream = stream;
+  return stream;
+}
+
+function stopMirrorStream() {
+  if (mirrorRafId) { cancelAnimationFrame(mirrorRafId); mirrorRafId = null; }
+  if (mirrorCanvasStream) {
+    mirrorCanvasStream.getVideoTracks().forEach(function(t) { t.stop(); });
+    mirrorCanvasStream = null;
+  }
 }
 
 function updateRecordTimer() {
@@ -2023,17 +2057,24 @@ async function startRecording() {
         audio: true,
       });
       camVideo.srcObject = camStream;
+      camVideo.classList.toggle('mirrored', camFacing === 'user');
     } catch (err) {
       camError.textContent = 'Cannot access camera/mic: ' + (err.message || err.name);
       return;
     }
   }
+  var recordStream = camStream;
+  if (camFacing === 'user') {
+    var mirrored = buildMirroredStream(camStream);
+    if (mirrored) recordStream = mirrored;
+  }
   var mime = pickVideoMime();
   try {
     mediaRecorder = mime
-      ? new MediaRecorder(camStream, { mimeType: mime, videoBitsPerSecond: 600000 })
-      : new MediaRecorder(camStream, { videoBitsPerSecond: 600000 });
+      ? new MediaRecorder(recordStream, { mimeType: mime, videoBitsPerSecond: 600000 })
+      : new MediaRecorder(recordStream, { videoBitsPerSecond: 600000 });
   } catch (err) {
+    stopMirrorStream();
     camError.textContent = 'Cannot record: ' + (err.message || err.name);
     return;
   }

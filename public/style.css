@@ -1116,6 +1116,9 @@ max-height: 70vh;
 background: #000;
 display: block;
 }
+#cam-video.mirrored {
+transform: scaleX(-1);
+}
 .cam-controls {
 display: flex;
 gap: 18px;
