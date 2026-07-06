@@ -521,6 +521,60 @@ app.post('/push-subscribe', async (req, res) => {
   }
 });
 
+const METERED_APP_NAME = process.env.METERED_APP_NAME || '';
+const METERED_API_KEY = process.env.METERED_API_KEY || '';
+const TURN_URLS = process.env.TURN_URLS || '';
+const TURN_USERNAME = process.env.TURN_USERNAME || '';
+const TURN_PASSWORD = process.env.TURN_PASSWORD || '';
+
+const STATIC_STUN = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+let iceCache = { servers: null, expiresAt: 0 };
+const ICE_CACHE_MS = 60 * 60 * 1000;
+
+async function fetchMeteredCredentials() {
+  const url = `https://${METERED_APP_NAME}.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(METERED_API_KEY)}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Metered API ${resp.status}`);
+  const data = await resp.json();
+  if (!Array.isArray(data)) throw new Error('Metered API: unexpected response');
+  return data;
+}
+
+async function getIceServers() {
+  const now = Date.now();
+  if (iceCache.servers && iceCache.expiresAt > now) return iceCache.servers;
+  let servers = [...STATIC_STUN];
+  if (METERED_APP_NAME && METERED_API_KEY) {
+    try {
+      const metered = await fetchMeteredCredentials();
+      servers = metered;
+    } catch (err) {
+      console.error('Metered TURN fetch failed:', err.message);
+    }
+  } else if (TURN_URLS) {
+    const urls = TURN_URLS.split(',').map((u) => u.trim()).filter(Boolean);
+    servers.push({ urls, username: TURN_USERNAME, credential: TURN_PASSWORD });
+  }
+  iceCache = { servers, expiresAt: now + ICE_CACHE_MS };
+  return servers;
+}
+
+app.get('/ice-servers', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  try {
+    const iceServers = await getIceServers();
+    res.json({ ok: true, iceServers });
+  } catch (err) {
+    console.error('ice-servers error:', err.message);
+    res.status(500).json({ ok: false, iceServers: STATIC_STUN });
+  }
+});
+
 app.get('/r2-status', (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
@@ -665,6 +719,7 @@ const onlineUsers = new Set();
 const socketCounts = new Map();
 const lastRead = new Map();
 const lastSeen = new Map();
+const activeCalls = new Map();
 
 function presenceSnapshot() {
   const snap = {};
@@ -963,6 +1018,131 @@ io.on('connection', async (socket) => {
     io.to(userRoom(recipient)).emit('typing', { username, peer, typing });
   });
 
+  function resolveCallTarget(payloadPeer) {
+    const peer = resolvePeer(username, payloadPeer);
+    if (!peer) return null;
+    return recipientOf(username, peer);
+  }
+
+  function clearActiveCall(reason) {
+    const call = activeCalls.get(username);
+    if (!call) return;
+    activeCalls.delete(username);
+    const other = call.peer;
+    const otherCall = activeCalls.get(other);
+    if (otherCall && otherCall.callId === call.callId) {
+      activeCalls.delete(other);
+    }
+    io.to(userRoom(other)).emit('call:end', { from: username, callId: call.callId, reason: reason || 'ended' });
+  }
+
+  socket.on('call:invite', (payload, ack) => {
+    const target = resolveCallTarget(payload && payload.peer);
+    if (!target) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const callId = typeof payload.callId === 'string' && payload.callId.length <= 64 ? payload.callId : null;
+    if (!callId || !payload.sdp || typeof payload.sdp !== 'object') {
+      if (typeof ack === 'function') ack({ error: 'Invalid invite' });
+      return;
+    }
+    if (activeCalls.has(username)) {
+      if (typeof ack === 'function') ack({ error: 'You are already in a call' });
+      return;
+    }
+    if (activeCalls.has(target)) {
+      if (typeof ack === 'function') ack({ error: 'busy', code: 'BUSY' });
+      return;
+    }
+    if (!onlineUsers.has(target)) {
+      // Still allow — push notif may wake them. Caller can time out.
+    }
+    activeCalls.set(username, { peer: target, callId, role: 'caller' });
+    activeCalls.set(target, { peer: username, callId, role: 'callee' });
+    io.to(userRoom(target)).emit('call:invite', {
+      from: username,
+      callId,
+      sdp: payload.sdp,
+      media: payload.media === 'audio' ? 'audio' : 'video',
+    });
+    sendPushToRecipient(target, {
+      title: `Incoming call from ${username}`,
+      body: 'Tap to answer',
+      url: '/',
+      tag: `call-${callId}`,
+    }).catch(() => {});
+    if (typeof ack === 'function') ack({ ok: true, callId });
+  });
+
+  socket.on('call:accept', (payload, ack) => {
+    const call = activeCalls.get(username);
+    if (!call || call.callId !== (payload && payload.callId)) {
+      if (typeof ack === 'function') ack({ error: 'No matching call' });
+      return;
+    }
+    if (!payload.sdp || typeof payload.sdp !== 'object') {
+      if (typeof ack === 'function') ack({ error: 'Invalid sdp' });
+      return;
+    }
+    io.to(userRoom(call.peer)).emit('call:accept', {
+      from: username,
+      callId: call.callId,
+      sdp: payload.sdp,
+    });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('call:reject', (payload, ack) => {
+    const call = activeCalls.get(username);
+    if (!call || call.callId !== (payload && payload.callId)) {
+      if (typeof ack === 'function') ack({ error: 'No matching call' });
+      return;
+    }
+    const target = call.peer;
+    activeCalls.delete(username);
+    const otherCall = activeCalls.get(target);
+    if (otherCall && otherCall.callId === call.callId) activeCalls.delete(target);
+    io.to(userRoom(target)).emit('call:reject', {
+      from: username,
+      callId: call.callId,
+      reason: typeof payload.reason === 'string' ? payload.reason.slice(0, 40) : 'declined',
+    });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('call:ice', (payload, ack) => {
+    const call = activeCalls.get(username);
+    if (!call || call.callId !== (payload && payload.callId)) {
+      if (typeof ack === 'function') ack({ error: 'No matching call' });
+      return;
+    }
+    if (!payload.candidate || typeof payload.candidate !== 'object') {
+      if (typeof ack === 'function') ack({ error: 'Invalid candidate' });
+      return;
+    }
+    io.to(userRoom(call.peer)).emit('call:ice', {
+      from: username,
+      callId: call.callId,
+      candidate: payload.candidate,
+    });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('call:end', (payload, ack) => {
+    const call = activeCalls.get(username);
+    if (!call) {
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    if (payload && payload.callId && payload.callId !== call.callId) {
+      if (typeof ack === 'function') ack({ error: 'Stale call id' });
+      return;
+    }
+    clearActiveCall((payload && typeof payload.reason === 'string') ? payload.reason.slice(0, 40) : 'ended');
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
   socket.on('disconnect', () => {
     const peer = socket.data.activePeer;
     if (peer) {
@@ -976,6 +1156,7 @@ io.on('connection', async (socket) => {
     }
     socketCounts.delete(username);
     onlineUsers.delete(username);
+    if (activeCalls.has(username)) clearActiveCall('peer_disconnected');
     const iso = new Date().toISOString();
     touchLastSeen(username, iso);
     io.emit('presence:update', { username, online: false, lastSeen: iso });

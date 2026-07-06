@@ -94,6 +94,7 @@ function renderPresence() {
   const partner = getPartner();
   if (!partner) {
     presenceEl.classList.add('hidden');
+    if (window.chatCall) window.chatCall.setCallButtonEnabled(false);
     return;
   }
   const info = presenceState[partner] || {};
@@ -105,6 +106,7 @@ function renderPresence() {
     presenceEl.classList.remove('online');
     presenceEl.textContent = partner + ' • ' + formatLastSeen(info.lastSeen);
   }
+  if (window.chatCall) window.chatCall.setCallButtonEnabled(!!info.online);
 }
 
 function renderTyping() {
@@ -825,6 +827,14 @@ function startChat(token, username) {
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
   });
+
+  if (window.chatCall) {
+    window.chatCall.init({
+      socket,
+      getPartner,
+      getToken: () => localStorage.getItem('token'),
+    });
+  }
 
   socket.on('history', (payload) => {
     const peer = payload && payload.peer;

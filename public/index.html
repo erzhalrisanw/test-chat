@@ -58,6 +58,7 @@
           <div id="peer-switcher-menu" class="hidden" role="menu"></div>
         </div>
         <button id="gallery-btn" class="hidden" title="Gallery">🖼️</button>
+        <button id="call-btn" class="hidden" title="Video call">📹</button>
         <button id="notif-toggle" title="Notifications">🔕 Off</button>
         <button id="logout">Logout</button>
       </div>
@@ -68,6 +69,11 @@
         <div class="spinner"></div>
         <span>Loading chat...</span>
       </div>
+    </div>
+    <div id="call-incoming" class="hidden">
+      <span class="call-incoming-text"><b id="call-incoming-from"></b> is calling...</span>
+      <button id="call-accept" type="button" class="call-ok" title="Accept">Accept</button>
+      <button id="call-decline" type="button" class="call-danger" title="Decline">Decline</button>
     </div>
     <div id="typing-indicator" class="hidden">
       <span class="typing-bubble">
@@ -139,6 +145,31 @@
     <div id="viewer-counter"></div>
   </div>
 
+  <div id="call-modal" class="hidden">
+    <div class="call-remote-wrap">
+      <video id="call-remote-video" autoplay playsinline></video>
+      <div id="call-remote-placeholder" class="call-placeholder">
+        <div class="call-avatar">📞</div>
+        <div class="call-status-text">
+          <div id="call-peer-name"></div>
+          <div id="call-state">Ringing…</div>
+          <div id="call-timer" class="hidden">0:00</div>
+        </div>
+      </div>
+    </div>
+    <div class="call-local-wrap">
+      <video id="call-local-video" autoplay playsinline muted></video>
+    </div>
+    <div class="call-controls">
+      <button id="call-mute" type="button" title="Mute mic" data-on="true">🎤</button>
+      <button id="call-camera" type="button" title="Toggle camera" data-on="true">📹</button>
+      <button id="call-minimize" type="button" title="Minimize (chat while calling)">🗕</button>
+      <button id="call-pip" type="button" title="Picture-in-Picture" class="hidden">🖼️</button>
+      <button id="call-end" type="button" class="call-danger" title="End call">📞</button>
+    </div>
+    <button id="call-expand" type="button" class="hidden" title="Back to fullscreen">⤢</button>
+  </div>
+
   <div id="camera-modal" class="hidden">
     <div class="cam-box">
       <video id="cam-video" autoplay playsinline muted></video>
@@ -154,6 +185,7 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/call.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

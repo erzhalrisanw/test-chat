@@ -4,7 +4,7 @@
   "description": "Simple 2-way web chat with login",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node --env-file-if-exists=.env server.js"
   },
   "engines": {
     "node": ">=18"

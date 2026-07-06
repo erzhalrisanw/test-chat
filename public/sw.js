@@ -5,14 +5,16 @@ self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) {}
   const title = data.title || 'New message';
+  const isCall = typeof data.tag === 'string' && data.tag.startsWith('call-');
   const options = {
     body: data.body || '',
     icon: '/icon.svg',
     badge: '/icon.svg',
-    tag: 'chat-message',
+    tag: data.tag || 'chat-message',
     renotify: true,
+    requireInteraction: isCall,
     data: { url: data.url || '/' },
-    vibrate: [200, 100, 200],
+    vibrate: isCall ? [400, 200, 400, 200, 400] : [200, 100, 200],
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
