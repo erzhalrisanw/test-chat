@@ -263,42 +263,91 @@
     });
   }
 
-  async function detectMultipleCameras() {
+  async function listVideoInputs() {
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return false;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return [];
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const cams = devices.filter((d) => d.kind === 'videoinput');
-      return cams.length >= 2;
-    } catch (_) { return false; }
+      return devices.filter((d) => d.kind === 'videoinput');
+    } catch (_) { return []; }
+  }
+
+  async function detectMultipleCameras() {
+    const cams = await listVideoInputs();
+    return cams.length >= 2;
+  }
+
+  async function tryGetVideoStream(constraints) {
+    return navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
   }
 
   async function switchCamera() {
     if (call.switching || !call.pc || !call.localStream) return;
     call.switching = true;
     dom.switchBtn.disabled = true;
-    const nextFacing = call.facingMode === 'user' ? 'environment' : 'user';
+
+    const currentTrack = call.localStream.getVideoTracks()[0];
+    const currentSettings = currentTrack && currentTrack.getSettings ? currentTrack.getSettings() : {};
+    const currentDeviceId = currentSettings.deviceId || null;
+    const currentFacing = currentSettings.facingMode || call.facingMode;
+
+    // Stop current track first — some devices (iOS) only allow one active camera at a time.
+    if (currentTrack) {
+      try { currentTrack.stop(); } catch (_) {}
+    }
+
+    const cams = await listVideoInputs();
     let newStream = null;
+    let chosenFacing = currentFacing === 'user' ? 'environment' : 'user';
+
+    // Strategy 1: facingMode exact (best on mobile)
     try {
-      newStream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { exact: nextFacing } },
+      newStream = await tryGetVideoStream({
+        width: { ideal: 1280 }, height: { ideal: 720 },
+        facingMode: { exact: chosenFacing },
       });
-    } catch (err) {
+    } catch (_) {}
+
+    // Strategy 2: cycle through deviceIds (works on desktop + as fallback)
+    if (!newStream && cams.length >= 2 && currentDeviceId) {
+      const idx = cams.findIndex((c) => c.deviceId === currentDeviceId);
+      const next = cams[(idx + 1) % cams.length];
       try {
-        newStream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: nextFacing },
+        newStream = await tryGetVideoStream({
+          width: { ideal: 1280 }, height: { ideal: 720 },
+          deviceId: { exact: next.deviceId },
         });
-      } catch (err2) {
-        console.warn('switch camera failed:', err2.message);
-        call.switching = false;
-        dom.switchBtn.disabled = false;
-        return;
+      } catch (_) {}
+    }
+
+    // Strategy 3: facingMode loose
+    if (!newStream) {
+      try {
+        newStream = await tryGetVideoStream({ facingMode: chosenFacing });
+      } catch (err) {
+        console.warn('switch camera failed:', err.message);
       }
     }
+
+    if (!newStream) {
+      // Restore previous camera to avoid black feed
+      try {
+        const restore = await tryGetVideoStream({ facingMode: currentFacing });
+        const track = restore.getVideoTracks()[0];
+        call.localStream.addTrack(track);
+        const sender = call.pc.getSenders().find((s) => s.track === null || (s.track && s.track.kind === 'video'));
+        if (sender) await sender.replaceTrack(track);
+        dom.localVideo.srcObject = call.localStream;
+      } catch (_) {}
+      alert('Tidak bisa switch camera (browser menolak / hanya 1 kamera aktif).');
+      call.switching = false;
+      dom.switchBtn.disabled = false;
+      return;
+    }
+
     const newTrack = newStream.getVideoTracks()[0];
+    const newSettings = newTrack.getSettings ? newTrack.getSettings() : {};
     const oldTrack = call.localStream.getVideoTracks()[0];
-    const sender = call.pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    const sender = call.pc.getSenders().find((s) => s.track === null || (s.track && s.track.kind === 'video'));
     if (sender) {
       try { await sender.replaceTrack(newTrack); } catch (err) { console.warn('replaceTrack:', err.message); }
     }
@@ -308,8 +357,8 @@
     }
     call.localStream.addTrack(newTrack);
     dom.localVideo.srcObject = call.localStream;
-    call.facingMode = nextFacing;
-    dom.localVideo.classList.toggle('mirror-off', nextFacing === 'environment');
+    call.facingMode = newSettings.facingMode || chosenFacing;
+    dom.localVideo.classList.toggle('mirror-off', call.facingMode === 'environment');
     call.switching = false;
     dom.switchBtn.disabled = false;
   }
