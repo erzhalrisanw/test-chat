@@ -1334,12 +1334,12 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
   top: 6px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0,0,0,.45);
+  background: rgba(0,0,0,.4);
   color: #fff;
-  padding: 2px 12px;
+  padding: 2px 10px;
   border-radius: 999px;
-  font-size: 10px;
-  letter-spacing: 3px;
+  font-size: 9px;
+  letter-spacing: 2px;
   line-height: 1;
   pointer-events: none;
   z-index: 3;
@@ -1347,24 +1347,31 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
 }
 #call-resize-handle {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 26px;
-  height: 26px;
+  bottom: 4px;
+  right: 4px;
+  width: 30px;
+  height: 30px;
   cursor: nwse-resize;
-  z-index: 4;
+  z-index: 11;
   touch-action: none;
+  border: 2px solid var(--toon-ink);
+  border-radius: 8px 8px 12px 8px;
   background:
     linear-gradient(135deg,
-      transparent 45%,
-      var(--toon-ink) 47%, var(--toon-ink) 55%,
-      transparent 57%,
-      transparent 65%,
-      var(--toon-ink) 67%, var(--toon-ink) 75%,
-      transparent 77%);
-  opacity: .75;
+      transparent 38%,
+      var(--toon-ink) 40%, var(--toon-ink) 48%,
+      transparent 50%,
+      transparent 60%,
+      var(--toon-ink) 62%, var(--toon-ink) 70%,
+      transparent 72%),
+    var(--toon-yellow);
+  box-shadow: 0 2px 0 0 var(--toon-ink);
 }
-#call-resize-handle:hover { opacity: 1; }
+#call-resize-handle:hover { filter: brightness(1.08); }
+#call-resize-handle:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
+@media (max-width: 640px) {
+  #call-resize-handle { width: 36px; height: 36px; }
+}
 #call-modal:not(.minimized) #call-drag-hint,
 #call-modal:not(.minimized) #call-resize-handle { display: none !important; }
 #call-modal.minimized #call-drag-hint,
@@ -1373,36 +1380,45 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
 #call-modal.minimized .call-controls button { cursor: pointer; }
 #call-modal.minimized .call-remote-wrap { height: 100%; }
 #call-modal.minimized .call-local-wrap {
-  bottom: 60px;
+  bottom: 52px;
   right: 8px;
   width: 22%;
-  min-width: 60px;
-  max-width: 110px;
+  min-width: 56px;
+  max-width: 96px;
   aspect-ratio: 3/4;
   height: auto;
   border-width: 2px;
   border-radius: 10px;
 }
-#call-modal.minimized .call-placeholder .call-avatar { width: 68px; height: 68px; font-size: 28px; }
-#call-modal.minimized #call-peer-name { font-size: 15px; }
-#call-modal.minimized #call-state { font-size: 12px; }
-#call-modal.minimized #call-timer { font-size: 12px; }
+#call-modal.minimized .call-placeholder .call-avatar { width: 58px; height: 58px; font-size: 24px; }
+#call-modal.minimized #call-peer-name { font-size: 14px; }
+#call-modal.minimized #call-state { font-size: 11px; }
+#call-modal.minimized #call-timer { font-size: 11px; }
 #call-modal.minimized .call-controls {
-  padding: 8px;
-  gap: 8px;
+  padding: 6px 44px 6px 8px;
+  gap: 6px;
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   background: rgba(255,244,214,.94);
   border-top: 2px solid var(--toon-ink);
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 #call-modal.minimized .call-controls button {
-  width: 38px;
-  height: 38px;
-  font-size: 15px;
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
   border-width: 2px;
+  border-radius: 50%;
   box-shadow: 0 2px 0 0 var(--toon-ink);
+  flex: 0 0 auto;
+}
+#call-modal.minimized .call-controls button:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 0 var(--toon-ink);
 }
 #call-modal.minimized #call-minimize,
 #call-modal.minimized #call-pip {
@@ -1413,16 +1429,18 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
   top: 6px;
   right: 6px;
   z-index: 5;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: 999px;
   border: 2px solid var(--toon-ink);
   background: var(--toon-yellow);
   color: var(--toon-ink);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 11px;
   cursor: pointer;
   box-shadow: 0 2px 0 0 var(--toon-ink);
+  padding: 0;
+  line-height: 1;
 }
 #call-expand:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
 @media (max-width: 480px) {
