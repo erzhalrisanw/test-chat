@@ -61,6 +61,8 @@
     connectTimer: null,
     startedAt: null,
     ringtone: null,
+    facingMode: 'user',
+    switching: false,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -80,6 +82,7 @@
     dom.minimizeBtn = $('call-minimize');
     dom.expandBtn = $('call-expand');
     dom.pipBtn = $('call-pip');
+    dom.switchBtn = $('call-switch');
     dom.incoming = $('call-incoming');
     dom.incomingFrom = $('call-incoming-from');
     dom.acceptBtn = $('call-accept');
@@ -92,12 +95,16 @@
     dom.minimizeBtn.addEventListener('click', minimize);
     dom.expandBtn.addEventListener('click', expand);
     dom.pipBtn.addEventListener('click', togglePip);
+    dom.switchBtn.addEventListener('click', switchCamera);
     dom.acceptBtn.addEventListener('click', acceptCall);
     dom.declineBtn.addEventListener('click', () => rejectCall('declined'));
 
     if ('pictureInPictureEnabled' in document && document.pictureInPictureEnabled) {
       dom.pipBtn.classList.remove('hidden');
     }
+    detectMultipleCameras().then((multi) => {
+      if (multi) dom.switchBtn.classList.remove('hidden');
+    });
     dom.remoteVideo.addEventListener('leavepictureinpicture', () => {
       if (call.state === STATE.CONNECTED) expand();
     });
@@ -250,8 +257,61 @@
   async function getMedia(withVideo) {
     return navigator.mediaDevices.getUserMedia({
       audio: true,
-      video: withVideo ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+      video: withVideo
+        ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: call.facingMode }
+        : false,
     });
+  }
+
+  async function detectMultipleCameras() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return false;
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter((d) => d.kind === 'videoinput');
+      return cams.length >= 2;
+    } catch (_) { return false; }
+  }
+
+  async function switchCamera() {
+    if (call.switching || !call.pc || !call.localStream) return;
+    call.switching = true;
+    dom.switchBtn.disabled = true;
+    const nextFacing = call.facingMode === 'user' ? 'environment' : 'user';
+    let newStream = null;
+    try {
+      newStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { exact: nextFacing } },
+      });
+    } catch (err) {
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: nextFacing },
+        });
+      } catch (err2) {
+        console.warn('switch camera failed:', err2.message);
+        call.switching = false;
+        dom.switchBtn.disabled = false;
+        return;
+      }
+    }
+    const newTrack = newStream.getVideoTracks()[0];
+    const oldTrack = call.localStream.getVideoTracks()[0];
+    const sender = call.pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+    if (sender) {
+      try { await sender.replaceTrack(newTrack); } catch (err) { console.warn('replaceTrack:', err.message); }
+    }
+    if (oldTrack) {
+      call.localStream.removeTrack(oldTrack);
+      try { oldTrack.stop(); } catch (_) {}
+    }
+    call.localStream.addTrack(newTrack);
+    dom.localVideo.srcObject = call.localStream;
+    call.facingMode = nextFacing;
+    dom.localVideo.classList.toggle('mirror-off', nextFacing === 'environment');
+    call.switching = false;
+    dom.switchBtn.disabled = false;
   }
 
   async function createPeerConnection() {
@@ -511,6 +571,9 @@
     call.remoteDescSet = false;
     call.pendingOffer = null;
     call.startedAt = null;
+    call.facingMode = 'user';
+    call.switching = false;
+    if (ready) dom.localVideo.classList.remove('mirror-off');
   }
 
   function toggleMute() {
