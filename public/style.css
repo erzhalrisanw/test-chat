@@ -1325,22 +1325,52 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
   border-radius: 18px;
   box-shadow: var(--toon-shadow);
   overflow: hidden;
-  resize: both;
+  touch-action: none;
+  cursor: move;
   z-index: 900;
 }
-#call-modal.minimized::after {
-  content: '';
+#call-drag-hint {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 14px;
-  height: 14px;
-  background:
-    linear-gradient(135deg, transparent 50%, var(--toon-ink) 52%, var(--toon-ink) 60%, transparent 62%,
-                          transparent 68%, var(--toon-ink) 70%, var(--toon-ink) 78%, transparent 80%);
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  padding: 2px 12px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 3px;
+  line-height: 1;
   pointer-events: none;
-  opacity: .6;
+  z-index: 3;
+  user-select: none;
 }
+#call-resize-handle {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 26px;
+  height: 26px;
+  cursor: nwse-resize;
+  z-index: 4;
+  touch-action: none;
+  background:
+    linear-gradient(135deg,
+      transparent 45%,
+      var(--toon-ink) 47%, var(--toon-ink) 55%,
+      transparent 57%,
+      transparent 65%,
+      var(--toon-ink) 67%, var(--toon-ink) 75%,
+      transparent 77%);
+  opacity: .75;
+}
+#call-resize-handle:hover { opacity: 1; }
+#call-modal:not(.minimized) #call-drag-hint,
+#call-modal:not(.minimized) #call-resize-handle { display: none !important; }
+#call-modal.minimized #call-drag-hint,
+#call-modal.minimized #call-resize-handle { display: block; }
+#call-modal.minimized .call-controls { cursor: default; }
+#call-modal.minimized .call-controls button { cursor: pointer; }
 #call-modal.minimized .call-remote-wrap { height: 100%; }
 #call-modal.minimized .call-local-wrap {
   bottom: 60px;
@@ -1379,25 +1409,24 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
   display: none;
 }
 #call-expand {
-  position: fixed;
-  bottom: 306px;
-  right: 22px;
-  z-index: 901;
-  width: 32px;
-  height: 32px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
-  border: 3px solid var(--toon-ink);
+  border: 2px solid var(--toon-ink);
   background: var(--toon-yellow);
   color: var(--toon-ink);
   font-family: inherit;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 3px 0 0 var(--toon-ink);
+  box-shadow: 0 2px 0 0 var(--toon-ink);
 }
-#call-expand:active { transform: translateY(3px); box-shadow: 0 0 0 0 var(--toon-ink); }
+#call-expand:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
 @media (max-width: 480px) {
   #call-modal.minimized { width: 280px; height: 220px; bottom: 100px; }
-  #call-expand { bottom: 328px; }
 }
 
 #sunrise-overlay {

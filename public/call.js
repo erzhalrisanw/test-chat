@@ -77,12 +77,15 @@
     dom.stateEl = $('call-state');
     dom.timer = $('call-timer');
     dom.muteBtn = $('call-mute');
+    dom.speakerBtn = $('call-speaker');
     dom.cameraBtn = $('call-camera');
     dom.endBtn = $('call-end');
     dom.minimizeBtn = $('call-minimize');
     dom.expandBtn = $('call-expand');
     dom.pipBtn = $('call-pip');
     dom.switchBtn = $('call-switch');
+    dom.resizeHandle = $('call-resize-handle');
+    dom.dragHint = $('call-drag-hint');
     dom.incoming = $('call-incoming');
     dom.incomingFrom = $('call-incoming-from');
     dom.acceptBtn = $('call-accept');
@@ -91,6 +94,7 @@
     dom.callBtn.addEventListener('click', onCallBtnClick);
     dom.endBtn.addEventListener('click', () => endCall('ended'));
     dom.muteBtn.addEventListener('click', toggleMute);
+    dom.speakerBtn.addEventListener('click', toggleSpeaker);
     dom.cameraBtn.addEventListener('click', toggleCamera);
     dom.minimizeBtn.addEventListener('click', minimize);
     dom.expandBtn.addEventListener('click', expand);
@@ -109,7 +113,87 @@
       if (call.state === STATE.CONNECTED) expand();
     });
 
+    setupDragAndResize();
+
     ready = true;
+  }
+
+  function setupDragAndResize() {
+    const modal = dom.modal;
+    let mode = null;
+    let startX = 0, startY = 0, startL = 0, startT = 0, startW = 0, startH = 0;
+    let activePointer = null;
+
+    function pinPosition() {
+      const rect = modal.getBoundingClientRect();
+      modal.style.left = rect.left + 'px';
+      modal.style.top = rect.top + 'px';
+      modal.style.right = 'auto';
+      modal.style.bottom = 'auto';
+      modal.style.width = rect.width + 'px';
+      modal.style.height = rect.height + 'px';
+    }
+
+    modal.addEventListener('pointerdown', (e) => {
+      if (!modal.classList.contains('minimized')) return;
+      if (e.target.closest('button')) return;
+      if (e.target.closest('video')) return;
+
+      mode = e.target === dom.resizeHandle ? 'resize' : 'drag';
+      pinPosition();
+      const rect = modal.getBoundingClientRect();
+      startL = rect.left;
+      startT = rect.top;
+      startW = rect.width;
+      startH = rect.height;
+      startX = e.clientX;
+      startY = e.clientY;
+      activePointer = e.pointerId;
+      try { modal.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+
+    modal.addEventListener('pointermove', (e) => {
+      if (!mode || e.pointerId !== activePointer) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (mode === 'drag') {
+        const nextL = Math.max(8, Math.min(vw - startW - 8, startL + dx));
+        const nextT = Math.max(8, Math.min(vh - startH - 8, startT + dy));
+        modal.style.left = nextL + 'px';
+        modal.style.top = nextT + 'px';
+      } else {
+        const minW = 220, minH = 170;
+        const maxW = vw - startL - 8;
+        const maxH = vh - startT - 8;
+        modal.style.width = Math.max(minW, Math.min(maxW, startW + dx)) + 'px';
+        modal.style.height = Math.max(minH, Math.min(maxH, startH + dy)) + 'px';
+      }
+    });
+
+    function endGesture(e) {
+      if (!mode) return;
+      if (e && e.pointerId !== activePointer && e.type !== 'pointercancel') return;
+      mode = null;
+      if (activePointer != null) {
+        try { modal.releasePointerCapture(activePointer); } catch (_) {}
+      }
+      activePointer = null;
+    }
+    modal.addEventListener('pointerup', endGesture);
+    modal.addEventListener('pointercancel', endGesture);
+  }
+
+  function clearInlineLayout() {
+    if (!ready) return;
+    dom.modal.style.left = '';
+    dom.modal.style.top = '';
+    dom.modal.style.right = '';
+    dom.modal.style.bottom = '';
+    dom.modal.style.width = '';
+    dom.modal.style.height = '';
   }
 
   function minimize() {
@@ -120,6 +204,7 @@
   function expand() {
     dom.modal.classList.remove('minimized');
     dom.expandBtn.classList.add('hidden');
+    clearInlineLayout();
     if (document.pictureInPictureElement === dom.remoteVideo) {
       document.exitPictureInPicture().catch(() => {});
     }
@@ -180,6 +265,7 @@
     }
     dom.modal.classList.remove('minimized');
     dom.expandBtn.classList.add('hidden');
+    clearInlineLayout();
     dom.modal.classList.add('hidden');
     dom.timer.classList.add('hidden');
     dom.timer.textContent = '0:00';
@@ -603,8 +689,10 @@
     if (call.remoteStream) call.remoteStream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
     resetCallState();
     if (ready) {
-      dom.muteBtn.dataset.on = 'true'; dom.muteBtn.textContent = '🎤';
+      dom.muteBtn.dataset.on = 'true'; dom.muteBtn.textContent = '🎤'; dom.muteBtn.title = 'Mute mic';
+      dom.speakerBtn.dataset.on = 'true'; dom.speakerBtn.textContent = '🔊'; dom.speakerBtn.title = 'Mute speaker';
       dom.cameraBtn.dataset.on = 'true'; dom.cameraBtn.textContent = '📹';
+      dom.remoteVideo.muted = false;
     }
   }
 
@@ -631,6 +719,15 @@
     call.localStream.getAudioTracks().forEach((t) => { t.enabled = !on; });
     dom.muteBtn.dataset.on = on ? 'false' : 'true';
     dom.muteBtn.textContent = on ? '🚫' : '🎤';
+    dom.muteBtn.title = on ? 'Unmute mic' : 'Mute mic';
+  }
+
+  function toggleSpeaker() {
+    const on = dom.speakerBtn.dataset.on === 'true';
+    dom.remoteVideo.muted = on;
+    dom.speakerBtn.dataset.on = on ? 'false' : 'true';
+    dom.speakerBtn.textContent = on ? '🔇' : '🔊';
+    dom.speakerBtn.title = on ? 'Unmute speaker' : 'Mute speaker';
   }
 
   function toggleCamera() {
