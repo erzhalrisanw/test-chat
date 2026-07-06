@@ -120,9 +120,11 @@
 
   function setupDragAndResize() {
     const modal = dom.modal;
+    const pointers = new Map();
     let mode = null;
     let startX = 0, startY = 0, startL = 0, startT = 0, startW = 0, startH = 0;
-    let activePointer = null;
+    let pinchStartDist = 0, pinchRelX = 0, pinchRelY = 0;
+    const MIN_W = 220, MIN_H = 170;
 
     function pinPosition() {
       const rect = modal.getBoundingClientRect();
@@ -134,53 +136,106 @@
       modal.style.height = rect.height + 'px';
     }
 
-    modal.addEventListener('pointerdown', (e) => {
-      if (!modal.classList.contains('minimized')) return;
-      if (e.target.closest('button')) return;
-      if (e.target.closest('video')) return;
+    function distance(p1, p2) {
+      return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
 
-      mode = e.target === dom.resizeHandle ? 'resize' : 'drag';
-      pinPosition();
+    function captureBaseline() {
       const rect = modal.getBoundingClientRect();
       startL = rect.left;
       startT = rect.top;
       startW = rect.width;
       startH = rect.height;
-      startX = e.clientX;
-      startY = e.clientY;
-      activePointer = e.pointerId;
+    }
+
+    function startPinch() {
+      const pts = [...pointers.values()];
+      const p1 = pts[0], p2 = pts[1];
+      captureBaseline();
+      pinchStartDist = Math.max(10, distance(p1, p2));
+      const cx = (p1.x + p2.x) / 2;
+      const cy = (p1.y + p2.y) / 2;
+      pinchRelX = startW > 0 ? (cx - startL) / startW : 0.5;
+      pinchRelY = startH > 0 ? (cy - startT) / startH : 0.5;
+      mode = 'pinch';
+    }
+
+    modal.addEventListener('pointerdown', (e) => {
+      if (!modal.classList.contains('minimized')) return;
+      if (e.target.closest('button')) return;
+      if (e.target.closest('video')) return;
+
+      pinPosition();
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       try { modal.setPointerCapture(e.pointerId); } catch (_) {}
       e.preventDefault();
+
+      if (pointers.size === 1) {
+        mode = e.target === dom.resizeHandle ? 'resize' : 'drag';
+        captureBaseline();
+        startX = e.clientX;
+        startY = e.clientY;
+      } else if (pointers.size === 2) {
+        startPinch();
+      }
     });
 
     modal.addEventListener('pointermove', (e) => {
-      if (!mode || e.pointerId !== activePointer) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (!mode) return;
+
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      if (mode === 'drag') {
+
+      if (mode === 'pinch' && pointers.size >= 2) {
+        const pts = [...pointers.values()];
+        const p1 = pts[0], p2 = pts[1];
+        const dist = Math.max(10, distance(p1, p2));
+        const ratio = dist / pinchStartDist;
+        const cx = (p1.x + p2.x) / 2;
+        const cy = (p1.y + p2.y) / 2;
+        const newW = Math.max(MIN_W, Math.min(vw - 16, startW * ratio));
+        const newH = Math.max(MIN_H, Math.min(vh - 16, startH * ratio));
+        let nextL = cx - pinchRelX * newW;
+        let nextT = cy - pinchRelY * newH;
+        nextL = Math.max(8, Math.min(vw - newW - 8, nextL));
+        nextT = Math.max(8, Math.min(vh - newH - 8, nextT));
+        modal.style.width = newW + 'px';
+        modal.style.height = newH + 'px';
+        modal.style.left = nextL + 'px';
+        modal.style.top = nextT + 'px';
+      } else if (mode === 'drag') {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
         const nextL = Math.max(8, Math.min(vw - startW - 8, startL + dx));
         const nextT = Math.max(8, Math.min(vh - startH - 8, startT + dy));
         modal.style.left = nextL + 'px';
         modal.style.top = nextT + 'px';
-      } else {
-        const minW = 220, minH = 170;
+      } else if (mode === 'resize') {
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
         const maxW = vw - startL - 8;
         const maxH = vh - startT - 8;
-        modal.style.width = Math.max(minW, Math.min(maxW, startW + dx)) + 'px';
-        modal.style.height = Math.max(minH, Math.min(maxH, startH + dy)) + 'px';
+        modal.style.width = Math.max(MIN_W, Math.min(maxW, startW + dx)) + 'px';
+        modal.style.height = Math.max(MIN_H, Math.min(maxH, startH + dy)) + 'px';
       }
     });
 
     function endGesture(e) {
-      if (!mode) return;
-      if (e && e.pointerId !== activePointer && e.type !== 'pointercancel') return;
-      mode = null;
-      if (activePointer != null) {
-        try { modal.releasePointerCapture(activePointer); } catch (_) {}
+      if (pointers.has(e.pointerId)) {
+        pointers.delete(e.pointerId);
+        try { modal.releasePointerCapture(e.pointerId); } catch (_) {}
       }
-      activePointer = null;
+      if (pointers.size === 0) {
+        mode = null;
+      } else if (pointers.size === 1 && mode === 'pinch') {
+        const remaining = [...pointers.values()][0];
+        captureBaseline();
+        startX = remaining.x;
+        startY = remaining.y;
+        mode = 'drag';
+      }
     }
     modal.addEventListener('pointerup', endGesture);
     modal.addEventListener('pointercancel', endGesture);
