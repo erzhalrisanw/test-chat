@@ -833,6 +833,7 @@ function startChat(token, username) {
       socket,
       getPartner,
       getToken: () => localStorage.getItem('token'),
+      getMe: () => me,
     });
   }
 

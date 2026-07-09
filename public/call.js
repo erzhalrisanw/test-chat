@@ -9,6 +9,8 @@
   const ICE_CACHE_MS = 50 * 60 * 1000;
   let iceCache = { servers: null, expiresAt: 0 };
   let getAuthToken = () => null;
+  let getMe = () => null;
+  const SHARE_ALLOWED_USERS = new Set(['occupatus', 'ocean']);
 
   async function loadIceServers() {
     const now = Date.now();
@@ -63,6 +65,12 @@
     ringtone: null,
     facingMode: 'user',
     switching: false,
+    sharing: false,
+    shareBusy: false,
+    screenStream: null,
+    savedCameraTrack: null,
+    savedMicTrack: null,
+    mixerCtx: null,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -84,6 +92,7 @@
     dom.expandBtn = $('call-expand');
     dom.pipBtn = $('call-pip');
     dom.switchBtn = $('call-switch');
+    dom.shareBtn = $('call-share');
     dom.resizeHandle = $('call-resize-handle');
     dom.dragHint = $('call-drag-hint');
     dom.incoming = $('call-incoming');
@@ -100,6 +109,7 @@
     dom.expandBtn.addEventListener('click', expand);
     dom.pipBtn.addEventListener('click', togglePip);
     dom.switchBtn.addEventListener('click', switchCamera);
+    dom.shareBtn.addEventListener('click', toggleScreenShare);
     dom.acceptBtn.addEventListener('click', acceptCall);
     dom.declineBtn.addEventListener('click', () => rejectCall('declined'));
 
@@ -109,6 +119,7 @@
     detectMultipleCameras().then((multi) => {
       if (multi) dom.switchBtn.classList.remove('hidden');
     });
+    updateShareBtnVisibility();
     dom.remoteVideo.addEventListener('leavepictureinpicture', () => {
       if (call.state === STATE.CONNECTED) expand();
     });
@@ -419,6 +430,162 @@
 
   async function tryGetVideoStream(constraints) {
     return navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
+  }
+
+  function updateShareBtnVisibility() {
+    if (!ready) return;
+    const supported = !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+    const me = getMe && getMe();
+    const allowed = supported && me && SHARE_ALLOWED_USERS.has(me);
+    dom.shareBtn.classList.toggle('hidden', !allowed);
+  }
+
+  function findSender(kind) {
+    if (!call.pc) return null;
+    return call.pc.getSenders().find((s) => s.track && s.track.kind === kind) || null;
+  }
+
+  async function toggleScreenShare() {
+    if (call.shareBusy) return;
+    if (call.state !== STATE.CONNECTED && call.state !== STATE.CONNECTING) {
+      alert('Screen share hanya bisa saat panggilan tersambung.');
+      return;
+    }
+    if (call.sharing) await stopScreenShare();
+    else await startScreenShare();
+  }
+
+  async function startScreenShare() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
+      alert('Browser ini tidak mendukung screen share.');
+      return;
+    }
+    call.shareBusy = true;
+    dom.shareBtn.disabled = true;
+    let displayStream = null;
+    try {
+      displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30, max: 60 } },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+    } catch (err) {
+      if (err && err.name !== 'NotAllowedError') console.warn('getDisplayMedia:', err);
+      call.shareBusy = false;
+      dom.shareBtn.disabled = false;
+      return;
+    }
+
+    const videoTrack = displayStream.getVideoTracks()[0];
+    const audioTrack = displayStream.getAudioTracks()[0] || null;
+    const videoSender = findSender('video');
+    const audioSender = findSender('audio');
+
+    if (videoSender && videoTrack) {
+      call.savedCameraTrack = videoSender.track;
+      try { await videoSender.replaceTrack(videoTrack); } catch (err) {
+        console.warn('replaceTrack video:', err);
+        displayStream.getTracks().forEach((t) => t.stop());
+        call.shareBusy = false;
+        dom.shareBtn.disabled = false;
+        return;
+      }
+    }
+
+    if (audioTrack && audioSender && audioSender.track) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioCtx();
+        const dest = ctx.createMediaStreamDestination();
+        const micSource = ctx.createMediaStreamSource(new MediaStream([audioSender.track]));
+        const tabSource = ctx.createMediaStreamSource(new MediaStream([audioTrack]));
+        const micGain = ctx.createGain();
+        const tabGain = ctx.createGain();
+        micGain.gain.value = 1.0;
+        tabGain.gain.value = 0.8;
+        micSource.connect(micGain).connect(dest);
+        tabSource.connect(tabGain).connect(dest);
+        const mixedTrack = dest.stream.getAudioTracks()[0];
+        if (mixedTrack) {
+          call.savedMicTrack = audioSender.track;
+          call.mixerCtx = ctx;
+          await audioSender.replaceTrack(mixedTrack);
+        } else {
+          try { ctx.close(); } catch (_) {}
+        }
+      } catch (err) {
+        console.warn('audio mixer setup failed:', err);
+      }
+    }
+
+    videoTrack.addEventListener('ended', () => {
+      if (call.sharing) stopScreenShare();
+    });
+
+    call.screenStream = displayStream;
+    call.sharing = true;
+    dom.shareBtn.dataset.on = 'true';
+    dom.shareBtn.title = 'Stop sharing';
+    dom.localVideo.srcObject = displayStream;
+    dom.localVideo.classList.add('mirror-off');
+    dom.cameraBtn.disabled = true;
+    dom.switchBtn.disabled = true;
+    call.shareBusy = false;
+    dom.shareBtn.disabled = false;
+  }
+
+  async function stopScreenShare() {
+    if (!call.sharing) return;
+    call.shareBusy = true;
+    dom.shareBtn.disabled = true;
+
+    const videoSender = findSender('video');
+    const audioSender = findSender('audio');
+
+    if (videoSender && call.savedCameraTrack && call.savedCameraTrack.readyState === 'live') {
+      try { await videoSender.replaceTrack(call.savedCameraTrack); } catch (err) { console.warn('restore video:', err); }
+    } else if (videoSender) {
+      try {
+        const fresh = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: call.facingMode },
+        });
+        const t = fresh.getVideoTracks()[0];
+        if (t) {
+          await videoSender.replaceTrack(t);
+          const oldLocalVideo = call.localStream.getVideoTracks()[0];
+          if (oldLocalVideo) { call.localStream.removeTrack(oldLocalVideo); try { oldLocalVideo.stop(); } catch (_) {} }
+          call.localStream.addTrack(t);
+        }
+      } catch (err) { console.warn('camera reacquire failed:', err); }
+    }
+
+    if (audioSender && call.savedMicTrack && call.savedMicTrack.readyState === 'live') {
+      try { await audioSender.replaceTrack(call.savedMicTrack); } catch (err) { console.warn('restore audio:', err); }
+    }
+
+    if (call.mixerCtx) {
+      try { await call.mixerCtx.close(); } catch (_) {}
+      call.mixerCtx = null;
+    }
+    if (call.screenStream) {
+      call.screenStream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+      call.screenStream = null;
+    }
+    call.savedCameraTrack = null;
+    call.savedMicTrack = null;
+    call.sharing = false;
+    dom.shareBtn.dataset.on = 'false';
+    dom.shareBtn.title = 'Share screen (nonton bareng)';
+    dom.localVideo.srcObject = call.localStream;
+    dom.localVideo.classList.toggle('mirror-off', call.facingMode === 'environment');
+    dom.cameraBtn.disabled = false;
+    dom.switchBtn.disabled = false;
+    call.shareBusy = false;
+    dom.shareBtn.disabled = false;
   }
 
   async function switchCamera() {
@@ -737,6 +904,11 @@
     stopTimer();
     stopRingtone();
     if (call.ringTimer) { clearTimeout(call.ringTimer); call.ringTimer = null; }
+    if (call.screenStream) {
+      call.screenStream.getTracks().forEach((t) => { try { t.stop(); } catch (_) {} });
+      call.screenStream = null;
+    }
+    if (call.mixerCtx) { try { call.mixerCtx.close(); } catch (_) {} call.mixerCtx = null; }
     if (call.pc) {
       try { call.pc.ontrack = null; call.pc.onicecandidate = null; call.pc.oniceconnectionstatechange = null; call.pc.close(); } catch (_) {}
     }
@@ -747,6 +919,11 @@
       dom.muteBtn.dataset.on = 'true'; dom.muteBtn.textContent = '🎤'; dom.muteBtn.title = 'Mute mic';
       dom.speakerBtn.dataset.on = 'true'; dom.speakerBtn.textContent = '🔊'; dom.speakerBtn.title = 'Mute speaker';
       dom.cameraBtn.dataset.on = 'true'; dom.cameraBtn.textContent = '📹';
+      dom.cameraBtn.disabled = false;
+      dom.switchBtn.disabled = false;
+      dom.shareBtn.dataset.on = 'false';
+      dom.shareBtn.title = 'Share screen (nonton bareng)';
+      dom.shareBtn.disabled = false;
       dom.remoteVideo.muted = false;
     }
   }
@@ -765,6 +942,12 @@
     call.startedAt = null;
     call.facingMode = 'user';
     call.switching = false;
+    call.sharing = false;
+    call.shareBusy = false;
+    call.screenStream = null;
+    call.savedCameraTrack = null;
+    call.savedMicTrack = null;
+    call.mixerCtx = null;
     if (ready) dom.localVideo.classList.remove('mirror-off');
   }
 
@@ -799,6 +982,8 @@
       if (opts && opts.socket) setSocket(opts.socket);
       if (opts && typeof opts.getPartner === 'function') api.getPartner = opts.getPartner;
       if (opts && typeof opts.getToken === 'function') getAuthToken = opts.getToken;
+      if (opts && typeof opts.getMe === 'function') getMe = opts.getMe;
+      updateShareBtnVisibility();
     },
     setSocket,
     setCallButtonEnabled,
