@@ -276,6 +276,54 @@ document.addEventListener('click', (e) => {
 });
 attachMenu.addEventListener('click', () => closeAttachMenu());
 
+const EMOJIS = [
+  '😀','😁','😂','🤣','😊','😍','😘','😎','🤩','🥳','😉','😋','😜','🤪','😇','🙂',
+  '🙃','😌','😔','😢','😭','😤','😡','🤬','🤔','🤯','😱','🥺','🤗','🤭','🤫','🤥',
+  '😴','🤤','🥱','🤒','🤕','🤢','🤮','🥴','😵','🤠','👍','👎','👏','🙏','💪','🫶',
+  '👋','🤝','✌️','🤞','🤟','🤙','👌','🫰','❤️','🧡','💛','💚','💙','💜','🖤','🤍',
+  '💔','💯','🔥','✨','🎉','🎊','🎁','🍕','🍔','🍟','🍰','☕','🍺','🌹','🌈','⭐',
+];
+const emojiBtn = document.getElementById('emoji-btn');
+const emojiPanel = document.getElementById('emoji-panel');
+EMOJIS.forEach((ch) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = ch;
+  b.setAttribute('aria-label', ch);
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    insertEmoji(ch);
+  });
+  emojiPanel.appendChild(b);
+});
+function closeEmojiPanel() {
+  emojiPanel.classList.add('hidden');
+  emojiBtn.setAttribute('aria-expanded', 'false');
+}
+function toggleEmojiPanel() {
+  const isHidden = emojiPanel.classList.toggle('hidden');
+  emojiBtn.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
+}
+function insertEmoji(ch) {
+  const start = msgInput.selectionStart ?? msgInput.value.length;
+  const end = msgInput.selectionEnd ?? msgInput.value.length;
+  const before = msgInput.value.slice(0, start);
+  const after = msgInput.value.slice(end);
+  msgInput.value = before + ch + after;
+  const pos = start + ch.length;
+  msgInput.focus();
+  msgInput.setSelectionRange(pos, pos);
+  msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+}
+emojiBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  toggleEmojiPanel();
+});
+document.addEventListener('click', (e) => {
+  if (emojiPanel.classList.contains('hidden')) return;
+  if (!emojiPanel.contains(e.target) && e.target !== emojiBtn) closeEmojiPanel();
+});
+
 const micBtn = document.getElementById('mic-btn');
 const recorderBar = document.getElementById('recorder');
 const recTimerEl = document.getElementById('rec-timer');

@@ -676,10 +676,67 @@ box-shadow: 0 0 0 0 var(--toon-ink);
 }
 .attach-menu-icon { font-size: 20px; line-height: 1; }
 
+.emoji-wrap { position: relative; }
+.emoji-btn {
+display: flex;
+align-items: center;
+justify-content: center;
+width: 44px;
+height: 44px;
+border-radius: 50%;
+background: var(--toon-teal);
+cursor: pointer;
+font-size: 22px;
+line-height: 1;
+user-select: none;
+border: 3px solid var(--toon-ink);
+flex-shrink: 0;
+box-shadow: 0 4px 0 0 var(--toon-ink);
+transition: transform .08s, box-shadow .08s, background .15s;
+}
+.emoji-btn:hover { filter: brightness(1.08); }
+.emoji-btn:active {
+transform: translateY(4px);
+box-shadow: 0 0 0 0 var(--toon-ink);
+}
+.emoji-panel {
+position: absolute;
+bottom: calc(100% + 10px);
+right: 0;
+width: 260px;
+max-height: 220px;
+overflow-y: auto;
+background: var(--toon-cream);
+border: 3px solid var(--toon-ink);
+border-radius: 18px;
+box-shadow: 0 5px 0 0 var(--toon-ink);
+padding: 10px;
+z-index: 50;
+display: grid;
+grid-template-columns: repeat(7, 1fr);
+gap: 4px;
+}
+.emoji-panel button {
+appearance: none;
+-webkit-appearance: none;
+-webkit-tap-highlight-color: transparent;
+background: transparent;
+border: none;
+padding: 4px;
+font-size: 22px;
+line-height: 1;
+cursor: pointer;
+border-radius: 8px;
+transition: background .1s, transform .06s;
+}
+.emoji-panel button:hover { background: rgba(58,42,26,.08); }
+.emoji-panel button:active { transform: scale(.9); }
+
 @media (max-width: 480px) {
 #chat-form { gap: 6px; padding: 10px; }
 #chat-form input { min-width: 0; font-size: 16px; }
 #chat-form button[type="submit"] { padding: 10px 14px; }
+.emoji-panel { width: 230px; grid-template-columns: repeat(6, 1fr); }
 }
 
 #preview {
