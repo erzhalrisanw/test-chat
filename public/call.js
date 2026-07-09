@@ -125,6 +125,9 @@
     dom.remoteVideo.addEventListener('leavepictureinpicture', () => {
       if (call.state === STATE.CONNECTED) expand();
     });
+    dom.remoteVideo.addEventListener('loadedmetadata', updateRemoteRotation);
+    dom.remoteVideo.addEventListener('resize', updateRemoteRotation);
+    window.addEventListener('resize', updateRemoteRotation);
 
     setupDragAndResize();
 
@@ -267,6 +270,7 @@
   function minimize() {
     dom.modal.classList.add('minimized');
     dom.expandBtn.classList.remove('hidden');
+    updateRemoteRotation();
   }
 
   function expand() {
@@ -275,6 +279,27 @@
     clearInlineLayout();
     if (document.pictureInPictureElement === dom.remoteVideo) {
       document.exitPictureInPicture().catch(() => {});
+    }
+    updateRemoteRotation();
+  }
+
+  function updateRemoteRotation() {
+    if (!ready) return;
+    const modal = dom.modal;
+    const video = dom.remoteVideo;
+    const vw = video.videoWidth || 0;
+    const vh = video.videoHeight || 0;
+    const portrait = window.matchMedia('(orientation: portrait)').matches;
+    const landscapeContent = vw > 0 && vh > 0 && vw > vh * 1.1;
+    const shouldRotate = portrait && landscapeContent && !modal.classList.contains('minimized') && !modal.classList.contains('hidden');
+    modal.classList.toggle('rotate-remote', shouldRotate);
+    if (shouldRotate) {
+      const wrap = video.parentElement;
+      modal.style.setProperty('--rot-w', wrap.clientWidth + 'px');
+      modal.style.setProperty('--rot-h', wrap.clientHeight + 'px');
+    } else {
+      modal.style.removeProperty('--rot-w');
+      modal.style.removeProperty('--rot-h');
     }
   }
 
@@ -335,6 +360,9 @@
     dom.expandBtn.classList.add('hidden');
     clearInlineLayout();
     dom.modal.classList.add('hidden');
+    dom.modal.classList.remove('rotate-remote');
+    dom.modal.style.removeProperty('--rot-w');
+    dom.modal.style.removeProperty('--rot-h');
     dom.timer.classList.add('hidden');
     dom.timer.textContent = '0:00';
     dom.remoteVideo.srcObject = null;

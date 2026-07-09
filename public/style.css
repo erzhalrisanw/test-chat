@@ -1237,6 +1237,16 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
   object-fit: cover;
   background: #000;
 }
+#call-modal.rotate-remote:not(.minimized) #call-remote-video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--rot-h, 100%);
+  height: var(--rot-w, 100%);
+  max-width: none;
+  transform: translate(-50%, -50%) rotate(90deg);
+  object-fit: contain;
+}
 .call-placeholder {
   position: absolute;
   inset: 0;
