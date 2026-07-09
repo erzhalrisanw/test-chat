@@ -1282,6 +1282,7 @@ text-shadow: 0 1px 0 rgba(58,42,26,.35);
   transform: scaleX(-1);
 }
 #call-local-video.mirror-off { transform: none; }
+#call-modal.hide-self .call-local-wrap { display: none; }
 .call-controls {
   display: flex;
   gap: 18px;

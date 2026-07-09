@@ -92,6 +92,7 @@
     dom.expandBtn = $('call-expand');
     dom.pipBtn = $('call-pip');
     dom.switchBtn = $('call-switch');
+    dom.selfViewBtn = $('call-self-view');
     dom.shareBtn = $('call-share');
     dom.resizeHandle = $('call-resize-handle');
     dom.dragHint = $('call-drag-hint');
@@ -109,6 +110,7 @@
     dom.expandBtn.addEventListener('click', expand);
     dom.pipBtn.addEventListener('click', togglePip);
     dom.switchBtn.addEventListener('click', switchCamera);
+    dom.selfViewBtn.addEventListener('click', toggleSelfView);
     dom.shareBtn.addEventListener('click', toggleScreenShare);
     dom.acceptBtn.addEventListener('click', acceptCall);
     dom.declineBtn.addEventListener('click', () => rejectCall('declined'));
@@ -924,6 +926,9 @@
       dom.shareBtn.dataset.on = 'false';
       dom.shareBtn.title = 'Share screen (nonton bareng)';
       dom.shareBtn.disabled = false;
+      dom.selfViewBtn.dataset.on = 'true';
+      dom.selfViewBtn.title = 'Hide self view';
+      dom.modal.classList.remove('hide-self');
       dom.remoteVideo.muted = false;
     }
   }
@@ -966,6 +971,13 @@
     dom.speakerBtn.dataset.on = on ? 'false' : 'true';
     dom.speakerBtn.textContent = on ? '🔇' : '🔊';
     dom.speakerBtn.title = on ? 'Unmute speaker' : 'Mute speaker';
+  }
+
+  function toggleSelfView() {
+    const on = dom.selfViewBtn.dataset.on === 'true';
+    dom.modal.classList.toggle('hide-self', on);
+    dom.selfViewBtn.dataset.on = on ? 'false' : 'true';
+    dom.selfViewBtn.title = on ? 'Show self view' : 'Hide self view';
   }
 
   function toggleCamera() {
