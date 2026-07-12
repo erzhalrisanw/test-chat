@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const webPush = require('web-push');
 const { createClient } = require('@libsql/client');
 const { Server } = require('socket.io');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const app = express();
@@ -645,7 +645,7 @@ app.get('/gallery', async (req, res) => {
     const totalPages = Math.ceil(totalItems / limit);
 
     const result = await db.execute({
-      sql: `SELECT id, username, image, video, time
+      sql: `SELECT id, username, image, video, time, unsent
              FROM messages
             WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)${unsentFilter}
             ORDER BY id DESC
@@ -659,11 +659,43 @@ app.get('/gallery', async (req, res) => {
       time: r.time,
       type: r.image ? 'image' : 'video',
       src: r.image || r.video,
+      unsent: !!Number(r.unsent || 0),
     }));
 
     res.json({ ok: true, items, totalItems, totalPages, page, peer });
   } catch (err) {
     console.error('gallery error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.delete('/gallery/:id', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  if (username !== HUB_USER) return res.status(403).json({ ok: false, error: 'Forbidden' });
+
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'Invalid id' });
+
+  try {
+    const msg = await getMessageById(id);
+    if (!msg) return res.status(404).json({ ok: false, error: 'Not found' });
+    if (!msg.image && !msg.video) return res.status(400).json({ ok: false, error: 'No media on this message' });
+
+    if (msg.video && r2Enabled && typeof msg.video === 'string' && msg.video.startsWith(R2_PUBLIC_URL + '/')) {
+      const key = msg.video.slice(R2_PUBLIC_URL.length + 1);
+      try {
+        await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+      } catch (e) {
+        console.error('r2 delete failed:', e.message);
+      }
+    }
+
+    await db.execute({ sql: 'DELETE FROM messages WHERE id = ?', args: [id] });
+    emitToThread(msg.peer, 'delete-message', { id, peer: msg.peer });
+    res.json({ ok: true, id, peer: msg.peer });
+  } catch (err) {
+    console.error('gallery delete error:', err.message);
     res.status(500).json({ ok: false });
   }
 });

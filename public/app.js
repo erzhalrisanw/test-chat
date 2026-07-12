@@ -1036,6 +1036,15 @@ function startChat(token, username) {
     applyUnsendToView(id);
   });
 
+  socket.on('delete-message', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = Number(payload.id);
+    const peer = payload.peer;
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (peer && peer !== currentPeer) return;
+    applyDeleteToView(id);
+  });
+
   socket.on('system', (m) => {
     if (m.text) addSystem(m.text);
   });
@@ -1242,6 +1251,24 @@ function requestUnsend(id) {
       console.error('unsend failed:', resp.error);
       addSystem('Gagal menarik pesan: ' + resp.error);
     }
+  });
+}
+
+function applyDeleteToView(id) {
+  const targetId = String(id);
+  const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+  if (el) {
+    if (replyTarget && Number(replyTarget.id) === Number(id)) clearReply();
+    if (openMsgMenu && el.contains(openMsgMenu)) closeOpenMsgMenu();
+    const wrapper = el.closest('.msg-group') || el;
+    wrapper.remove();
+  }
+  messagesEl.querySelectorAll('.reply-quote[data-target="' + targetId + '"]').forEach((quoteEl) => {
+    quoteEl.classList.add('reply-quote-unsent');
+    const userEl = quoteEl.querySelector('.reply-quote-user');
+    const textEl = quoteEl.querySelector('.reply-quote-text');
+    if (userEl) userEl.textContent = '';
+    if (textEl) textEl.textContent = UNSENT_PLACEHOLDER_TEXT;
   });
 }
 
@@ -2203,6 +2230,7 @@ function renderGalleryPage() {
   galleryItems.forEach(function(it, i) {
     var cell = document.createElement('div');
     cell.className = 'gallery-item';
+    if (it.unsent) cell.classList.add('gallery-item-unsent');
     if (it.type === 'video') {
       var v = document.createElement('video');
       v.src = it.src;
@@ -2221,18 +2249,16 @@ function renderGalleryPage() {
       img.alt = 'photo';
       cell.appendChild(img);
     }
-    // Tombol view in chat
+    if (it.unsent) {
+      var unsentTag = document.createElement('span');
+      unsentTag.className = 'gallery-unsent-tag';
+      unsentTag.textContent = 'ditarik';
+      unsentTag.title = 'Pesan ditarik oleh pengirim';
+      cell.appendChild(unsentTag);
+    }
+    // Menu titik tiga (view in chat / delete)
     if (it.id) {
-      var viewBtn = document.createElement('button');
-      viewBtn.className = 'gallery-view-btn';
-      viewBtn.textContent = '💬';
-      viewBtn.title = 'View in chat';
-      viewBtn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        closeGallery();
-        jumpToMessage(it.id);
-      });
-      cell.appendChild(viewBtn);
+      attachGalleryMenu(cell, it.id);
     }
     cell.addEventListener('click', function() {
       viewerItems = galleryItems.map(function(g) { return { type: g.type, src: g.src }; });
@@ -2243,6 +2269,70 @@ function renderGalleryPage() {
     galleryGrid.appendChild(cell);
   });
   updatePaginationControls();
+}
+
+function attachGalleryMenu(cell, id) {
+  var items = [
+    '<button class="gallery-menu-item" type="button" role="menuitem" data-action="view"><span class="gallery-menu-icon">💬</span><span class="gallery-menu-label">Lihat di chat</span></button>'
+  ];
+  if (isHub()) {
+    items.push('<button class="gallery-menu-item gallery-menu-item-danger" type="button" role="menuitem" data-action="delete"><span class="gallery-menu-icon">🗑</span><span class="gallery-menu-label">Hapus permanen</span></button>');
+  }
+  var markup =
+    '<button class="gallery-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Aksi" title="Aksi">⋯</button>' +
+    '<div class="gallery-menu hidden" role="menu">' + items.join('') + '</div>';
+  cell.insertAdjacentHTML('beforeend', markup);
+  var menuBtn = cell.querySelector('.gallery-menu-btn');
+  var menuEl = cell.querySelector('.gallery-menu');
+  if (!menuBtn || !menuEl) return;
+  menuBtn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var isOpen = !menuEl.classList.contains('hidden');
+    closeOpenMsgMenu();
+    if (!isOpen) {
+      menuEl.classList.remove('hidden');
+      menuBtn.setAttribute('aria-expanded', 'true');
+      openMsgMenu = menuEl;
+      openMsgMenuBtn = menuBtn;
+    }
+  });
+  menuEl.querySelectorAll('.gallery-menu-item').forEach(function(item) {
+    item.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var action = item.dataset.action;
+      closeOpenMsgMenu();
+      if (action === 'view') {
+        closeGallery();
+        jumpToMessage(id);
+      } else if (action === 'delete') {
+        requestGalleryDelete(id);
+      }
+    });
+  });
+}
+
+async function requestGalleryDelete(id) {
+  if (!id) return;
+  if (!confirm('Hapus permanen? File akan dihapus dari database dan Cloudflare R2.')) return;
+  var token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    var res = await fetch('/gallery/' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    var data = await res.json().catch(function() { return {}; });
+    if (!res.ok || !data.ok) {
+      alert('Gagal hapus: ' + ((data && data.error) || res.status));
+      return;
+    }
+    var pageToReload = galleryCurrentPage;
+    if (galleryItems.length === 1 && galleryCurrentPage > 1) pageToReload = galleryCurrentPage - 1;
+    galleryGrid.innerHTML = '';
+    await loadGalleryPage(pageToReload);
+  } catch (err) {
+    alert('Gagal hapus: ' + (err.message || err));
+  }
 }
 
 function updatePaginationControls() {
