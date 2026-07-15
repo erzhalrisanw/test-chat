@@ -840,8 +840,7 @@ function startChat(token, username) {
   meEl.textContent = `— ${username}`;
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
-  if (GALLERY_ALLOWED.has(me)) panicBtn.classList.remove('hidden');
-  else panicBtn.classList.add('hidden');
+  panicBtn.classList.remove('hidden');
   maybePlaySunrise();
   messagesEl.innerHTML = '';
   showMessagesLoading();
