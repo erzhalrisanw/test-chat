@@ -256,20 +256,33 @@ const ALLOWED_VIDEO_MIME = new Set(['video/webm', 'video/mp4', 'video/quicktime'
 const R2_PUBLIC_VIDEO_PREFIX = r2Enabled ? `${R2_PUBLIC_URL}/videos/` : '';
 
 const STICKER_PATH_PREFIX = '/stickers/';
-const ALLOWED_STICKERS = (() => {
+const STICKER_MANIFEST = (() => {
   try {
     const raw = require('fs').readFileSync(path.join(__dirname, 'public', 'stickers', 'index.json'), 'utf8');
     const parsed = JSON.parse(raw);
-    const map = new Map();
-    (parsed.stickers || []).forEach((s) => {
-      if (s && typeof s.name === 'string' && typeof s.file === 'string') map.set(s.name, s.file);
-    });
-    return map;
+    return (parsed.stickers || []).filter((s) => s && typeof s.name === 'string' && typeof s.file === 'string');
   } catch (e) {
     console.warn('sticker manifest missing:', e.message);
-    return new Map();
+    return [];
   }
 })();
+const ALLOWED_STICKERS = new Map(
+  STICKER_MANIFEST.map((s) => [s.name, {
+    file: s.file,
+    users: Array.isArray(s.users) && s.users.length ? new Set(s.users) : null,
+  }])
+);
+function stickerVisibleTo(name, username) {
+  const entry = ALLOWED_STICKERS.get(name);
+  if (!entry) return false;
+  if (!entry.users) return true;
+  return entry.users.has(username);
+}
+function stickersManifestFor(username) {
+  return STICKER_MANIFEST
+    .filter((s) => !Array.isArray(s.users) || s.users.includes(username))
+    .map(({ users, ...rest }) => rest);
+}
 
 async function saveSubscription(username, sub) {
   await db.execute({
@@ -622,6 +635,12 @@ app.delete('/avatar', async (req, res) => {
     console.error('avatar delete error:', err.message);
     res.status(500).json({ ok: false, error: 'Delete failed' });
   }
+});
+
+app.get('/stickers/manifest', (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  res.json({ ok: true, stickers: stickersManifestFor(username) });
 });
 
 app.get('/vapid-public', (req, res) => {
@@ -1232,12 +1251,16 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const file = ALLOWED_STICKERS.get(payload.name);
-    if (!file) {
+    const entry = ALLOWED_STICKERS.get(payload.name);
+    if (!entry) {
       if (typeof ack === 'function') ack({ error: 'Unknown sticker' });
       return;
     }
-    const stickerUrl = STICKER_PATH_PREFIX + file;
+    if (!stickerVisibleTo(payload.name, username)) {
+      if (typeof ack === 'function') ack({ error: 'Sticker not available' });
+      return;
+    }
+    const stickerUrl = STICKER_PATH_PREFIX + entry.file;
     const { replyToId } = payload;
     await handleOutgoing(payload, ack, (peer) => ({
       msg: {

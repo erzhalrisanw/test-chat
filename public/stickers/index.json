@@ -20,6 +20,15 @@
     { "name": "party",     "label": "Party",       "file": "party.svg" },
     { "name": "coffee",    "label": "Coffee Time", "file": "coffee.svg" },
     { "name": "sun",       "label": "Sunshine",    "file": "sun.svg" },
-    { "name": "photo_demo1", "label": "Photo Demo", "file": "photo_demo1.png" }
+    { "name": "photo_demo1", "label": "Photo Demo", "file": "photo_demo1.png" },
+    { "name": "couple1", "label": "Us 1", "file": "couple1.png", "users": ["occupatus", "ra"] },
+    { "name": "couple2", "label": "Us 2", "file": "couple2.png", "users": ["occupatus", "ra"] },
+    { "name": "couple3", "label": "Us 3", "file": "couple3.png", "users": ["occupatus", "ra"] },
+    { "name": "couple4", "label": "Us 4", "file": "couple4.png", "users": ["occupatus", "ra"] },
+    { "name": "couple5", "label": "Us 5", "file": "couple5.png", "users": ["occupatus", "ra"] },
+    { "name": "couple6", "label": "Us 6", "file": "couple6.png", "users": ["occupatus", "ra"] },
+    { "name": "couple7", "label": "Us 7", "file": "couple7.png", "users": ["occupatus", "ra"] },
+    { "name": "couple8", "label": "Us 8", "file": "couple8.png", "users": ["occupatus", "ra"] },
+    { "name": "couple9", "label": "Us 9", "file": "couple9.png", "users": ["occupatus", "ra"] }
   ]
 }
