@@ -44,9 +44,12 @@
       <div class="header-left">
         <div class="header-title">
           <strong>AJjpxFsIsk</strong>
-          <span id="me"></span>
+          <span id="me" title="Ganti avatar" tabindex="0" role="button" aria-label="Ganti avatar"></span>
         </div>
-        <div id="presence-status" class="hidden"></div>
+        <div id="presence-status" class="hidden">
+          <span id="partner-avatar" class="peer-avatar-bare hidden" aria-hidden="true"></span>
+          <span id="presence-text"></span>
+        </div>
       </div>
       <div class="right">
         <div id="peer-switcher" class="hidden">
@@ -182,6 +185,25 @@
     <div id="call-drag-hint" class="hidden" aria-hidden="true">⋮⋮</div>
     <div id="call-resize-handle" class="hidden" aria-hidden="true"></div>
     <button id="call-expand" type="button" class="hidden" title="Back to fullscreen">⤢</button>
+  </div>
+
+  <div id="avatar-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="avatar-modal-title">
+    <div class="avatar-modal-box">
+      <div class="avatar-modal-header">
+        <span id="avatar-modal-title">Pilih avatar</span>
+        <button id="avatar-modal-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div class="avatar-modal-body">
+        <div id="avatar-preview" class="user-avatar user-avatar-lg">
+          <span class="user-avatar-initial"></span>
+        </div>
+        <div id="avatar-preset-grid" class="avatar-preset-grid" role="listbox" aria-label="Pilihan avatar"></div>
+        <p id="avatar-error" class="avatar-error hidden"></p>
+        <div class="avatar-modal-actions">
+          <button id="avatar-remove" type="button" class="avatar-btn-secondary">Reset</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="camera-modal" class="hidden">

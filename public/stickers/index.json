@@ -19,6 +19,7 @@
     { "name": "broken",    "label": "Broken Heart","file": "broken.svg" },
     { "name": "party",     "label": "Party",       "file": "party.svg" },
     { "name": "coffee",    "label": "Coffee Time", "file": "coffee.svg" },
-    { "name": "sun",       "label": "Sunshine",    "file": "sun.svg" }
+    { "name": "sun",       "label": "Sunshine",    "file": "sun.svg" },
+    { "name": "photo_demo1", "label": "Photo Demo", "file": "photo_demo1.png" }
   ]
 }

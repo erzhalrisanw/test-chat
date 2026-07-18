@@ -90,7 +90,30 @@ function formatLastSeen(iso) {
   return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 }
 
+const avatarState = {};
+const partnerAvatarEl = document.getElementById('partner-avatar');
+
+function renderPartnerAvatar() {
+  if (!partnerAvatarEl) return;
+  const partner = getPartner();
+  const val = partner ? avatarState[partner] : null;
+  if (!val) {
+    partnerAvatarEl.textContent = '';
+    partnerAvatarEl.classList.add('hidden');
+    return;
+  }
+  partnerAvatarEl.textContent = val;
+  partnerAvatarEl.classList.remove('hidden');
+}
+
+function renderMeAvatar() {
+  // Own avatar tidak ditampilkan di header — hanya jadi preview di modal.
+}
+
+const presenceTextEl = document.getElementById('presence-text');
+
 function renderPresence() {
+  renderPartnerAvatar();
   const partner = getPartner();
   if (!partner) {
     presenceEl.classList.add('hidden');
@@ -99,13 +122,9 @@ function renderPresence() {
   }
   const info = presenceState[partner] || {};
   presenceEl.classList.remove('hidden');
-  if (info.online) {
-    presenceEl.classList.add('online');
-    presenceEl.textContent = partner + ' • Online';
-  } else {
-    presenceEl.classList.remove('online');
-    presenceEl.textContent = partner + ' • ' + formatLastSeen(info.lastSeen);
-  }
+  const text = info.online ? partner + ' • Online' : partner + ' • ' + formatLastSeen(info.lastSeen);
+  presenceEl.classList.toggle('online', !!info.online);
+  if (presenceTextEl) presenceTextEl.textContent = text;
   if (window.chatCall) window.chatCall.setCallButtonEnabled(!!info.online);
 }
 
@@ -345,6 +364,7 @@ async function loadStickers() {
       img.src = '/stickers/' + s.file;
       img.alt = s.label || s.name;
       img.loading = 'lazy';
+      if (/\.(png|webp|jpe?g|gif)$/i.test(s.file)) img.classList.add('sticker-photo');
       b.appendChild(img);
       b.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -945,6 +965,7 @@ function startChat(token, username) {
   renderPeerSwitcherButton();
   updateNotifBtn();
   updateGalleryBtn();
+  renderMeAvatar();
   renderPresence();
   startPresenceTimer();
   loadNotifEnabled();
@@ -1016,8 +1037,23 @@ function startChat(token, username) {
         online: !!(info && info.online),
         lastSeen: info && info.lastSeen ? info.lastSeen : null,
       };
+      if (info && Object.prototype.hasOwnProperty.call(info, 'avatar')) {
+        avatarState[u] = info.avatar || null;
+      }
     });
     renderPresence();
+    renderMeAvatar();
+  });
+
+  socket.on('avatar:update', ({ username, avatar }) => {
+    if (!username) return;
+    avatarState[username] = avatar || null;
+    if (username === me) renderMeAvatar();
+    if (username === getPartner()) renderPartnerAvatar();
+    if (avatarModal && !avatarModal.classList.contains('hidden') && username === me) {
+      renderAvatarPreview();
+      markSelectedPreset();
+    }
   });
 
   socket.on('typing', ({ username, peer, typing }) => {
@@ -1244,8 +1280,10 @@ function buildMessageNodes(msg) {
     body = '<span class="msg-text unsent-placeholder">' + escapeHtml(UNSENT_PLACEHOLDER_TEXT) + '</span>';
   } else {
     body = text ? '<span class="msg-text">' + linkify(text) + '</span>' : '';
-    if (sticker && /^\/stickers\/[a-z0-9_.-]+\.(svg|png)$/i.test(sticker)) {
-      const st = '<img class="chat-sticker" src="' + sticker + '" alt="sticker" draggable="false" />';
+    if (sticker && /^\/stickers\/[a-z0-9_.-]+\.(svg|png|webp|jpe?g|gif)$/i.test(sticker)) {
+      const isPhotoSticker = /\.(png|webp|jpe?g|gif)$/i.test(sticker);
+      const stickerCls = 'chat-sticker' + (isPhotoSticker ? ' chat-sticker-photo' : '');
+      const st = '<img class="' + stickerCls + '" src="' + sticker + '" alt="sticker" draggable="false" />';
       body = body ? body + st : st;
     }
     if (image && /^data:image\//.test(image)) {
@@ -2657,10 +2695,16 @@ logoutBtn.addEventListener('click', function() {
   Object.keys(typingState).forEach((k) => delete typingState[k]);
   presenceEl.classList.add('hidden');
   presenceEl.classList.remove('online');
-  presenceEl.textContent = '';
+  if (presenceTextEl) presenceTextEl.textContent = '';
   typingIndicatorEl.classList.add('hidden');
   typingNameEl.textContent = '';
   peerSwitcherEl.classList.add('hidden');
+  if (partnerAvatarEl) {
+    partnerAvatarEl.classList.add('hidden');
+    partnerAvatarEl.textContent = '';
+  }
+  Object.keys(avatarState).forEach((k) => delete avatarState[k]);
+  closeAvatarModal();
   closePeerMenu();
   currentPeer = null;
   availablePeers = [];
@@ -2678,6 +2722,179 @@ panicBtn.addEventListener('click', function() {
   } catch (_) {
     location.href = 'https://www.google.com';
   }
+});
+
+const avatarModal = document.getElementById('avatar-modal');
+const avatarPreviewEl = document.getElementById('avatar-preview');
+const avatarPresetGrid = document.getElementById('avatar-preset-grid');
+const avatarErrorEl = document.getElementById('avatar-error');
+const avatarModalCloseBtn = document.getElementById('avatar-modal-close');
+const avatarRemoveBtn = document.getElementById('avatar-remove');
+
+let avatarPresetGroups = null;
+let avatarActiveGroupId = null;
+
+function showAvatarError(msg) {
+  if (!avatarErrorEl) return;
+  if (!msg) {
+    avatarErrorEl.textContent = '';
+    avatarErrorEl.classList.add('hidden');
+    return;
+  }
+  avatarErrorEl.textContent = msg;
+  avatarErrorEl.classList.remove('hidden');
+}
+
+function renderAvatarPreview() {
+  if (!avatarPreviewEl || !me) return;
+  const val = avatarState[me];
+  avatarPreviewEl.innerHTML = '';
+  if (val) {
+    const span = document.createElement('span');
+    span.textContent = val;
+    avatarPreviewEl.appendChild(span);
+  } else {
+    const initial = document.createElement('span');
+    initial.className = 'user-avatar-initial';
+    initial.textContent = (me || '?').charAt(0).toUpperCase();
+    avatarPreviewEl.appendChild(initial);
+  }
+}
+
+function markSelectedPreset() {
+  if (!avatarPresetGrid) return;
+  const current = avatarState[me] || null;
+  avatarPresetGrid.querySelectorAll('.avatar-preset-item').forEach((btn) => {
+    const isSelected = btn.dataset.preset === current;
+    btn.classList.toggle('selected', isSelected);
+    btn.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+  });
+}
+
+function renderAvatarPicker() {
+  if (!avatarPresetGrid || !avatarPresetGroups) return;
+  avatarPresetGrid.innerHTML = '';
+  const tabs = document.createElement('div');
+  tabs.className = 'avatar-tabs';
+  avatarPresetGroups.forEach((g) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'avatar-tab' + (g.id === avatarActiveGroupId ? ' active' : '');
+    tab.textContent = g.label;
+    tab.addEventListener('click', () => {
+      avatarActiveGroupId = g.id;
+      renderAvatarPicker();
+    });
+    tabs.appendChild(tab);
+  });
+  avatarPresetGrid.appendChild(tabs);
+
+  const grid = document.createElement('div');
+  grid.className = 'avatar-preset-list';
+  const active = avatarPresetGroups.find((g) => g.id === avatarActiveGroupId) || avatarPresetGroups[0];
+  (active.items || []).forEach((emoji) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'avatar-preset-item';
+    btn.dataset.preset = emoji;
+    btn.setAttribute('role', 'option');
+    btn.textContent = emoji;
+    btn.title = emoji;
+    btn.addEventListener('click', () => saveAvatarPreset(emoji));
+    grid.appendChild(btn);
+  });
+  avatarPresetGrid.appendChild(grid);
+  markSelectedPreset();
+}
+
+async function ensureAvatarPresets() {
+  if (avatarPresetGroups) return;
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  const resp = await fetch('/avatars', { headers: { Authorization: 'Bearer ' + token } });
+  if (!resp.ok) throw new Error('Gagal memuat pilihan avatar');
+  const data = await resp.json();
+  if (!data || !Array.isArray(data.presetGroups)) throw new Error('Data avatar tidak valid');
+  avatarPresetGroups = data.presetGroups;
+  if (!avatarActiveGroupId) avatarActiveGroupId = avatarPresetGroups[0] && avatarPresetGroups[0].id;
+  if (data.avatars && typeof data.avatars === 'object') {
+    Object.entries(data.avatars).forEach(([u, val]) => { avatarState[u] = val || null; });
+  }
+}
+
+async function saveAvatarPreset(preset) {
+  showAvatarError('');
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    const resp = await fetch('/avatar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ preset }),
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data || !data.ok) {
+      showAvatarError((data && data.error) || 'Gagal menyimpan avatar');
+    }
+  } catch (err) {
+    showAvatarError('Gagal menyimpan: ' + (err.message || err));
+  }
+}
+
+async function removeAvatar() {
+  showAvatarError('');
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    const resp = await fetch('/avatar', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await resp.json().catch(() => null);
+    if (!resp.ok || !data || !data.ok) {
+      showAvatarError((data && data.error) || 'Gagal menghapus avatar');
+    }
+  } catch (err) {
+    showAvatarError('Gagal menghapus: ' + (err.message || err));
+  }
+}
+
+async function openAvatarModal() {
+  if (!avatarModal) return;
+  showAvatarError('');
+  renderAvatarPreview();
+  avatarModal.classList.remove('hidden');
+  try {
+    await ensureAvatarPresets();
+    renderAvatarPicker();
+  } catch (err) {
+    showAvatarError(err.message || 'Gagal memuat');
+  }
+}
+
+function closeAvatarModal() {
+  if (avatarModal) avatarModal.classList.add('hidden');
+  showAvatarError('');
+}
+
+if (meEl) {
+  meEl.addEventListener('click', openAvatarModal);
+  meEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openAvatarModal();
+    }
+  });
+}
+if (avatarModalCloseBtn) avatarModalCloseBtn.addEventListener('click', closeAvatarModal);
+if (avatarRemoveBtn) avatarRemoveBtn.addEventListener('click', removeAvatar);
+if (avatarModal) {
+  avatarModal.addEventListener('click', (e) => {
+    if (e.target === avatarModal) closeAvatarModal();
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && avatarModal && !avatarModal.classList.contains('hidden')) closeAvatarModal();
 });
 
 var savedToken = localStorage.getItem('token');

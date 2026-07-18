@@ -114,6 +114,13 @@ async function initDb() {
       last_seen TEXT NOT NULL
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      username TEXT PRIMARY KEY,
+      avatar TEXT,
+      updated_at TEXT NOT NULL
+    )
+  `);
 }
 
 async function loadAllReadState() {
@@ -143,6 +150,40 @@ async function loadAllPresence() {
   for (const row of result.rows) {
     lastSeen.set(String(row.username), String(row.last_seen));
   }
+}
+
+const avatars = new Map();
+
+async function loadAllAvatars() {
+  const result = await db.execute('SELECT username, avatar FROM user_profiles');
+  for (const row of result.rows) {
+    if (row.avatar) avatars.set(String(row.username), String(row.avatar));
+  }
+}
+
+async function persistAvatar(username, avatar) {
+  const now = new Date().toISOString();
+  if (avatar) {
+    await db.execute({
+      sql: `INSERT INTO user_profiles (username, avatar, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET avatar = excluded.avatar, updated_at = excluded.updated_at`,
+      args: [username, avatar, now],
+    });
+  } else {
+    await db.execute({
+      sql: `INSERT INTO user_profiles (username, avatar, updated_at) VALUES (?, NULL, ?)
+            ON CONFLICT(username) DO UPDATE SET avatar = NULL, updated_at = excluded.updated_at`,
+      args: [username, now],
+    });
+  }
+}
+
+function avatarsSnapshot() {
+  const snap = {};
+  for (const u of users) {
+    snap[u] = avatars.get(u) || null;
+  }
+  return snap;
 }
 
 async function persistLastSeen(username, iso) {
@@ -535,6 +576,54 @@ function authFromReq(req) {
   return token && verifyToken(token);
 }
 
+const AVATAR_PRESET_GROUPS = [
+  { id: 'faces', label: 'Wajah', items: ['😀','😎','🥳','😇','🤠','🤩','🥰','😌','🤓','🥸','🤡','👻','🎃','👽','🤖','🧙','🧚','🧝','🦸','🥷'] },
+  { id: 'animals', label: 'Hewan', items: ['🦊','🐶','🐱','🐻','🐼','🐰','🐨','🐯','🦁','🐸','🐷','🐮','🐵','🐧','🦄','🦉','🦔','🐢','🐿️','🐺'] },
+  { id: 'sea', label: 'Laut', items: ['🐙','🐳','🐬','🦈','🐠','🐡','🦑','🦞','🦀','🐚','🐟','🐋','🪸','🦭'] },
+  { id: 'nature', label: 'Alam', items: ['🦋','🐝','🐞','🌸','🌺','🌻','🌷','🌈','⭐','🌙','☀️','🌵','🍀','🌊','🍄','🌟','🔥','❄️','🌴','🍁'] },
+  { id: 'food', label: 'Makanan', items: ['🍕','🍩','🍓','🍔','🍜','🍦','🍪','🍰','🍎','🍉','🍌','🥑','🌮','🍿','🍣','🥐','🍫','🍭','🥭','🧁'] },
+  { id: 'objects', label: 'Objek', items: ['🎈','🎨','🎧','🎮','🎯','🎸','📷','🎤','🚀','🎁','🏆','💎','🔮','🎪','⚽','🏀','🎲','🧩','🎳','🛼'] },
+];
+const AVATAR_PRESET_SET = new Set(AVATAR_PRESET_GROUPS.flatMap((g) => g.items));
+
+app.get('/avatars', (_req, res) => {
+  const username = authFromReq(_req);
+  if (!username) return res.status(401).json({ ok: false });
+  res.json({ ok: true, avatars: avatarsSnapshot(), presetGroups: AVATAR_PRESET_GROUPS });
+});
+
+app.post('/avatar', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const { preset } = req.body || {};
+  if (typeof preset !== 'string' || !AVATAR_PRESET_SET.has(preset)) {
+    return res.status(400).json({ ok: false, error: 'Invalid avatar' });
+  }
+  try {
+    await persistAvatar(username, preset);
+    avatars.set(username, preset);
+    io.emit('avatar:update', { username, avatar: preset });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('avatar save error:', err.message);
+    res.status(500).json({ ok: false, error: 'Save failed' });
+  }
+});
+
+app.delete('/avatar', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  try {
+    await persistAvatar(username, null);
+    avatars.delete(username);
+    io.emit('avatar:update', { username, avatar: null });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('avatar delete error:', err.message);
+    res.status(500).json({ ok: false, error: 'Delete failed' });
+  }
+});
+
 app.get('/vapid-public', (req, res) => {
   if (!pushEnabled) return res.status(503).json({ ok: false, error: 'Push not configured' });
   res.json({ ok: true, key: VAPID_PUBLIC_KEY });
@@ -838,11 +927,12 @@ async function fetchGeminiReply(history, peer) {
   if (!contextLines) return null;
 
   const systemPrompt =
-    'Kamu adalah asisten AI netral yang menggantikan occupatus sementara karena dia belum membalas chat beberapa waktu. ' +
-    'Balas singkat (1-2 kalimat) dalam Bahasa Indonesia informal. ' +
-    'Jujur bahwa kamu AI stand-in, jangan berpura-pura menjadi occupatus, dan jangan berjanji atas namanya. ' +
+    'Kamu adalah AI stand-in yang menemani ngobrol karena occupatus lagi belum sempat balas. ' +
+    'Balas singkat (1-2 kalimat) dalam Bahasa Indonesia informal, mengikuti konteks dan mood obrolan dengan lawan bicara. ' +
+    'Kalau ditanya, jujur bahwa kamu AI stand-in, tapi jangan menyebut soal occupatus atau menyuruh menunggu di setiap balasan — ngobrol saja senatural mungkin. ' +
+    'Jangan berpura-pura jadi occupatus dan jangan berjanji atas namanya. ' +
     'Selalu panggil lawan bicara dengan sebutan "sayang" (bukan username-nya). ' +
-    'Kalau ada pertanyaan pribadi atau permintaan keputusan, minta lawan bicara menunggu occupatus balas sendiri.';
+    'Hanya arahkan untuk menunggu occupatus balas sendiri kalau memang ada pertanyaan pribadi atau permintaan keputusan yang cuma bisa dijawab dia.';
   const userPrompt =
     `Percakapan terakhir antara occupatus dan ${peer}:\n---\n${contextLines}\n---\n` +
     `Balas pesan terakhir dari ${peer} sebagai AI stand-in.`;
@@ -914,6 +1004,7 @@ function presenceSnapshot() {
     snap[u] = {
       online: onlineUsers.has(u),
       lastSeen: lastSeen.get(u) || null,
+      avatar: avatars.get(u) || null,
     };
   }
   return snap;
@@ -1386,6 +1477,7 @@ initDb()
   .then(() => seedPasswords())
   .then(() => loadAllReadState())
   .then(() => loadAllPresence())
+  .then(() => loadAllAvatars())
   .then(() => {
     if (botEnabled) {
       const hubLastSeenIso = lastSeen.get(HUB_USER);
