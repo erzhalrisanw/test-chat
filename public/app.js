@@ -351,7 +351,7 @@ let stickerManifest = [];
 async function loadStickers() {
   if (stickersLoaded) return;
   try {
-    const resp = await fetch('/stickers/index.json', { cache: 'force-cache' });
+    const resp = await fetch('/stickers/index.json', { cache: 'default' });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     stickerManifest = Array.isArray(data.stickers) ? data.stickers : [];
