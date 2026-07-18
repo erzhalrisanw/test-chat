@@ -447,6 +447,20 @@ letter-spacing: .3px;
 text-transform: uppercase;
 vertical-align: middle;
 }
+.ai-tag {
+display: inline-block;
+margin-left: 6px;
+padding: 1px 6px;
+border-radius: 8px;
+background: var(--toon-yellow, #ffd54f);
+color: var(--toon-ink, #111);
+border: 1.5px solid var(--toon-ink);
+font-size: 9px;
+font-weight: 700;
+letter-spacing: .3px;
+text-transform: uppercase;
+vertical-align: middle;
+}
 .msg.unsent-hidden { opacity: .85; }
 .msg.unsent-hidden .msg-text.unsent-placeholder {
 font-style: italic;

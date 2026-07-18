@@ -1131,7 +1131,8 @@ function buildMessageNodes(msg) {
     }
   }
   const unsentTag = (isUnsent && !hideContent) ? '<span class="unsent-tag" title="Pesan ditarik oleh pengirim">ditarik</span>' : '';
-  const meta = '<div class="meta">' + escapeHtml(username) + ' • ' + t + tick + unsentTag + '</div>';
+  const botTag = msg.senderBot ? '<span class="ai-tag" title="Balasan otomatis dari AI stand-in">AI</span>' : '';
+  const meta = '<div class="meta">' + escapeHtml(username) + botTag + ' • ' + t + tick + unsentTag + '</div>';
   let quote = '';
   if (replyTo && !hideContent) {
     const replyHide = !!(replyTo.unsent && !isHub());
