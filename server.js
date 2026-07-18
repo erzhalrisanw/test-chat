@@ -748,23 +748,54 @@ app.post('/push-unsubscribe', async (req, res) => {
   }
 });
 
-const botTimers = new Map();
+let hubOfflineSince = null;
+let hubOfflineTimer = null;
 
-function cancelBotTimer(peer) {
-  const t = botTimers.get(peer);
-  if (!t) return;
-  clearTimeout(t);
-  botTimers.delete(peer);
+function isHubOfflineAndIdle() {
+  if (onlineUsers.has(HUB_USER)) return false;
+  if (hubOfflineSince == null) return false;
+  return Date.now() - hubOfflineSince >= BOT_IDLE_MS;
 }
 
-function scheduleBotReply(peer) {
+function scheduleHubOfflineSweep() {
   if (!botEnabled) return;
-  cancelBotTimer(peer);
-  const timer = setTimeout(() => {
-    botTimers.delete(peer);
-    runBotReply(peer).catch((e) => console.error('bot reply failed:', e.message));
-  }, BOT_IDLE_MS);
-  botTimers.set(peer, timer);
+  if (hubOfflineTimer) return;
+  if (hubOfflineSince == null) return;
+  const remaining = Math.max(0, BOT_IDLE_MS - (Date.now() - hubOfflineSince));
+  hubOfflineTimer = setTimeout(() => {
+    hubOfflineTimer = null;
+    sweepBotReplies().catch((e) => console.error('bot sweep failed:', e.message));
+  }, remaining);
+}
+
+function clearHubOfflineSweep() {
+  if (hubOfflineTimer) {
+    clearTimeout(hubOfflineTimer);
+    hubOfflineTimer = null;
+  }
+}
+
+function markHubOffline(sinceMs) {
+  hubOfflineSince = typeof sinceMs === 'number' ? sinceMs : Date.now();
+  clearHubOfflineSweep();
+  scheduleHubOfflineSweep();
+}
+
+function markHubOnline() {
+  hubOfflineSince = null;
+  clearHubOfflineSweep();
+}
+
+async function sweepBotReplies() {
+  if (!botEnabled) return;
+  for (const peer of peersList()) {
+    if (onlineUsers.has(HUB_USER)) return;
+    try {
+      await runBotReply(peer);
+    } catch (e) {
+      console.error(`bot reply for ${peer} failed:`, e.message);
+    }
+  }
 }
 
 async function fetchGeminiReply(history, peer) {
@@ -878,6 +909,7 @@ io.on('connection', async (socket) => {
   if (wasOffline) {
     onlineUsers.add(username);
     touchLastSeen(username, new Date().toISOString());
+    if (username === HUB_USER) markHubOnline();
   }
 
   const initialPeer = defaultPeerFor(username);
@@ -942,10 +974,8 @@ io.on('connection', async (socket) => {
         body: pushBody,
         url: '/',
       }).catch(() => {});
-      if (username === HUB_USER) {
-        cancelBotTimer(peer);
-      } else {
-        scheduleBotReply(peer);
+      if (username !== HUB_USER && isHubOfflineAndIdle()) {
+        runBotReply(peer).catch((e) => console.error('bot reply failed:', e.message));
       }
       if (typeof ack === 'function') ack({ id, peer });
     } catch (e) {
@@ -1296,6 +1326,7 @@ io.on('connection', async (socket) => {
     if (activeCalls.has(username)) clearActiveCall('peer_disconnected');
     const iso = new Date().toISOString();
     touchLastSeen(username, iso);
+    if (username === HUB_USER) markHubOffline(Date.now());
     io.emit('presence:update', { username, online: false, lastSeen: iso });
   });
 });
@@ -1308,6 +1339,11 @@ initDb()
   .then(() => loadAllReadState())
   .then(() => loadAllPresence())
   .then(() => {
+    if (botEnabled) {
+      const hubLastSeenIso = lastSeen.get(HUB_USER);
+      const hubLastSeenMs = hubLastSeenIso ? Date.parse(hubLastSeenIso) : NaN;
+      markHubOffline(Number.isFinite(hubLastSeenMs) ? hubLastSeenMs : Date.now());
+    }
     server.listen(PORT, () => {
       console.log(`Chat running at http://localhost:${PORT}`);
       console.log(`DB: ${process.env.TURSO_DATABASE_URL ? 'Turso (remote)' : 'local file (chat.db)'}`);
