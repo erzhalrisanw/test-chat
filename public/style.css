@@ -192,6 +192,25 @@ box-shadow: 0 0 0 0 var(--toon-ink);
   padding: 1px 4px;
   transition: background 0.12s ease;
 }
+#me::after {
+  content: ' ✎';
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+#me:hover::after,
+#me:focus::after,
+#me.needs-avatar::after {
+  opacity: 0.75;
+}
+#me.needs-avatar {
+  background: rgba(255, 168, 76, 0.22);
+  animation: mePulse 2.4s ease-in-out infinite;
+}
+@keyframes mePulse {
+  0%, 100% { background: rgba(255, 168, 76, 0.22); }
+  50% { background: rgba(255, 168, 76, 0.45); }
+}
 #me:hover,
 #me:focus {
   background: rgba(58, 42, 26, 0.08);
@@ -203,6 +222,9 @@ box-shadow: 0 0 0 0 var(--toon-ink);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+#partner-avatar.is-placeholder {
+  opacity: 0.45;
 }
 #chat-view header .header-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 #chat-view header .header-title { display: flex; align-items: center; }

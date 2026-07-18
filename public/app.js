@@ -96,18 +96,23 @@ const partnerAvatarEl = document.getElementById('partner-avatar');
 function renderPartnerAvatar() {
   if (!partnerAvatarEl) return;
   const partner = getPartner();
-  const val = partner ? avatarState[partner] : null;
-  if (!val) {
+  if (!partner) {
     partnerAvatarEl.textContent = '';
     partnerAvatarEl.classList.add('hidden');
+    partnerAvatarEl.classList.remove('is-placeholder');
     return;
   }
-  partnerAvatarEl.textContent = val;
+  const val = avatarState[partner];
+  partnerAvatarEl.textContent = val || '👤';
   partnerAvatarEl.classList.remove('hidden');
+  partnerAvatarEl.classList.toggle('is-placeholder', !val);
 }
 
 function renderMeAvatar() {
-  // Avatar sendiri hanya jadi preview di modal, tidak ditampilkan di header.
+  if (!meEl || !me) return;
+  const hasOwn = !!avatarState[me];
+  meEl.classList.toggle('needs-avatar', !hasOwn);
+  meEl.title = hasOwn ? 'Ganti avatar' : 'Pilih avatar kamu';
 }
 
 const presenceTextEl = document.getElementById('presence-text');
