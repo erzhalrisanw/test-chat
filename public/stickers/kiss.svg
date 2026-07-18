@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0%" stop-color="#FFF385"/>
+      <stop offset="60%" stop-color="#FDC72E"/>
+      <stop offset="100%" stop-color="#E39B00"/>
+    </radialGradient>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <circle cx="100" cy="100" r="86" fill="url(#g)" stroke="#B37A00" stroke-width="3" filter="url(#s)"/>
+  <path d="M60 85 Q75 78 90 85" stroke="#2A1A00" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M110 85 Q125 78 140 85" stroke="#2A1A00" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="55" cy="118" rx="12" ry="8" fill="#FF9AA2" opacity="0.7"/>
+  <ellipse cx="145" cy="118" rx="12" ry="8" fill="#FF9AA2" opacity="0.7"/>
+  <path d="M85 128 Q100 118 115 128 Q118 138 100 142 Q82 138 85 128 Z" fill="#E63946"/>
+  <path d="M92 130 Q100 125 108 130 Q108 136 100 138 Q92 136 92 130 Z" fill="#FF7A85"/>
+  <path d="M148 108 C155 96, 172 96, 172 108 C172 118, 160 128, 160 128 C160 128, 148 118, 148 108 Z" fill="#E63946" transform="rotate(-15 160 108)"/>
+</svg>

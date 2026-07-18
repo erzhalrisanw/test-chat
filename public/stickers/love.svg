@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0%" stop-color="#FFF385"/>
+      <stop offset="60%" stop-color="#FDC72E"/>
+      <stop offset="100%" stop-color="#E39B00"/>
+    </radialGradient>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <circle cx="100" cy="100" r="86" fill="url(#g)" stroke="#B37A00" stroke-width="3" filter="url(#s)"/>
+  <path d="M72 88 C72 78, 58 74, 58 86 C58 96, 72 104, 72 104 C72 104, 86 96, 86 86 C86 74, 72 78, 72 88 Z" fill="#E63946"/>
+  <path d="M128 88 C128 78, 114 74, 114 86 C114 96, 128 104, 128 104 C128 104, 142 96, 142 86 C142 74, 128 78, 128 88 Z" fill="#E63946"/>
+  <path d="M60 120 Q100 165 140 120" fill="#2A1A00" stroke="#2A1A00" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M72 130 Q100 152 128 130 Q100 142 72 130 Z" fill="#E85A5A"/>
+  <ellipse cx="55" cy="122" rx="10" ry="6" fill="#FF9AA2" opacity="0.7"/>
+  <ellipse cx="145" cy="122" rx="10" ry="6" fill="#FF9AA2" opacity="0.7"/>
+</svg>

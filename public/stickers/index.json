@@ -1,0 +1,24 @@
+{
+  "stickers": [
+    { "name": "happy",     "label": "Happy",       "file": "happy.svg" },
+    { "name": "love",      "label": "In Love",     "file": "love.svg" },
+    { "name": "laugh",     "label": "Laughing",    "file": "laugh.svg" },
+    { "name": "kiss",      "label": "Kiss",        "file": "kiss.svg" },
+    { "name": "wink",      "label": "Wink",        "file": "wink.svg" },
+    { "name": "cool",      "label": "Cool",        "file": "cool.svg" },
+    { "name": "sad",       "label": "Sad",         "file": "sad.svg" },
+    { "name": "cry",       "label": "Crying",      "file": "cry.svg" },
+    { "name": "angry",     "label": "Angry",       "file": "angry.svg" },
+    { "name": "surprised", "label": "Surprised",   "file": "surprised.svg" },
+    { "name": "sleep",     "label": "Sleepy",      "file": "sleep.svg" },
+    { "name": "sick",      "label": "Sick",        "file": "sick.svg" },
+    { "name": "thumbs_up", "label": "Thumbs Up",   "file": "thumbs_up.svg" },
+    { "name": "ok",        "label": "OK",          "file": "ok.svg" },
+    { "name": "clap",      "label": "Clapping",    "file": "clap.svg" },
+    { "name": "heart",     "label": "Heart",       "file": "heart.svg" },
+    { "name": "broken",    "label": "Broken Heart","file": "broken.svg" },
+    { "name": "party",     "label": "Party",       "file": "party.svg" },
+    { "name": "coffee",    "label": "Coffee Time", "file": "coffee.svg" },
+    { "name": "sun",       "label": "Sunshine",    "file": "sun.svg" }
+  ]
+}

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0%" stop-color="#FFF385"/>
+      <stop offset="60%" stop-color="#FDC72E"/>
+      <stop offset="100%" stop-color="#E39B00"/>
+    </radialGradient>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <circle cx="100" cy="100" r="86" fill="url(#g)" stroke="#B37A00" stroke-width="3" filter="url(#s)"/>
+  <path d="M58 82 Q72 68 86 82" stroke="#2A1A00" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M114 82 Q128 68 142 82" stroke="#2A1A00" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M50 110 Q100 175 150 110 Q100 130 50 110 Z" fill="#2A1A00"/>
+  <path d="M62 118 Q100 158 138 118 Q100 145 62 118 Z" fill="#E63946"/>
+  <path d="M78 128 Q100 152 122 128 Q100 138 78 128 Z" fill="#FFD3D3" opacity="0.7"/>
+  <path d="M40 60 Q50 45 46 30" stroke="#4EC3FF" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M160 60 Q150 45 154 30" stroke="#4EC3FF" stroke-width="4" fill="none" stroke-linecap="round"/>
+</svg>

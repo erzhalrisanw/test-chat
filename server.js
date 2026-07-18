@@ -214,6 +214,22 @@ const VIDEO_MAX_BYTES = 500 * 1024 * 1024;
 const ALLOWED_VIDEO_MIME = new Set(['video/webm', 'video/mp4', 'video/quicktime']);
 const R2_PUBLIC_VIDEO_PREFIX = r2Enabled ? `${R2_PUBLIC_URL}/videos/` : '';
 
+const STICKER_PATH_PREFIX = '/stickers/';
+const ALLOWED_STICKERS = (() => {
+  try {
+    const raw = require('fs').readFileSync(path.join(__dirname, 'public', 'stickers', 'index.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    const map = new Map();
+    (parsed.stickers || []).forEach((s) => {
+      if (s && typeof s.name === 'string' && typeof s.file === 'string') map.set(s.name, s.file);
+    });
+    return map;
+  } catch (e) {
+    console.warn('sticker manifest missing:', e.message);
+    return new Map();
+  }
+})();
+
 async function saveSubscription(username, sub) {
   await db.execute({
     sql: `INSERT INTO push_subscriptions (endpoint, username, subscription, created_at)
@@ -320,12 +336,18 @@ async function saveMessage(msg) {
   return Number(result.lastInsertRowid);
 }
 
+function isStickerRef(val) {
+  return typeof val === 'string' && val.startsWith(STICKER_PATH_PREFIX);
+}
+
 function mapRow(r) {
+  const sticker = isStickerRef(r.image) ? r.image : null;
   const out = {
     id: Number(r.id),
     username: r.username,
     text: r.text,
-    image: r.image,
+    image: sticker ? null : r.image,
+    sticker,
     video: r.video,
     audio: r.audio,
     time: r.time,
@@ -334,11 +356,13 @@ function mapRow(r) {
     senderBot: !!Number(r.sender_bot || 0),
   };
   if (r.reply_to_id) {
+    const replySticker = isStickerRef(r.reply_image);
     out.replyTo = {
       id: Number(r.reply_to_id),
       username: r.reply_username,
       text: r.reply_text,
-      hasImage: !!r.reply_image,
+      hasImage: !replySticker && !!r.reply_image,
+      hasSticker: replySticker,
       hasVideo: !!r.reply_video,
       hasAudio: !!r.reply_audio,
       unsent: !!Number(r.reply_unsent || 0),
@@ -1109,6 +1133,30 @@ io.on('connection', async (socket) => {
         peer,
       },
       pushBody: '🎤 Sent a voice note',
+    }));
+  });
+
+  socket.on('sticker', async (payload, ack) => {
+    if (!payload || typeof payload.name !== 'string') {
+      if (typeof ack === 'function') ack({ error: 'Invalid payload' });
+      return;
+    }
+    const file = ALLOWED_STICKERS.get(payload.name);
+    if (!file) {
+      if (typeof ack === 'function') ack({ error: 'Unknown sticker' });
+      return;
+    }
+    const stickerUrl = STICKER_PATH_PREFIX + file;
+    const { replyToId } = payload;
+    await handleOutgoing(payload, ack, (peer) => ({
+      msg: {
+        username,
+        image: stickerUrl,
+        time: new Date().toISOString(),
+        replyToId: Number(replyToId) || null,
+        peer,
+      },
+      pushBody: `${payload.name} sticker`,
     }));
   });
 

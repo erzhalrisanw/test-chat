@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="cone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FDC72E"/>
+      <stop offset="100%" stop-color="#E39B00"/>
+    </linearGradient>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <g filter="url(#s)">
+    <path d="M155 180 L45 130 L100 25 Z" fill="url(#cone)" stroke="#8B4F00" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M100 25 L118 62 L60 122 L45 130 Z" fill="#fff" opacity="0.2"/>
+    <circle cx="86" cy="70" r="7" fill="#E63946"/>
+    <circle cx="98" cy="105" r="7" fill="#4A90E2"/>
+    <circle cx="76" cy="120" r="6" fill="#7DBE5A"/>
+    <circle cx="63" cy="140" r="5" fill="#E63946"/>
+  </g>
+  <g fill="#E63946"><rect x="30" y="30" width="10" height="4" transform="rotate(20 35 32)"/></g>
+  <g fill="#4A90E2"><rect x="165" y="55" width="10" height="4" transform="rotate(-20 170 57)"/></g>
+  <g fill="#7DBE5A"><rect x="35" y="70" width="10" height="4" transform="rotate(45 40 72)"/></g>
+  <g fill="#FDC72E"><rect x="175" y="105" width="10" height="4" transform="rotate(-30 180 107)"/></g>
+  <path d="M30 90 L20 100 M25 105 L20 110 M40 105 L45 115 M170 30 L180 40 M175 45 L180 50 M160 60 L170 65" stroke="#E63946" stroke-width="3" stroke-linecap="round"/>
+  <path d="M22 50 L15 40 M18 55 L10 55 M175 130 L182 138 M170 150 L178 155" stroke="#4A90E2" stroke-width="3" stroke-linecap="round"/>
+  <path d="M50 20 L55 12 M60 25 L68 20 M180 90 L188 88 M175 80 L180 72" stroke="#7DBE5A" stroke-width="3" stroke-linecap="round"/>
+</svg>

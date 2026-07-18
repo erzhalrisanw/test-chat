@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0%" stop-color="#FFF385"/>
+      <stop offset="60%" stop-color="#FDC72E"/>
+      <stop offset="100%" stop-color="#E39B00"/>
+    </radialGradient>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <circle cx="100" cy="100" r="86" fill="url(#g)" stroke="#B37A00" stroke-width="3" filter="url(#s)"/>
+  <path d="M56 90 Q72 82 88 90" stroke="#2A1A00" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M112 90 Q128 82 144 90" stroke="#2A1A00" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <ellipse cx="72" cy="115" rx="8" ry="5" fill="#FF9AA2" opacity="0.6"/>
+  <ellipse cx="128" cy="115" rx="8" ry="5" fill="#FF9AA2" opacity="0.6"/>
+  <path d="M85 138 Q100 132 115 138" stroke="#2A1A00" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <text x="150" y="55" font-family="Fredoka, sans-serif" font-weight="700" font-size="36" fill="#4A90E2">Z</text>
+  <text x="170" y="35" font-family="Fredoka, sans-serif" font-weight="700" font-size="24" fill="#4A90E2">z</text>
+  <text x="185" y="20" font-family="Fredoka, sans-serif" font-weight="700" font-size="16" fill="#4A90E2">z</text>
+</svg>

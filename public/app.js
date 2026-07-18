@@ -317,12 +317,102 @@ function insertEmoji(ch) {
 }
 emojiBtn.addEventListener('click', (e) => {
   e.stopPropagation();
+  closeStickerPanel();
   toggleEmojiPanel();
 });
 document.addEventListener('click', (e) => {
   if (emojiPanel.classList.contains('hidden')) return;
   if (!emojiPanel.contains(e.target) && e.target !== emojiBtn) closeEmojiPanel();
 });
+
+const stickerBtn = document.getElementById('sticker-btn');
+const stickerPanel = document.getElementById('sticker-panel');
+let stickersLoaded = false;
+let stickerManifest = [];
+async function loadStickers() {
+  if (stickersLoaded) return;
+  try {
+    const resp = await fetch('/stickers/index.json', { cache: 'force-cache' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    stickerManifest = Array.isArray(data.stickers) ? data.stickers : [];
+    stickerManifest.forEach((s) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.title = s.label || s.name;
+      b.setAttribute('aria-label', s.label || s.name);
+      const img = document.createElement('img');
+      img.src = '/stickers/' + s.file;
+      img.alt = s.label || s.name;
+      img.loading = 'lazy';
+      b.appendChild(img);
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sendSticker(s.name);
+        closeStickerPanel();
+      });
+      stickerPanel.appendChild(b);
+    });
+    stickersLoaded = true;
+  } catch (err) {
+    console.error('load stickers failed:', err);
+    stickerPanel.textContent = 'Gagal memuat sticker';
+  }
+}
+function closeStickerPanel() {
+  stickerPanel.classList.add('hidden');
+  stickerBtn.setAttribute('aria-expanded', 'false');
+}
+function toggleStickerPanel() {
+  const isHidden = stickerPanel.classList.toggle('hidden');
+  stickerBtn.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
+  if (!isHidden) loadStickers();
+}
+stickerBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeEmojiPanel();
+  toggleStickerPanel();
+});
+document.addEventListener('click', (e) => {
+  if (stickerPanel.classList.contains('hidden')) return;
+  if (!stickerPanel.contains(e.target) && e.target !== stickerBtn) closeStickerPanel();
+});
+
+function sendSticker(name) {
+  if (!name || !socket) return;
+  const payload = { name, peer: currentPeer };
+  if (replyTarget) payload.replyToId = replyTarget.id;
+  const replyToSnapshot = replyTarget;
+  clearReply();
+  const manifestEntry = stickerManifest.find((s) => s.name === name);
+  const pendingUrl = '/stickers/' + (manifestEntry && manifestEntry.file ? manifestEntry.file : name + '.svg');
+  tempIdCounter++;
+  const tempId = tempIdCounter;
+  const pendingMsg = {
+    sticker: pendingUrl,
+    _pending: true,
+    _tempId: tempId,
+    id: null,
+    username: me,
+    time: new Date().toISOString(),
+    replyToId: replyToSnapshot ? replyToSnapshot.id : null,
+    replyTo: replyToSnapshot || null,
+  };
+  addMessage(pendingMsg);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (!socket.connected) {
+    pendingQueue.push({ _type: 'sticker', name, peer: currentPeer, replyToId: payload.replyToId, _tempId: tempId, _pending: true });
+    return;
+  }
+  socket.emit('sticker', { ...payload, clientId: tempId }, (ack) => {
+    if (ack && ack.id) {
+      updatePendingToSent(tempId, ack.id);
+      lastIncomingId = Math.max(lastIncomingId, ack.id);
+    } else if (ack && ack.error) {
+      markPendingFailed(tempId, ack.error);
+    }
+  });
+}
 
 const micBtn = document.getElementById('mic-btn');
 const recorderBar = document.getElementById('recorder');
@@ -781,7 +871,7 @@ function notify(msg) {
   if ('vibrate' in navigator) {
     try { navigator.vibrate(200); } catch (_) {}
   }
-  const body = msg.text || (msg.image ? '📷 Sent a photo' : msg.video ? '🎬 Sent a video' : msg.audio ? '🎤 Sent a voice note' : '');
+  const body = msg.text || (msg.sticker ? '🎨 Sent a sticker' : msg.image ? '📷 Sent a photo' : msg.video ? '🎬 Sent a video' : msg.audio ? '🎤 Sent a voice note' : '');
   showDesktopNotification(`Message from ${msg.username}`, body);
 }
 
@@ -1101,6 +1191,7 @@ function shouldHideUnsentContent(msg) {
 function replySnippet(msg) {
   if (msg && msg.unsent && !isHub()) return UNSENT_PLACEHOLDER_TEXT;
   if (msg.text) return msg.text;
+  if (msg.sticker || msg.hasSticker) return '🎨 Sticker';
   if (msg.image || msg.hasImage) return '📷 Photo';
   if (msg.video || msg.hasVideo) return '🎬 Video';
   if (msg.audio || msg.hasAudio) return '🎤 Voice note';
@@ -1108,15 +1199,17 @@ function replySnippet(msg) {
 }
 
 function buildMessageNodes(msg) {
-  const { id, username, text, time, image, replyTo } = msg;
+  const { id, username, text, time, image, sticker, replyTo } = msg;
   const div = document.createElement('div');
   const isPending = msg._pending || false;
   const tempId = msg._tempId || null;
   const isUnsent = !!msg.unsent;
   const hideContent = shouldHideUnsentContent(msg);
+  const isStickerOnly = !!sticker && !text && !hideContent && !isUnsent;
   const cls = ['msg', username === me ? 'mine' : 'other'];
   if (isUnsent) cls.push('unsent');
   if (hideContent) cls.push('unsent-hidden');
+  if (isStickerOnly) cls.push('has-sticker');
   div.className = cls.join(' ');
   if (id) div.dataset.id = String(id);
   if (tempId) div.dataset.tempId = String(tempId);
@@ -1151,6 +1244,10 @@ function buildMessageNodes(msg) {
     body = '<span class="msg-text unsent-placeholder">' + escapeHtml(UNSENT_PLACEHOLDER_TEXT) + '</span>';
   } else {
     body = text ? '<span class="msg-text">' + linkify(text) + '</span>' : '';
+    if (sticker && /^\/stickers\/[a-z0-9_.-]+\.(svg|png)$/i.test(sticker)) {
+      const st = '<img class="chat-sticker" src="' + sticker + '" alt="sticker" draggable="false" />';
+      body = body ? body + st : st;
+    }
     if (image && /^data:image\//.test(image)) {
       const img = '<img class="chat-img" src="' + image + '" alt="photo" />';
       body = body ? body + img : img;
@@ -1221,7 +1318,8 @@ function attachMsgMenu(div, opts) {
         const hasImage = !!div.querySelector('img.chat-img');
         const hasVideo = !!div.querySelector('video.chat-vid');
         const hasAudio = !!div.querySelector('audio.chat-aud');
-        setReplyTarget({ id: currentId, username, text: replyText, hasImage, hasVideo, hasAudio });
+        const hasSticker = !!div.querySelector('img.chat-sticker');
+        setReplyTarget({ id: currentId, username, text: replyText, hasImage, hasVideo, hasAudio, hasSticker });
       } else if (action === 'unsend' && currentId) {
         requestUnsend(currentId);
       }
@@ -1295,7 +1393,8 @@ function applyUnsendToView(id) {
       if (meta) {
         meta.querySelectorAll('.tick, .unsent-tag').forEach((n) => n.remove());
       }
-      el.querySelectorAll('.reply-quote, .msg-text, .chat-img, .chat-vid, .chat-aud').forEach((n) => n.remove());
+      el.classList.remove('has-sticker');
+      el.querySelectorAll('.reply-quote, .msg-text, .chat-img, .chat-sticker, .chat-vid, .chat-aud').forEach((n) => n.remove());
       const placeholder = document.createElement('span');
       placeholder.className = 'msg-text unsent-placeholder';
       placeholder.textContent = UNSENT_PLACEHOLDER_TEXT;
@@ -1742,6 +1841,7 @@ function emitWithAck(msgData) {
     if (msgData.dataUrl) payload.dataUrl = msgData.dataUrl;
     if (msgData.text) payload.text = msgData.text;
     if (msgData.caption) payload.caption = msgData.caption;
+    if (msgData.name) payload.name = msgData.name;
     if (msgData.replyToId) payload.replyToId = msgData.replyToId;
     if (msgData.peer) payload.peer = msgData.peer;
     if (tempId != null) payload.clientId = tempId;

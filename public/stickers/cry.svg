@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="g" cx="0.35" cy="0.3" r="0.9">
+      <stop offset="0%" stop-color="#FFF385"/>
+      <stop offset="60%" stop-color="#FDC72E"/>
+      <stop offset="100%" stop-color="#E39B00"/>
+    </radialGradient>
+    <filter id="s" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="3" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <circle cx="100" cy="100" r="86" fill="url(#g)" stroke="#B37A00" stroke-width="3" filter="url(#s)"/>
+  <path d="M58 78 Q72 90 88 82" stroke="#2A1A00" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M112 82 Q128 90 142 78" stroke="#2A1A00" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="72" cy="98" rx="6" ry="8" fill="#2A1A00"/>
+  <ellipse cx="128" cy="98" rx="6" ry="8" fill="#2A1A00"/>
+  <path d="M65 108 Q60 128 55 148 Q52 155 58 158 Q64 158 66 150 Q72 130 72 110 Z" fill="#4EC3FF" opacity="0.85"/>
+  <path d="M135 108 Q140 128 145 148 Q148 155 142 158 Q136 158 134 150 Q128 130 128 110 Z" fill="#4EC3FF" opacity="0.85"/>
+  <path d="M75 148 Q100 130 125 148 Q100 165 75 148 Z" fill="#2A1A00"/>
+  <path d="M82 152 Q100 146 118 152 Q100 156 82 152 Z" fill="#E85A5A"/>
+</svg>
