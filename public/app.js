@@ -107,10 +107,7 @@ function renderPartnerAvatar() {
 }
 
 function renderMeAvatar() {
-  if (!meEl || !me) return;
-  const val = avatarState[me];
-  meEl.textContent = val || '👤';
-  meEl.classList.toggle('is-placeholder', !val);
+  // Avatar sendiri hanya jadi preview di modal, tidak ditampilkan di header.
 }
 
 const presenceTextEl = document.getElementById('presence-text');
@@ -950,8 +947,7 @@ function maybePlaySunrise() {
 
 function startChat(token, username) {
   me = username;
-  const meNameEl = document.getElementById('me-name');
-  if (meNameEl) meNameEl.textContent = username;
+  meEl.textContent = `— ${username}`;
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');

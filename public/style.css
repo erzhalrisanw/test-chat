@@ -183,36 +183,29 @@ box-shadow: 0 0 0 0 var(--toon-ink);
 #chat-view header button.off { background: #cbd5e1; opacity: .85; }
 #chat-view header #logout { background: var(--toon-pink); color: #fff; text-shadow: 0 2px 0 rgba(58,42,26,.35); }
 #me {
+  margin-left: 8px;
+  opacity: .9;
+  font-weight: normal;
+  font-size: 13px;
   cursor: pointer;
-  font-size: 44px;
+  border-radius: 6px;
+  padding: 1px 4px;
+  transition: background 0.12s ease;
+}
+#me:hover,
+#me:focus {
+  background: rgba(58, 42, 26, 0.08);
+  outline: none;
+}
+#partner-avatar {
+  font-size: 40px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 4px;
-  border-radius: 8px;
-  transition: transform 0.12s ease, background 0.12s ease;
-}
-#me:hover,
-#me:focus {
-  transform: translateY(-1px);
-  background: rgba(58, 42, 26, 0.08);
-  outline: none;
-}
-#me.is-placeholder {
-  opacity: 0.55;
-}
-.header-me-name {
-  font-weight: 700;
-  font-size: 15px;
-  color: var(--toon-ink);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 #chat-view header .header-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-#chat-view header .header-title { display: flex; align-items: center; gap: 8px; }
+#chat-view header .header-title { display: flex; align-items: center; }
 #presence-status {
   font-size: 11px;
   font-weight: 600;
@@ -1846,17 +1839,6 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   height: 100%;
   object-fit: cover;
   display: block;
-}
-.peer-avatar-bare {
-  font-size: 16px;
-  line-height: 1;
-  margin-right: 4px;
-  vertical-align: -1px;
-}
-.user-avatar-md {
-  width: 44px;
-  height: 44px;
-  font-size: 22px;
 }
 .user-avatar-lg {
   width: 120px;
