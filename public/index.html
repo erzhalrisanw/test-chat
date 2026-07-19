@@ -15,6 +15,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&display=swap" />
   <link rel="stylesheet" href="/style.css" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('theme');
+        if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="sunrise-overlay" class="hidden" aria-hidden="true">
@@ -62,6 +70,7 @@
         </div>
         <button id="gallery-btn" class="hidden" title="Gallery">🖼️</button>
         <button id="call-btn" class="hidden" title="Video call">📹</button>
+        <button id="theme-toggle" type="button" title="Ganti tema" aria-label="Ganti tema"><span class="theme-toggle-icon">🌙</span></button>
         <button id="notif-toggle" title="Notifications">🔕 Off</button>
         <button id="logout">Logout</button>
       </div>

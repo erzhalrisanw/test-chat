@@ -8,6 +8,7 @@ const msgInput = document.getElementById('msg');
 const meEl = document.getElementById('me');
 const logoutBtn = document.getElementById('logout');
 const notifBtn = document.getElementById('notif-toggle');
+const themeToggleBtn = document.getElementById('theme-toggle');
 const panicBtn = document.getElementById('panic-btn');
 const fileInput = document.getElementById('file-input');
 const preview = document.getElementById('preview');
@@ -2903,6 +2904,27 @@ if (avatarModal) {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && avatarModal && !avatarModal.classList.contains('hidden')) closeAvatarModal();
 });
+
+function currentTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+}
+function applyTheme(theme) {
+  const t = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('theme', t); } catch (e) {}
+  if (themeToggleBtn) {
+    const iconEl = themeToggleBtn.querySelector('.theme-toggle-icon') || themeToggleBtn;
+    iconEl.textContent = t === 'dark' ? '☀️' : '🌙';
+  }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#141414' : '#2563eb');
+}
+applyTheme(currentTheme());
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener('click', () => {
+    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+  });
+}
 
 var savedToken = localStorage.getItem('token');
 var savedUser = localStorage.getItem('username');
