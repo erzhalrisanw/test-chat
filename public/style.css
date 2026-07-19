@@ -183,38 +183,41 @@ box-shadow: 0 0 0 0 var(--toon-ink);
 #chat-view header button.off { background: #cbd5e1; opacity: .85; }
 #chat-view header #logout { background: var(--toon-pink); color: #fff; text-shadow: 0 2px 0 rgba(58,42,26,.35); }
 #me {
-  margin-left: 8px;
-  opacity: .9;
-  font-weight: normal;
-  font-size: 13px;
+  font-size: 28px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  border-radius: 6px;
-  padding: 1px 4px;
-  transition: background 0.12s ease;
-}
-#me::after {
-  content: ' ✎';
-  font-size: 11px;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-#me:hover::after,
-#me:focus::after,
-#me.needs-avatar::after {
-  opacity: 0.75;
-}
-#me.needs-avatar {
-  background: rgba(255, 168, 76, 0.22);
-  animation: mePulse 2.4s ease-in-out infinite;
-}
-@keyframes mePulse {
-  0%, 100% { background: rgba(255, 168, 76, 0.22); }
-  50% { background: rgba(255, 168, 76, 0.45); }
+  padding: 2px 4px;
+  border-radius: 8px;
+  transition: transform 0.12s ease, background 0.12s ease;
 }
 #me:hover,
 #me:focus {
+  transform: translateY(-1px);
   background: rgba(58, 42, 26, 0.08);
   outline: none;
+}
+#me.is-placeholder {
+  opacity: 0.55;
+}
+#me.needs-avatar {
+  animation: mePulse 2.4s ease-in-out infinite;
+  border-radius: 50%;
+}
+@keyframes mePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 168, 76, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 168, 76, 0); }
+}
+.header-me-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--toon-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #partner-avatar {
   font-size: 40px;
@@ -227,7 +230,7 @@ box-shadow: 0 0 0 0 var(--toon-ink);
   opacity: 0.45;
 }
 #chat-view header .header-left { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-#chat-view header .header-title { display: flex; align-items: center; }
+#chat-view header .header-title { display: flex; align-items: center; gap: 8px; }
 #presence-status {
   font-size: 11px;
   font-weight: 600;

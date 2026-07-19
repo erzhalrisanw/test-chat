@@ -110,9 +110,11 @@ function renderPartnerAvatar() {
 
 function renderMeAvatar() {
   if (!meEl || !me) return;
-  const hasOwn = !!avatarState[me];
-  meEl.classList.toggle('needs-avatar', !hasOwn);
-  meEl.title = hasOwn ? 'Ganti avatar' : 'Pilih avatar kamu';
+  const val = avatarState[me];
+  meEl.textContent = val || '👤';
+  meEl.classList.toggle('is-placeholder', !val);
+  meEl.classList.toggle('needs-avatar', !val);
+  meEl.title = val ? 'Ganti avatar' : 'Pilih avatar kamu';
 }
 
 const presenceTextEl = document.getElementById('presence-text');
@@ -952,7 +954,8 @@ function maybePlaySunrise() {
 
 function startChat(token, username) {
   me = username;
-  meEl.textContent = `— ${username}`;
+  const meNameEl = document.getElementById('me-name');
+  if (meNameEl) meNameEl.textContent = username;
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');
