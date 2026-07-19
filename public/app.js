@@ -5,7 +5,7 @@ const loginError = document.getElementById('login-error');
 const messagesEl = document.getElementById('messages');
 const chatForm = document.getElementById('chat-form');
 const msgInput = document.getElementById('msg');
-const meEl = document.getElementById('me');
+const meNameEl = document.getElementById('me-name');
 const logoutBtn = document.getElementById('logout');
 const notifBtn = document.getElementById('notif-toggle');
 const themeToggleBtn = document.getElementById('theme-toggle');
@@ -97,24 +97,23 @@ const partnerAvatarEl = document.getElementById('partner-avatar');
 function renderPartnerAvatar() {
   if (!partnerAvatarEl) return;
   const partner = getPartner();
-  const val = partner ? avatarState[partner] : null;
-  if (!val) {
+  if (!partner) {
     partnerAvatarEl.textContent = '';
     partnerAvatarEl.classList.add('hidden');
     partnerAvatarEl.classList.remove('is-placeholder');
     return;
   }
-  partnerAvatarEl.textContent = val;
-  partnerAvatarEl.classList.remove('hidden', 'is-placeholder');
+  const val = avatarState[partner];
+  partnerAvatarEl.textContent = val || '👤';
+  partnerAvatarEl.classList.remove('hidden');
+  partnerAvatarEl.classList.toggle('is-placeholder', !val);
 }
 
 function renderMeAvatar() {
-  if (!meEl || !me) return;
-  const val = avatarState[me];
-  meEl.textContent = val || '👤';
-  meEl.classList.toggle('is-placeholder', !val);
-  meEl.classList.toggle('needs-avatar', !val);
-  meEl.title = val ? 'Ganti avatar' : 'Pilih avatar kamu';
+  if (!meNameEl || !me) return;
+  const hasOwn = !!avatarState[me];
+  meNameEl.classList.toggle('needs-avatar', !hasOwn);
+  meNameEl.title = hasOwn ? 'Ganti avatar' : 'Pilih avatar kamu';
 }
 
 const presenceTextEl = document.getElementById('presence-text');
@@ -954,7 +953,6 @@ function maybePlaySunrise() {
 
 function startChat(token, username) {
   me = username;
-  const meNameEl = document.getElementById('me-name');
   if (meNameEl) meNameEl.textContent = username;
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
@@ -2885,9 +2883,9 @@ function closeAvatarModal() {
   showAvatarError('');
 }
 
-if (meEl) {
-  meEl.addEventListener('click', openAvatarModal);
-  meEl.addEventListener('keydown', (e) => {
+if (meNameEl) {
+  meNameEl.addEventListener('click', openAvatarModal);
+  meNameEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       openAvatarModal();

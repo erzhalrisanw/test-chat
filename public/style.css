@@ -202,34 +202,6 @@ box-shadow: 0 0 0 0 var(--toon-ink);
 }
 #chat-view header button.off { background: #cbd5e1; opacity: .85; }
 #chat-view header #logout { background: var(--toon-pink); color: #fff; text-shadow: 0 2px 0 rgba(var(--ink-rgb),.35); }
-#me {
-  font-size: 52px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 8px;
-  transition: transform 0.12s ease, background 0.12s ease;
-}
-#me:hover,
-#me:focus {
-  transform: translateY(-1px);
-  background: rgba(var(--ink-rgb), 0.08);
-  outline: none;
-}
-#me.is-placeholder {
-  opacity: 0.55;
-}
-#me.needs-avatar {
-  animation: mePulse 2.4s ease-in-out infinite;
-  border-radius: 50%;
-}
-@keyframes mePulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 168, 76, 0.55); }
-  50% { box-shadow: 0 0 0 6px rgba(255, 168, 76, 0); }
-}
 .header-me-name {
   font-weight: 700;
   font-size: 15px;
@@ -238,6 +210,22 @@ box-shadow: 0 0 0 0 var(--toon-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.12s ease;
+}
+.header-me-name:hover,
+.header-me-name:focus {
+  background: rgba(var(--ink-rgb), 0.08);
+  outline: none;
+}
+.header-me-name.needs-avatar {
+  animation: meNamePulse 2.4s ease-in-out infinite;
+}
+@keyframes meNamePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 168, 76, 0.55); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 168, 76, 0); }
 }
 #partner-avatar {
   font-size: 40px;
