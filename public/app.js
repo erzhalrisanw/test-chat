@@ -96,16 +96,15 @@ const partnerAvatarEl = document.getElementById('partner-avatar');
 function renderPartnerAvatar() {
   if (!partnerAvatarEl) return;
   const partner = getPartner();
-  if (!partner) {
+  const val = partner ? avatarState[partner] : null;
+  if (!val) {
     partnerAvatarEl.textContent = '';
     partnerAvatarEl.classList.add('hidden');
     partnerAvatarEl.classList.remove('is-placeholder');
     return;
   }
-  const val = avatarState[partner];
-  partnerAvatarEl.textContent = val || '👤';
-  partnerAvatarEl.classList.remove('hidden');
-  partnerAvatarEl.classList.toggle('is-placeholder', !val);
+  partnerAvatarEl.textContent = val;
+  partnerAvatarEl.classList.remove('hidden', 'is-placeholder');
 }
 
 function renderMeAvatar() {

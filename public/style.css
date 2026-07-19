@@ -183,7 +183,7 @@ box-shadow: 0 0 0 0 var(--toon-ink);
 #chat-view header button.off { background: #cbd5e1; opacity: .85; }
 #chat-view header #logout { background: var(--toon-pink); color: #fff; text-shadow: 0 2px 0 rgba(58,42,26,.35); }
 #me {
-  font-size: 28px;
+  font-size: 52px;
   line-height: 1;
   display: inline-flex;
   align-items: center;
