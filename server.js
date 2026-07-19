@@ -777,9 +777,10 @@ app.get('/gallery', async (req, res) => {
   const offset = (page - 1) * limit;
 
   const unsentFilter = username === HUB_USER ? '' : ' AND unsent = 0';
+  const mediaFilter = "((image IS NOT NULL AND image NOT LIKE '/stickers/%') OR video IS NOT NULL)";
   try {
     const countResult = await db.execute({
-      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)${unsentFilter}`,
+      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE peer = ? AND ${mediaFilter}${unsentFilter}`,
       args: [peer],
     });
     const totalItems = Number(countResult.rows[0].cnt);
@@ -788,7 +789,7 @@ app.get('/gallery', async (req, res) => {
     const result = await db.execute({
       sql: `SELECT id, username, image, video, time, unsent
              FROM messages
-            WHERE peer = ? AND (image IS NOT NULL OR video IS NOT NULL)${unsentFilter}
+            WHERE peer = ? AND ${mediaFilter}${unsentFilter}
             ORDER BY id DESC
             LIMIT ? OFFSET ?`,
       args: [peer, limit, offset],
