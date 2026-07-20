@@ -805,17 +805,52 @@ position: absolute;
 bottom: calc(100% + 10px);
 right: 0;
 width: 300px;
-max-height: 260px;
-overflow-y: auto;
+max-height: 320px;
 background: var(--toon-cream);
 border: 3px solid var(--toon-ink);
 border-radius: 18px;
 box-shadow: 0 5px 0 0 var(--toon-ink);
 padding: 10px;
 z-index: 50;
+display: flex;
+flex-direction: column;
+gap: 8px;
+overflow: hidden;
+}
+.sticker-tabs {
+display: flex;
+gap: 4px;
+overflow-x: auto;
+scrollbar-width: none;
+flex: 0 0 auto;
+}
+.sticker-tabs::-webkit-scrollbar { display: none; }
+.sticker-tab {
+appearance: none;
+-webkit-appearance: none;
+background: transparent;
+border: 2px solid rgba(var(--ink-rgb),.2);
+border-radius: 12px;
+padding: 4px 10px;
+font-size: 12px;
+font-weight: 600;
+color: rgba(var(--ink-rgb),.7);
+cursor: pointer;
+white-space: nowrap;
+flex: 0 0 auto;
+}
+.sticker-tab.active {
+background: var(--toon-ink);
+color: var(--toon-cream);
+border-color: var(--toon-ink);
+}
+.sticker-grid {
 display: grid;
 grid-template-columns: repeat(4, 1fr);
 gap: 6px;
+flex: 1 1 auto;
+overflow-y: auto;
+min-height: 0;
 }
 .sticker-panel button {
 appearance: none;
@@ -831,7 +866,8 @@ display: flex;
 align-items: center;
 justify-content: center;
 }
-.sticker-panel button img {
+.sticker-panel button img,
+.sticker-panel button video {
 width: 100%;
 height: auto;
 display: block;
@@ -840,7 +876,7 @@ pointer-events: none;
 .sticker-panel button:hover { background: rgba(var(--ink-rgb),.08); border-color: rgba(var(--ink-rgb),.2); }
 .sticker-panel button:active { transform: scale(.92); }
 
-.msg img.chat-sticker {
+.msg .chat-sticker {
 display: block;
 width: 160px;
 max-width: 60vw;
@@ -849,7 +885,7 @@ margin-top: 4px;
 user-select: none;
 -webkit-user-drag: none;
 }
-.msg img.chat-sticker-photo {
+.msg .chat-sticker-photo {
   border-radius: 14px;
   object-fit: cover;
   box-shadow: 0 2px 6px rgba(0,0,0,.18);
@@ -911,8 +947,9 @@ opacity: 1;
   box-shadow: 0 3px 0 0 var(--toon-ink);
 }
 .emoji-panel { width: 230px; grid-template-columns: repeat(6, 1fr); }
-.sticker-panel { width: 260px; grid-template-columns: repeat(3, 1fr); }
-.msg img.chat-sticker { width: 140px; }
+.sticker-panel { width: 260px; }
+.sticker-grid { grid-template-columns: repeat(3, 1fr); }
+.msg .chat-sticker { width: 140px; }
 }
 
 #preview {

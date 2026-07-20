@@ -354,6 +354,40 @@ const stickerBtn = document.getElementById('sticker-btn');
 const stickerPanel = document.getElementById('sticker-panel');
 let stickersLoaded = false;
 let stickerManifest = [];
+function packOf(file) {
+  const i = file.indexOf('/');
+  return i > 0 ? file.slice(0, i) : 'default';
+}
+function packLabel(pack) {
+  if (pack === 'default') return 'Basic';
+  return pack.charAt(0).toUpperCase() + pack.slice(1);
+}
+function buildStickerButton(s) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.title = s.label || s.name;
+  b.setAttribute('aria-label', s.label || s.name);
+  const isVideo = /\.webm$/i.test(s.file);
+  const media = document.createElement(isVideo ? 'video' : 'img');
+  media.src = '/stickers/' + s.file;
+  if (isVideo) {
+    media.autoplay = true;
+    media.loop = true;
+    media.muted = true;
+    media.playsInline = true;
+  } else {
+    media.alt = s.label || s.name;
+    media.loading = 'lazy';
+    if (/\.(png|webp|jpe?g|gif)$/i.test(s.file)) media.classList.add('sticker-photo');
+  }
+  b.appendChild(media);
+  b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sendSticker(s.name);
+    closeStickerPanel();
+  });
+  return b;
+}
 async function loadStickers() {
   if (stickersLoaded) return;
   try {
@@ -361,24 +395,46 @@ async function loadStickers() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     stickerManifest = Array.isArray(data.stickers) ? data.stickers : [];
+
+    const groups = new Map();
     stickerManifest.forEach((s) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.title = s.label || s.name;
-      b.setAttribute('aria-label', s.label || s.name);
-      const img = document.createElement('img');
-      img.src = '/stickers/' + s.file;
-      img.alt = s.label || s.name;
-      img.loading = 'lazy';
-      if (/\.(png|webp|jpe?g|gif)$/i.test(s.file)) img.classList.add('sticker-photo');
-      b.appendChild(img);
-      b.addEventListener('click', (e) => {
-        e.stopPropagation();
-        sendSticker(s.name);
-        closeStickerPanel();
-      });
-      stickerPanel.appendChild(b);
+      const pack = packOf(s.file);
+      if (!groups.has(pack)) groups.set(pack, []);
+      groups.get(pack).push(s);
     });
+
+    stickerPanel.innerHTML = '';
+    const tabsEl = document.createElement('div');
+    tabsEl.className = 'sticker-tabs';
+    const gridEl = document.createElement('div');
+    gridEl.className = 'sticker-grid';
+    stickerPanel.appendChild(tabsEl);
+    stickerPanel.appendChild(gridEl);
+
+    const packNames = [...groups.keys()];
+    const tabButtons = new Map();
+    const renderPack = (pack) => {
+      tabButtons.forEach((btn, p) => btn.classList.toggle('active', p === pack));
+      gridEl.innerHTML = '';
+      (groups.get(pack) || []).forEach((s) => gridEl.appendChild(buildStickerButton(s)));
+      try { localStorage.setItem('sticker.activePack', pack); } catch (_) {}
+    };
+
+    packNames.forEach((pack) => {
+      const t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'sticker-tab';
+      t.textContent = packLabel(pack);
+      t.addEventListener('click', (e) => { e.stopPropagation(); renderPack(pack); });
+      tabsEl.appendChild(t);
+      tabButtons.set(pack, t);
+    });
+
+    if (packNames.length) {
+      let initial = null;
+      try { initial = localStorage.getItem('sticker.activePack'); } catch (_) {}
+      renderPack(packNames.includes(initial) ? initial : packNames[0]);
+    }
     stickersLoaded = true;
   } catch (err) {
     console.error('load stickers failed:', err);
@@ -1286,10 +1342,13 @@ function buildMessageNodes(msg) {
     body = '<span class="msg-text unsent-placeholder">' + escapeHtml(UNSENT_PLACEHOLDER_TEXT) + '</span>';
   } else {
     body = text ? '<span class="msg-text">' + linkify(text) + '</span>' : '';
-    if (sticker && /^\/stickers\/[a-z0-9_.-]+\.(svg|png|webp|jpe?g|gif)$/i.test(sticker)) {
+    if (sticker && /^\/stickers\/[a-z0-9_./-]+\.(svg|png|webp|jpe?g|gif|webm)$/i.test(sticker)) {
+      const isVideoSticker = /\.webm$/i.test(sticker);
       const isPhotoSticker = /\.(png|webp|jpe?g|gif)$/i.test(sticker);
       const stickerCls = 'chat-sticker' + (isPhotoSticker ? ' chat-sticker-photo' : '');
-      const st = '<img class="' + stickerCls + '" src="' + sticker + '" alt="sticker" draggable="false" />';
+      const st = isVideoSticker
+        ? '<video class="' + stickerCls + '" src="' + sticker + '" autoplay loop muted playsinline draggable="false"></video>'
+        : '<img class="' + stickerCls + '" src="' + sticker + '" alt="sticker" draggable="false" />';
       body = body ? body + st : st;
     }
     if (image && /^data:image\//.test(image)) {
@@ -1362,7 +1421,7 @@ function attachMsgMenu(div, opts) {
         const hasImage = !!div.querySelector('img.chat-img');
         const hasVideo = !!div.querySelector('video.chat-vid');
         const hasAudio = !!div.querySelector('audio.chat-aud');
-        const hasSticker = !!div.querySelector('img.chat-sticker');
+        const hasSticker = !!div.querySelector('.chat-sticker');
         setReplyTarget({ id: currentId, username, text: replyText, hasImage, hasVideo, hasAudio, hasSticker });
       } else if (action === 'unsend' && currentId) {
         requestUnsend(currentId);

@@ -4,7 +4,8 @@
   "description": "Simple 2-way web chat with login",
   "main": "server.js",
   "scripts": {
-    "start": "node --env-file-if-exists=.env server.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "import-stickers": "node --env-file-if-exists=.env scripts/import-sticker-pack.js"
   },
   "engines": {
     "node": ">=18"
