@@ -248,7 +248,7 @@ const r2Client = r2Enabled
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-const BOT_IDLE_MS = Number(process.env.BOT_IDLE_MS) || 10 * 60 * 1000;
+const BOT_IDLE_MS = Number(process.env.BOT_IDLE_MS) || 60 * 60 * 1000;
 const botEnabled = !!GEMINI_API_KEY;
 
 const VIDEO_MAX_BYTES = 500 * 1024 * 1024;
