@@ -32,6 +32,54 @@
   --toon-input-bg: #2a2a2a;
   --ink-rgb: 232, 232, 232;
 }
+[data-theme="ocean"] {
+  --toon-ink: #143244;
+  --toon-orange: #4fc3d7;
+  --toon-orange-dark: #2f9fb4;
+  --toon-pink: #7ba7d9;
+  --toon-pink-dark: #4f7fc0;
+  --toon-teal: #2a8fa0;
+  --toon-teal-dark: #1e6f7d;
+  --toon-yellow: #f4d35e;
+  --toon-cream: #eaf6f8;
+  --toon-cream-alt: #f2fafb;
+  --toon-bg: #cfe7ed;
+  --toon-bg-dot: #b8dae2;
+  --toon-input-bg: #ffffff;
+  --ink-rgb: 20, 50, 68;
+}
+[data-theme="forest"] {
+  --toon-ink: #2a3a1a;
+  --toon-orange: #d68c3a;
+  --toon-orange-dark: #b8722a;
+  --toon-pink: #d97757;
+  --toon-pink-dark: #b85f43;
+  --toon-teal: #6ba368;
+  --toon-teal-dark: #4f8a4c;
+  --toon-yellow: #f2c94c;
+  --toon-cream: #f4efd8;
+  --toon-cream-alt: #f9f5e0;
+  --toon-bg: #e3d9b0;
+  --toon-bg-dot: #d0c599;
+  --toon-input-bg: #fefdf5;
+  --ink-rgb: 42, 58, 26;
+}
+[data-theme="sunset"] {
+  --toon-ink: #3a1a3a;
+  --toon-orange: #ff7a5a;
+  --toon-orange-dark: #e05a3b;
+  --toon-pink: #d84f9a;
+  --toon-pink-dark: #b8358a;
+  --toon-teal: #8b5cf6;
+  --toon-teal-dark: #6b3ec4;
+  --toon-yellow: #fbbf24;
+  --toon-cream: #ffe4f0;
+  --toon-cream-alt: #ffedf5;
+  --toon-bg: #fbc7e0;
+  --toon-bg-dot: #f5b0d3;
+  --toon-input-bg: #fff5fa;
+  --ink-rgb: 58, 26, 58;
+}
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body {
 margin: 0;
@@ -2114,4 +2162,47 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
     drop-shadow(-1px 0 0 #3a2a1a)
     drop-shadow(0 1px 0 #3a2a1a)
     drop-shadow(0 -1px 0 #3a2a1a);
+}
+#theme-switcher { position: relative; display: inline-flex; }
+#theme-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--toon-cream);
+  border: 3px solid var(--toon-ink);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 0 var(--toon-ink);
+  min-width: 160px;
+  z-index: 50;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.theme-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--toon-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  text-shadow: none;
+}
+.theme-menu-item:hover { background: rgba(var(--ink-rgb), 0.08); }
+.theme-menu-item.active { background: var(--toon-yellow); }
+.theme-menu-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--toon-ink);
+  display: inline-block;
+  flex-shrink: 0;
 }

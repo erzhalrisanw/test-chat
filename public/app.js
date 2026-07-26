@@ -2967,26 +2967,78 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && avatarModal && !avatarModal.classList.contains('hidden')) closeAvatarModal();
 });
 
+const THEMES = [
+  { id: 'light', label: 'Cream', icon: '🌤', swatch: '#ffe7c4', metaColor: '#2563eb' },
+  { id: 'dark', label: 'Dark', icon: '🌙', swatch: '#141414', metaColor: '#141414' },
+  { id: 'ocean', label: 'Ocean', icon: '🌊', swatch: '#cfe7ed', metaColor: '#2a8fa0' },
+  { id: 'forest', label: 'Forest', icon: '🌿', swatch: '#e3d9b0', metaColor: '#6ba368' },
+  { id: 'sunset', label: 'Sunset', icon: '🌅', swatch: '#fbc7e0', metaColor: '#d84f9a' },
+];
+const themeMenuEl = document.getElementById('theme-menu');
+
 function currentTheme() {
-  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const attr = document.documentElement.getAttribute('data-theme');
+  return THEMES.find((t) => t.id === attr) ? attr : 'light';
 }
-function applyTheme(theme) {
-  const t = theme === 'dark' ? 'dark' : 'light';
-  document.documentElement.setAttribute('data-theme', t);
-  try { localStorage.setItem('theme', t); } catch (e) {}
+function applyTheme(themeId) {
+  const theme = THEMES.find((t) => t.id === themeId) || THEMES[0];
+  if (theme.id === 'light') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', theme.id);
+  try { localStorage.setItem('theme', theme.id); } catch (e) {}
   if (themeToggleBtn) {
     const iconEl = themeToggleBtn.querySelector('.theme-toggle-icon') || themeToggleBtn;
-    iconEl.textContent = t === 'dark' ? '☀️' : '🌙';
+    iconEl.textContent = theme.icon;
   }
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', t === 'dark' ? '#141414' : '#2563eb');
+  if (meta) meta.setAttribute('content', theme.metaColor);
+  renderThemeMenu();
+}
+function renderThemeMenu() {
+  if (!themeMenuEl) return;
+  const active = currentTheme();
+  themeMenuEl.innerHTML = '';
+  THEMES.forEach((theme) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'theme-menu-item' + (theme.id === active ? ' active' : '');
+    btn.setAttribute('role', 'menuitem');
+    const swatch = document.createElement('span');
+    swatch.className = 'theme-menu-swatch';
+    swatch.style.background = theme.swatch;
+    btn.appendChild(swatch);
+    btn.appendChild(document.createTextNode(theme.label));
+    btn.addEventListener('click', () => {
+      closeThemeMenu();
+      applyTheme(theme.id);
+    });
+    themeMenuEl.appendChild(btn);
+  });
+}
+function openThemeMenu() {
+  renderThemeMenu();
+  if (themeMenuEl) themeMenuEl.classList.remove('hidden');
+  if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', 'true');
+}
+function closeThemeMenu() {
+  if (themeMenuEl) themeMenuEl.classList.add('hidden');
+  if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', 'false');
+}
+function toggleThemeMenu() {
+  if (!themeMenuEl) return;
+  if (themeMenuEl.classList.contains('hidden')) openThemeMenu();
+  else closeThemeMenu();
 }
 applyTheme(currentTheme());
 if (themeToggleBtn) {
-  themeToggleBtn.addEventListener('click', () => {
-    applyTheme(currentTheme() === 'dark' ? 'light' : 'dark');
+  themeToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleThemeMenu();
   });
 }
+document.addEventListener('click', (e) => {
+  if (!themeMenuEl || themeMenuEl.classList.contains('hidden')) return;
+  if (!themeMenuEl.contains(e.target) && e.target !== themeToggleBtn) closeThemeMenu();
+});
 
 var savedToken = localStorage.getItem('token');
 var savedUser = localStorage.getItem('username');
