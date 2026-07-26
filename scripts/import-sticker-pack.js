@@ -30,7 +30,7 @@ const FILE_API = `https://api.telegram.org/file/bot${TOKEN}`;
 const STICKERS_DIR = path.join(__dirname, '..', 'public', 'stickers');
 const MANIFEST_PATH = path.join(STICKERS_DIR, 'index.json');
 const SUPPORTED_EXT = new Set(['.webp', '.png', '.webm']);
-const DEFAULT_USERS = ['occupatus', 'ra', 'ocean'];
+const DEFAULT_USERS = ['occupatus', 'ra', 'ocean', 'turki'];
 
 async function tgCall(method, params) {
   const url = `${API}/${method}?${new URLSearchParams(params).toString()}`;
