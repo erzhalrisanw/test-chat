@@ -183,13 +183,21 @@ function renderPeerSwitcherMenu() {
     btn.type = 'button';
     btn.className = 'peer-menu-item' + (peer === currentPeer ? ' active' : '');
     btn.setAttribute('role', 'menuitem');
+    const info = presenceState[peer] || {};
+    const text = document.createElement('span');
+    text.className = 'peer-menu-text';
     const name = document.createElement('span');
     name.className = 'peer-menu-name';
     const dot = document.createElement('span');
-    dot.className = 'peer-menu-dot' + (presenceState[peer] && presenceState[peer].online ? ' online' : '');
+    dot.className = 'peer-menu-dot' + (info.online ? ' online' : '');
     name.appendChild(dot);
     name.appendChild(document.createTextNode(peer));
-    btn.appendChild(name);
+    text.appendChild(name);
+    const status = document.createElement('span');
+    status.className = 'peer-menu-status';
+    status.textContent = info.online ? 'Online' : formatLastSeen(info.lastSeen);
+    text.appendChild(status);
+    btn.appendChild(text);
     const unread = unreadByPeer[peer] || 0;
     if (unread > 0 && peer !== currentPeer) {
       const badge = document.createElement('span');
