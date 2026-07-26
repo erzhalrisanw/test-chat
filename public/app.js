@@ -800,6 +800,21 @@ async function loadNotifEnabled() {
       updateNotifBtn();
       if (!notifEnabled) unsubscribePush();
     }
+    if (data && typeof data.theme === 'string' && data.theme !== currentTheme()) {
+      applyTheme(data.theme);
+    }
+  } catch (_) {}
+}
+
+async function saveThemeToServer(themeId) {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    await fetch('/user-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ theme: themeId }),
+    });
   } catch (_) {}
 }
 
@@ -3010,6 +3025,7 @@ function renderThemeMenu() {
     btn.addEventListener('click', () => {
       closeThemeMenu();
       applyTheme(theme.id);
+      saveThemeToServer(theme.id);
     });
     themeMenuEl.appendChild(btn);
   });

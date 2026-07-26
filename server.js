@@ -74,6 +74,11 @@ async function initDb() {
       notif_enabled INTEGER NOT NULL DEFAULT 1
     )
   `);
+  const usCols = await db.execute(`PRAGMA table_info(user_settings)`);
+  const hasThemeCol = usCols.rows.some((r) => String(r.name) === 'theme');
+  if (!hasThemeCol) {
+    await db.execute(`ALTER TABLE user_settings ADD COLUMN theme TEXT`);
+  }
   await db.execute(`
     CREATE TABLE IF NOT EXISTS read_state (
       username TEXT NOT NULL,
@@ -216,6 +221,26 @@ async function setNotifEnabled(username, enabled) {
     sql: `INSERT INTO user_settings (username, notif_enabled) VALUES (?, ?)
           ON CONFLICT(username) DO UPDATE SET notif_enabled = excluded.notif_enabled`,
     args: [username, enabled ? 1 : 0],
+  });
+}
+
+const VALID_THEMES = new Set(['light', 'dark', 'ocean', 'forest', 'sunset']);
+
+async function getUserTheme(username) {
+  const result = await db.execute({
+    sql: 'SELECT theme FROM user_settings WHERE username = ?',
+    args: [username],
+  });
+  if (!result.rows.length) return null;
+  const theme = result.rows[0].theme;
+  return VALID_THEMES.has(theme) ? theme : null;
+}
+
+async function setUserTheme(username, theme) {
+  await db.execute({
+    sql: `INSERT INTO user_settings (username, theme) VALUES (?, ?)
+          ON CONFLICT(username) DO UPDATE SET theme = excluded.theme`,
+    args: [username, theme],
   });
 }
 
@@ -847,7 +872,8 @@ app.get('/user-settings', async (req, res) => {
   if (!username) return res.status(401).json({ ok: false });
   try {
     const notifEnabled = await getNotifEnabled(username);
-    res.json({ ok: true, notifEnabled });
+    const theme = await getUserTheme(username);
+    res.json({ ok: true, notifEnabled, theme });
   } catch (err) {
     console.error('settings get error:', err.message);
     res.status(500).json({ ok: false });
@@ -857,10 +883,19 @@ app.get('/user-settings', async (req, res) => {
 app.post('/user-settings', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
-  const { notifEnabled } = req.body || {};
-  if (typeof notifEnabled !== 'boolean') return res.status(400).json({ ok: false });
+  const { notifEnabled, theme } = req.body || {};
+  if (notifEnabled !== undefined && typeof notifEnabled !== 'boolean') {
+    return res.status(400).json({ ok: false });
+  }
+  if (theme !== undefined && !VALID_THEMES.has(theme)) {
+    return res.status(400).json({ ok: false });
+  }
+  if (notifEnabled === undefined && theme === undefined) {
+    return res.status(400).json({ ok: false });
+  }
   try {
-    await setNotifEnabled(username, notifEnabled);
+    if (typeof notifEnabled === 'boolean') await setNotifEnabled(username, notifEnabled);
+    if (theme !== undefined) await setUserTheme(username, theme);
     res.json({ ok: true });
   } catch (err) {
     console.error('settings set error:', err.message);
