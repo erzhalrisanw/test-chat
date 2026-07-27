@@ -563,12 +563,13 @@
 
     const dino = { x: 40, y: GROUND_Y, vy: 0, w: 22, h: 30, ducking: false };
     let obstacles = [];
-    let speed = 4.2;
+    let speed = 3.8;
+    const MAX_SPEED = 6.4;
     let score = 0;
     let best = parseInt(localStorage.getItem('gameDino_best') || '0', 10) || 0;
     let over = false;
     let raf = null;
-    let spawnCooldown = 60;
+    let spawnCooldown = 120;
     let tick = 0;
 
     bestWrap.classList.remove('hidden');
@@ -612,7 +613,7 @@
       spawnCooldown -= speed;
       if (spawnCooldown <= 0) {
         spawn();
-        spawnCooldown = 70 + Math.random() * 90;
+        spawnCooldown = 140 + Math.random() * 120;
       }
 
       for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -633,7 +634,9 @@
           bestEl.textContent = best;
           try { localStorage.setItem('gameDino_best', String(best)); } catch (_) {}
         }
-        if (score > 0 && score % 100 === 0) speed += 0.3;
+        if (score > 0 && score % 200 === 0 && speed < MAX_SPEED) {
+          speed = Math.min(MAX_SPEED, speed + 0.15);
+        }
       }
 
       draw();
