@@ -219,7 +219,10 @@ justify-content: space-between;
 align-items: center;
 font-weight: 700;
 text-shadow: 0 2px 0 rgba(var(--ink-rgb),.35);
+position: relative;
+z-index: 60;
 }
+#chat-form { position: relative; z-index: 60; }
 #chat-view header .right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; }
 @media (max-width: 640px) {
   #chat-view header { padding: 10px 12px; gap: 8px; }
@@ -2148,13 +2151,14 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   background: #3a2a2a;
   color: var(--toon-ink);
 }
-[data-theme="dark"] .tick.sent { color: #a0a0a0; }
+[data-theme="dark"] .tick svg { filter: drop-shadow(0 1px 0 rgba(0,0,0,0.7)); }
+[data-theme="dark"] .tick.sent { color: #b8b8b8; }
 [data-theme="dark"] .tick.read,
 [data-theme="dark"] .msg.has-sticker .meta .tick.read {
-  color: #e8e8e8;
+  color: #4fc3f7;
 }
-[data-theme="dark"] .msg.other .tick.read { color: #cfcfcf; }
-[data-theme="dark"] .msg.has-sticker .meta .tick.sent { color: #e8e8e8; }
+[data-theme="dark"] .msg.other .tick.read { color: #4fc3f7; }
+[data-theme="dark"] .msg.has-sticker .meta .tick.sent { color: #ffffff; }
 #theme-toggle .theme-toggle-icon {
   display: inline-block;
   filter:
@@ -2206,6 +2210,62 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   display: inline-block;
   flex-shrink: 0;
 }
+
+/* Weather overlay + switcher */
+#weather-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 40;
+  display: none;
+}
+#weather-canvas.active { display: block; }
+#weather-switcher { position: relative; display: inline-flex; }
+#weather-toggle .weather-toggle-icon {
+  display: inline-block;
+  filter:
+    drop-shadow(1px 0 0 #3a2a1a)
+    drop-shadow(-1px 0 0 #3a2a1a)
+    drop-shadow(0 1px 0 #3a2a1a)
+    drop-shadow(0 -1px 0 #3a2a1a);
+}
+#weather-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--toon-cream);
+  border: 3px solid var(--toon-ink);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 0 var(--toon-ink);
+  min-width: 140px;
+  z-index: 50;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.weather-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: var(--toon-ink);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  text-shadow: none;
+}
+.weather-menu-item:hover { background: rgba(var(--ink-rgb), 0.08); }
+.weather-menu-item.active { background: var(--toon-yellow); }
+.weather-menu-icon { font-size: 16px; }
 
 /* --- Mini games --- */
 #game-modal {
@@ -2284,6 +2344,74 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.game-leaderboard {
+  padding: 14px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.game-lb-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 15px;
+  padding-bottom: 8px;
+  border-bottom: 2px dashed var(--toon-ink);
+}
+.game-lb-header .game-lb-name {
+  text-align: center;
+  padding: 4px 8px;
+  background: var(--toon-cream-alt);
+  border: 2px solid var(--toon-ink);
+  border-radius: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-lb-header .game-lb-vs {
+  font-size: 12px;
+  opacity: 0.6;
+  font-weight: 700;
+}
+.game-lb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.game-lb-row {
+  display: grid;
+  grid-template-columns: 1fr 90px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--toon-cream-alt);
+  border: 2px solid var(--toon-ink);
+  border-radius: 12px;
+}
+.game-lb-row .game-lb-score {
+  text-align: center;
+  font-weight: 800;
+  font-size: 18px;
+  padding: 4px 0;
+}
+.game-lb-row .game-lb-score.win {
+  color: var(--toon-orange-dark);
+}
+.game-lb-row .game-lb-game {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.75;
+  text-transform: uppercase;
+}
+.game-lb-empty {
+  text-align: center;
+  padding: 20px;
+  opacity: 0.6;
+  font-size: 14px;
 }
 .game-hud {
   display: flex;
@@ -2418,6 +2546,19 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   aspect-ratio: 1 / 1;
   display: block;
   touch-action: none;
+}
+
+/* Dino */
+.gdino-canvas {
+  background: rgba(var(--ink-rgb), 0.05);
+  border: 3px solid var(--toon-ink);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 500px;
+  height: auto;
+  display: block;
+  touch-action: none;
+  cursor: pointer;
 }
 
 /* Memory */

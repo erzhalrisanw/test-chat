@@ -3,10 +3,15 @@
   if (!modal) return;
   const picker = document.getElementById('game-picker');
   const stage = document.getElementById('game-stage');
+  const leaderboardView = document.getElementById('game-leaderboard');
+  const lbHeader = document.getElementById('game-lb-header');
+  const lbBody = document.getElementById('game-lb-body');
+  const lbEmpty = document.getElementById('game-lb-empty');
   const board = document.getElementById('game-board');
   const titleEl = document.getElementById('game-modal-title');
   const closeBtn = document.getElementById('game-close');
   const backBtn = document.getElementById('game-back');
+  const lbBtn = document.getElementById('game-leaderboard-btn');
   const restartBtn = document.getElementById('game-restart');
   const scoreEl = document.getElementById('game-score');
   const bestEl = document.getElementById('game-best');
@@ -15,14 +20,23 @@
   const movesWrap = document.getElementById('game-moves-wrap');
   const hintEl = document.getElementById('game-hint');
 
+  const HUB_USER = 'occupatus';
+  const LEADERBOARD_GAMES = ['2048', 'snake', 'dino'];
+
   let currentGameId = null;
   let cleanupFn = null;
 
   const GAMES = {
-    '2048':   { title: '2048',   mount: mount2048 },
-    'snake':  { title: 'Snake',  mount: mountSnake },
-    'memory': { title: 'Memory', mount: mountMemory },
+    '2048':   { title: '2048',     mount: mount2048 },
+    'snake':  { title: 'Snake',    mount: mountSnake },
+    'memory': { title: 'Memory',   mount: mountMemory },
+    'dino':   { title: 'Dino Run', mount: mountDino },
   };
+
+  function styleVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
 
   function open() {
     modal.classList.remove('hidden');
@@ -36,9 +50,104 @@
     unmountCurrent();
     picker.classList.remove('hidden');
     stage.classList.add('hidden');
+    leaderboardView.classList.add('hidden');
     backBtn.classList.add('hidden');
+    if (lbBtn) lbBtn.classList.remove('hidden');
     titleEl.textContent = 'Pilih game';
     hintEl.textContent = '';
+  }
+  function getMeAndPeer() {
+    const me = localStorage.getItem('username') || '';
+    if (me === HUB_USER) {
+      const peer = localStorage.getItem('activePeer') || '';
+      return { me, peer, hub: HUB_USER };
+    }
+    return { me, peer: me, hub: HUB_USER };
+  }
+  function authHeaders() {
+    const token = localStorage.getItem('token');
+    return token ? { Authorization: 'Bearer ' + token } : {};
+  }
+  async function submitScore(game, score) {
+    if (LEADERBOARD_GAMES.indexOf(game) < 0) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      await fetch('/game-score', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ game, score }),
+      });
+    } catch (_) {}
+  }
+  const GAME_LABEL = { '2048': '2048', 'snake': 'Snake', 'dino': 'Dino' };
+  async function showLeaderboard() {
+    unmountCurrent();
+    picker.classList.add('hidden');
+    stage.classList.add('hidden');
+    leaderboardView.classList.remove('hidden');
+    backBtn.classList.remove('hidden');
+    if (lbBtn) lbBtn.classList.add('hidden');
+    titleEl.textContent = 'Leaderboard';
+    lbHeader.innerHTML = '';
+    lbBody.innerHTML = '';
+    lbEmpty.classList.add('hidden');
+
+    const { me, peer } = getMeAndPeer();
+    if (!peer) {
+      lbBody.innerHTML = '';
+      lbEmpty.textContent = 'Belum ada peer aktif';
+      lbEmpty.classList.remove('hidden');
+      return;
+    }
+    let data = null;
+    try {
+      const url = me === HUB_USER ? '/leaderboard?peer=' + encodeURIComponent(peer) : '/leaderboard';
+      const res = await fetch(url, { headers: authHeaders() });
+      data = await res.json();
+      if (!data || !data.ok) throw new Error('failed');
+    } catch (_) {
+      lbEmpty.textContent = 'Gagal memuat leaderboard';
+      lbEmpty.classList.remove('hidden');
+      return;
+    }
+
+    const nameA = data.hub;
+    const nameB = data.peer;
+    const left = document.createElement('div');
+    left.className = 'game-lb-name';
+    left.textContent = nameA;
+    const vs = document.createElement('div');
+    vs.className = 'game-lb-vs';
+    vs.textContent = 'VS';
+    const right = document.createElement('div');
+    right.className = 'game-lb-name';
+    right.textContent = nameB;
+    lbHeader.appendChild(left);
+    lbHeader.appendChild(vs);
+    lbHeader.appendChild(right);
+
+    const scoresA = (data.scores && data.scores[nameA]) || {};
+    const scoresB = (data.scores && data.scores[nameB]) || {};
+    LEADERBOARD_GAMES.forEach((g) => {
+      const a = Number(scoresA[g] || 0);
+      const b = Number(scoresB[g] || 0);
+      const row = document.createElement('div');
+      row.className = 'game-lb-row';
+      const sa = document.createElement('div');
+      sa.className = 'game-lb-score' + (a > b && a > 0 ? ' win' : '');
+      sa.textContent = a;
+      const label = document.createElement('div');
+      label.className = 'game-lb-game';
+      label.textContent = GAME_LABEL[g] || g;
+      const sb = document.createElement('div');
+      sb.className = 'game-lb-score' + (b > a && b > 0 ? ' win' : '');
+      sb.textContent = b;
+      row.appendChild(sa);
+      row.appendChild(label);
+      row.appendChild(sb);
+      lbBody.appendChild(row);
+    });
   }
   function unmountCurrent() {
     try { if (cleanupFn) cleanupFn(); } catch (_) {}
@@ -58,7 +167,9 @@
     currentGameId = id;
     picker.classList.add('hidden');
     stage.classList.remove('hidden');
+    leaderboardView.classList.add('hidden');
     backBtn.classList.remove('hidden');
+    if (lbBtn) lbBtn.classList.add('hidden');
     titleEl.textContent = g.title;
     cleanupFn = g.mount(board) || null;
   }
@@ -69,6 +180,7 @@
   closeBtn.addEventListener('click', close);
   backBtn.addEventListener('click', showPicker);
   restartBtn.addEventListener('click', restart);
+  if (lbBtn) lbBtn.addEventListener('click', showLeaderboard);
   picker.querySelectorAll('.game-card').forEach((card) => {
     card.addEventListener('click', () => selectGame(card.dataset.game));
   });
@@ -133,6 +245,7 @@
         best = score;
         bestEl.textContent = best;
         try { localStorage.setItem('game2048_best', String(best)); } catch (_) {}
+        submitScore('2048', best);
       }
     }
     function slide(row) {
@@ -260,10 +373,6 @@
         if (!snake.some((s) => s.x === f.x && s.y === f.y)) return f;
       }
     }
-    function styleVar(name, fallback) {
-      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-      return v || fallback;
-    }
     function draw() {
       ctx.clearRect(0, 0, SIZE, SIZE);
       const ink = styleVar('--toon-ink', '#000');
@@ -308,6 +417,7 @@
           best = score;
           bestEl.textContent = best;
           try { localStorage.setItem('gameSnake_best', String(best)); } catch (_) {}
+          submitScore('snake', best);
         }
         food = placeFood();
       } else {
@@ -432,6 +542,179 @@
 
     return function () {
       if (timeoutId) clearTimeout(timeoutId);
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Dino Run (Chrome offline clone)
+  // ------------------------------------------------------------------
+  function mountDino(host) {
+    const W = 500, H = 160;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'gdino-canvas';
+    canvas.width = W;
+    canvas.height = H;
+    host.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+
+    const GROUND_Y = H - 20;
+    const GRAVITY = 0.55;
+    const JUMP_V = -10.2;
+
+    const dino = { x: 40, y: GROUND_Y, vy: 0, w: 22, h: 30, ducking: false };
+    let obstacles = [];
+    let speed = 4.2;
+    let score = 0;
+    let best = parseInt(localStorage.getItem('gameDino_best') || '0', 10) || 0;
+    let over = false;
+    let raf = null;
+    let spawnCooldown = 60;
+    let tick = 0;
+
+    bestWrap.classList.remove('hidden');
+    bestEl.textContent = best;
+    hintEl.textContent = 'Space / tap = lompat, ↓ = nunduk';
+
+    function jump() {
+      if (over) return;
+      if (dino.y >= GROUND_Y) {
+        dino.vy = JUMP_V;
+      }
+    }
+    function duck(on) {
+      if (over) return;
+      dino.ducking = on;
+      dino.h = on ? 16 : 30;
+    }
+    function spawn() {
+      const r = Math.random();
+      if (r < 0.55) {
+        obstacles.push({ x: W, y: GROUND_Y - 22, w: 14, h: 22, kind: 'cactus' });
+      } else if (r < 0.8) {
+        obstacles.push({ x: W, y: GROUND_Y - 34, w: 20, h: 34, kind: 'cactus' });
+      } else if (r < 0.92) {
+        obstacles.push({ x: W, y: GROUND_Y - 22, w: 34, h: 22, kind: 'cactus-wide' });
+      } else {
+        obstacles.push({ x: W, y: GROUND_Y - 46, w: 24, h: 14, kind: 'ptero' });
+      }
+    }
+    function aabb(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+    function loop() {
+      if (over) return;
+      tick++;
+
+      dino.vy += GRAVITY;
+      dino.y += dino.vy;
+      if (dino.y > GROUND_Y) { dino.y = GROUND_Y; dino.vy = 0; }
+
+      spawnCooldown -= speed;
+      if (spawnCooldown <= 0) {
+        spawn();
+        spawnCooldown = 70 + Math.random() * 90;
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        obstacles[i].x -= speed;
+        if (obstacles[i].x + obstacles[i].w < 0) obstacles.splice(i, 1);
+      }
+
+      const dinoBox = { x: dino.x + 2, y: dino.y - dino.h + 2, w: dino.w - 4, h: dino.h - 4 };
+      for (let i = 0; i < obstacles.length; i++) {
+        if (aabb(dinoBox, obstacles[i])) { gameOver(); return; }
+      }
+
+      if (tick % 3 === 0) {
+        score++;
+        scoreEl.textContent = score;
+        if (score > best) {
+          best = score;
+          bestEl.textContent = best;
+          try { localStorage.setItem('gameDino_best', String(best)); } catch (_) {}
+        }
+        if (score > 0 && score % 100 === 0) speed += 0.3;
+      }
+
+      draw();
+      raf = requestAnimationFrame(loop);
+    }
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      const ink = styleVar('--toon-ink', '#000');
+      const teal = styleVar('--toon-teal', '#2fb7c4');
+      const orange = styleVar('--toon-orange', '#ff8a3d');
+      const green = '#6ba368';
+
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y + 1);
+      ctx.lineTo(W, GROUND_Y + 1);
+      ctx.stroke();
+
+      ctx.fillStyle = teal;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2;
+      ctx.fillRect(dino.x, dino.y - dino.h, dino.w, dino.h);
+      ctx.strokeRect(dino.x, dino.y - dino.h, dino.w, dino.h);
+      ctx.fillStyle = ink;
+      ctx.fillRect(dino.x + dino.w - 6, dino.y - dino.h + 5, 2, 2);
+
+      for (let i = 0; i < obstacles.length; i++) {
+        const o = obstacles[i];
+        ctx.fillStyle = o.kind === 'ptero' ? orange : green;
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
+      }
+
+      if (over) {
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 22px system-ui, sans-serif';
+        ctx.fillText('Game Over', W / 2, H / 2 - 4);
+        ctx.font = '13px system-ui, sans-serif';
+        ctx.fillText('Score ' + score + '  •  Restart untuk main lagi', W / 2, H / 2 + 18);
+      }
+    }
+    function gameOver() {
+      over = true;
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      draw();
+      if (score > 0) submitScore('dino', best);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        jump();
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        duck(true);
+      }
+    }
+    function onKeyUp(e) {
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') duck(false);
+    }
+    function onTap(e) {
+      e.preventDefault();
+      jump();
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    canvas.addEventListener('mousedown', onTap);
+    canvas.addEventListener('touchstart', onTap, { passive: false });
+
+    draw();
+    raf = requestAnimationFrame(loop);
+
+    return function () {
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keyup', onKeyUp);
     };
   }
 

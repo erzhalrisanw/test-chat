@@ -75,6 +75,10 @@
           <button id="theme-toggle" type="button" title="Ganti tema" aria-label="Ganti tema" aria-haspopup="true" aria-expanded="false"><span class="theme-toggle-icon">🌙</span></button>
           <div id="theme-menu" class="hidden" role="menu"></div>
         </div>
+        <div id="weather-switcher">
+          <button id="weather-toggle" type="button" title="Cuaca" aria-label="Cuaca" aria-haspopup="true" aria-expanded="false"><span class="weather-toggle-icon">🌤</span></button>
+          <div id="weather-menu" class="hidden" role="menu"></div>
+        </div>
         <button id="notif-toggle" title="Notifications">🔕 Off</button>
         <button id="logout">Logout</button>
       </div>
@@ -238,6 +242,7 @@
       <div class="game-modal-header">
         <button id="game-back" type="button" class="hidden" title="Kembali" aria-label="Kembali">‹</button>
         <span id="game-modal-title">Pilih game</span>
+        <button id="game-leaderboard-btn" type="button" title="Leaderboard" aria-label="Leaderboard">🏆</button>
         <button id="game-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
       </div>
       <div id="game-picker" class="game-picker">
@@ -256,6 +261,16 @@
           <span class="game-card-title">Memory</span>
           <span class="game-card-sub">Cocokkan pasangan</span>
         </button>
+        <button type="button" class="game-card" data-game="dino">
+          <span class="game-card-icon">🦖</span>
+          <span class="game-card-title">Dino Run</span>
+          <span class="game-card-sub">Lompatin rintangan</span>
+        </button>
+      </div>
+      <div id="game-leaderboard" class="game-leaderboard hidden">
+        <div id="game-lb-header" class="game-lb-header"></div>
+        <div id="game-lb-body" class="game-lb-body"></div>
+        <div id="game-lb-empty" class="game-lb-empty hidden">Belum ada skor</div>
       </div>
       <div id="game-stage" class="game-stage hidden">
         <div class="game-hud">
@@ -272,9 +287,12 @@
     </div>
   </div>
 
+  <canvas id="weather-canvas" aria-hidden="true"></canvas>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="/call.js"></script>
   <script src="/games.js"></script>
+  <script src="/weather.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -126,6 +126,15 @@ async function initDb() {
       updated_at TEXT NOT NULL
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS game_scores (
+      username TEXT NOT NULL,
+      game TEXT NOT NULL,
+      score INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (username, game)
+    )
+  `);
 }
 
 async function loadAllReadState() {
@@ -899,6 +908,76 @@ app.post('/user-settings', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('settings set error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+const LEADERBOARD_GAMES = new Set(['2048', 'snake', 'dino']);
+
+async function getGameScores(username) {
+  const out = { '2048': 0, 'snake': 0, 'dino': 0 };
+  try {
+    const rs = await db.execute({
+      sql: 'SELECT game, score FROM game_scores WHERE username = ?',
+      args: [username],
+    });
+    for (const row of rs.rows) {
+      const g = String(row.game);
+      if (out.hasOwnProperty(g)) out[g] = Number(row.score) || 0;
+    }
+  } catch (err) {
+    console.error('getGameScores error:', err.message);
+  }
+  return out;
+}
+
+app.post('/game-score', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const { game, score } = req.body || {};
+  if (!LEADERBOARD_GAMES.has(game)) return res.status(400).json({ ok: false, error: 'Invalid game' });
+  const s = Number(score);
+  if (!Number.isFinite(s) || s < 0 || s > 1e9) return res.status(400).json({ ok: false, error: 'Invalid score' });
+  try {
+    const existing = await db.execute({
+      sql: 'SELECT score FROM game_scores WHERE username = ? AND game = ?',
+      args: [username, game],
+    });
+    const current = existing.rows.length ? Number(existing.rows[0].score) : 0;
+    if (s > current) {
+      await db.execute({
+        sql: `INSERT INTO game_scores (username, game, score, updated_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(username, game) DO UPDATE SET score = excluded.score, updated_at = excluded.updated_at`,
+        args: [username, game, s, Date.now()],
+      });
+      return res.json({ ok: true, best: s, updated: true });
+    }
+    return res.json({ ok: true, best: current, updated: false });
+  } catch (err) {
+    console.error('game-score error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.get('/leaderboard', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  let peer;
+  if (username === HUB_USER) {
+    peer = String(req.query.peer || '').trim();
+    if (!peer || peer === HUB_USER) return res.status(400).json({ ok: false, error: 'Peer required' });
+  } else {
+    peer = username;
+  }
+  try {
+    const [hubScores, peerScores] = await Promise.all([
+      getGameScores(HUB_USER),
+      getGameScores(peer),
+    ]);
+    res.json({ ok: true, hub: HUB_USER, peer, scores: { [HUB_USER]: hubScores, [peer]: peerScores } });
+  } catch (err) {
+    console.error('leaderboard error:', err.message);
     res.status(500).json({ ok: false });
   }
 });
