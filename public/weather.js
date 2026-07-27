@@ -57,11 +57,11 @@
         particles.push({
           x: Math.random() * W,
           y: Math.random() * H,
-          r: 1 + Math.random() * 2.6,
+          r: 3 + Math.random() * 3,
           vy: 25 + Math.random() * 55,
           drift: Math.random() * Math.PI * 2,
           driftSpeed: 0.4 + Math.random() * 0.8,
-          alpha: 0.55 + Math.random() * 0.4,
+          alpha: 0.8 + Math.random() * 0.2,
         });
       }
     }
@@ -92,7 +92,6 @@
   }
 
   function stepSnow(dt) {
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
       p.drift += p.driftSpeed * dt;
@@ -106,8 +105,12 @@
       if (p.x > W + 10) p.x = -10;
       ctx.globalAlpha = p.alpha;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.ellipse(p.x, p.y, p.r * 0.65, p.r * 1.15, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 1)';
       ctx.fill();
+      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = 'rgba(20, 30, 55, 0.7)';
+      ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }

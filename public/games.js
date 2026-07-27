@@ -550,11 +550,14 @@
   // ------------------------------------------------------------------
   function mountDino(host) {
     const W = 500, H = 160;
+    const tapZone = document.createElement('div');
+    tapZone.className = 'gdino-tap';
     const canvas = document.createElement('canvas');
     canvas.className = 'gdino-canvas';
     canvas.width = W;
     canvas.height = H;
-    host.appendChild(canvas);
+    tapZone.appendChild(canvas);
+    host.appendChild(tapZone);
     const ctx = canvas.getContext('2d');
 
     const GROUND_Y = H - 20;
@@ -708,8 +711,8 @@
 
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
-    canvas.addEventListener('mousedown', onTap);
-    canvas.addEventListener('touchstart', onTap, { passive: false });
+    tapZone.addEventListener('mousedown', onTap);
+    tapZone.addEventListener('touchstart', onTap, { passive: false });
 
     draw();
     raf = requestAnimationFrame(loop);

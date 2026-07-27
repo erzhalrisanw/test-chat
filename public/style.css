@@ -2549,6 +2549,18 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
 }
 
 /* Dino */
+.gdino-tap {
+  width: 100%;
+  max-width: 500px;
+  padding: 40px 20px;
+  margin: -20px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  touch-action: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
 .gdino-canvas {
   background: rgba(var(--ink-rgb), 0.05);
   border: 3px solid var(--toon-ink);
@@ -2559,6 +2571,7 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   display: block;
   touch-action: none;
   cursor: pointer;
+  pointer-events: none;
 }
 
 /* Memory */
