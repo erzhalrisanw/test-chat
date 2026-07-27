@@ -31,6 +31,7 @@ const replyCancelBtn = document.getElementById('reply-cancel');
 let replyTarget = null;
 
 const galleryBtn = document.getElementById('gallery-btn');
+const gameBtn = document.getElementById('game-btn');
 const galleryModal = document.getElementById('gallery-modal');
 const galleryGrid = document.getElementById('gallery-grid');
 const galleryClose = document.getElementById('gallery-close');
@@ -1047,6 +1048,7 @@ function startChat(token, username) {
   renderPeerSwitcherButton();
   updateNotifBtn();
   updateGalleryBtn();
+  if (gameBtn) gameBtn.classList.remove('hidden');
   renderMeAvatar();
   renderPresence();
   startPresenceTimer();
@@ -2645,6 +2647,11 @@ function closeGallery() {
 }
 
 galleryBtn.addEventListener('click', openGallery);
+if (gameBtn) {
+  gameBtn.addEventListener('click', () => {
+    if (window.MiniGames) window.MiniGames.open();
+  });
+}
 galleryClose.addEventListener('click', closeGallery);
 document.getElementById('gallery-prev').addEventListener('click', goToPrevPage);
 document.getElementById('gallery-next').addEventListener('click', goToNextPage);

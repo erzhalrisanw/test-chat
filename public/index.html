@@ -69,6 +69,7 @@
           <div id="peer-switcher-menu" class="hidden" role="menu"></div>
         </div>
         <button id="gallery-btn" class="hidden" title="Gallery">🖼️</button>
+        <button id="game-btn" class="hidden" title="Main game sejenak">🎮</button>
         <button id="call-btn" class="hidden" title="Video call">📹</button>
         <div id="theme-switcher">
           <button id="theme-toggle" type="button" title="Ganti tema" aria-label="Ganti tema" aria-haspopup="true" aria-expanded="false"><span class="theme-toggle-icon">🌙</span></button>
@@ -232,8 +233,48 @@
     </div>
   </div>
 
+  <div id="game-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="game-modal-title">
+    <div class="game-modal-box">
+      <div class="game-modal-header">
+        <button id="game-back" type="button" class="hidden" title="Kembali" aria-label="Kembali">‹</button>
+        <span id="game-modal-title">Pilih game</span>
+        <button id="game-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div id="game-picker" class="game-picker">
+        <button type="button" class="game-card" data-game="2048">
+          <span class="game-card-icon">🔢</span>
+          <span class="game-card-title">2048</span>
+          <span class="game-card-sub">Gabung angka</span>
+        </button>
+        <button type="button" class="game-card" data-game="snake">
+          <span class="game-card-icon">🐍</span>
+          <span class="game-card-title">Snake</span>
+          <span class="game-card-sub">Makan sebanyak mungkin</span>
+        </button>
+        <button type="button" class="game-card" data-game="memory">
+          <span class="game-card-icon">🧠</span>
+          <span class="game-card-title">Memory</span>
+          <span class="game-card-sub">Cocokkan pasangan</span>
+        </button>
+      </div>
+      <div id="game-stage" class="game-stage hidden">
+        <div class="game-hud">
+          <div class="game-hud-left">
+            <span class="game-hud-item"><span class="game-hud-label">Score</span><span id="game-score">0</span></span>
+            <span class="game-hud-item hidden" id="game-best-wrap"><span class="game-hud-label">Best</span><span id="game-best">0</span></span>
+            <span class="game-hud-item hidden" id="game-moves-wrap"><span class="game-hud-label">Moves</span><span id="game-moves">0</span></span>
+          </div>
+          <button type="button" id="game-restart" class="game-restart">Restart</button>
+        </div>
+        <div id="game-board" class="game-board"></div>
+        <p id="game-hint" class="game-hint"></p>
+      </div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="/call.js"></script>
+  <script src="/games.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
