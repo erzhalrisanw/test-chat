@@ -68,8 +68,6 @@
   }
 
   function stepRain(dt) {
-    ctx.strokeStyle = 'rgba(180, 210, 240, 0.55)';
-    ctx.lineWidth = 1.2;
     ctx.lineCap = 'round';
     ctx.beginPath();
     for (let i = 0; i < particles.length; i++) {
@@ -85,6 +83,11 @@
         p.y = -20;
       }
     }
+    ctx.strokeStyle = 'rgba(20, 30, 55, 0.55)';
+    ctx.lineWidth = 2.6;
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(210, 230, 255, 0.95)';
+    ctx.lineWidth = 1.1;
     ctx.stroke();
   }
 
