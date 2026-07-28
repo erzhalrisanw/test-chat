@@ -835,7 +835,11 @@ async function loadNotifEnabled() {
       notifEnabled = data.notifEnabled;
       localStorage.setItem('notifEnabled', notifEnabled ? '1' : '0');
       updateNotifBtn();
-      if (!notifEnabled) unsubscribePush();
+      if (notifEnabled) {
+        if ('Notification' in window && Notification.permission === 'granted') setupPush();
+      } else {
+        unsubscribePush();
+      }
     }
     if (data && typeof data.theme === 'string' && data.theme !== currentTheme()) {
       applyTheme(data.theme);
@@ -959,16 +963,6 @@ function playBeep() {
     gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.25);
     osc.start();
     osc.stop(audioCtx.currentTime + 0.26);
-  } catch (_) {}
-}
-
-function showDesktopNotification(title, body) {
-  if (!('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
-  if (document.visibilityState === 'visible') return;
-  try {
-    const n = new Notification(title, { body, icon: '/favicon.ico', tag: 'chat' });
-    n.onclick = () => { window.focus(); n.close(); };
   } catch (_) {}
 }
 
@@ -1147,8 +1141,6 @@ function notify(msg) {
   if ('vibrate' in navigator) {
     try { navigator.vibrate(200); } catch (_) {}
   }
-  const body = msg.text || (msg.sticker ? '🎨 Sent a sticker' : msg.image ? '📷 Sent a photo' : msg.video ? '🎬 Sent a video' : msg.audio ? '🎤 Sent a voice note' : '');
-  showDesktopNotification(`Message from ${msg.username}`, body);
 }
 
 loginForm.addEventListener('submit', async (e) => {
@@ -1229,7 +1221,9 @@ function startChat(token, username) {
   loadNotifEnabled();
   if (notifEnabled && 'Notification' in window) {
     if (Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
+      Notification.requestPermission().then((result) => {
+        if (result === 'granted') setupPush();
+      }).catch(() => {});
     } else if (Notification.permission === 'granted') {
       setupPush();
     }

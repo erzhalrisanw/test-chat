@@ -4,7 +4,7 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) {}
-  const title = data.title || 'New message';
+  const title = data.title || 'Berita terkini';
   const isCall = typeof data.tag === 'string' && data.tag.startsWith('call-');
   const options = {
     body: data.body || '',
@@ -16,7 +16,14 @@ self.addEventListener('push', (event) => {
     data: { url: data.url || '/' },
     vibrate: isCall ? [400, 200, 400, 200, 400] : [200, 100, 200],
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    if (!isCall) {
+      const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const active = wins.some((w) => w.visibilityState === 'visible' && w.focused);
+      if (active) return;
+    }
+    await self.registration.showNotification(title, options);
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {

@@ -357,7 +357,7 @@ async function getSubscriptionsFor(username) {
 
 async function sendPushToRecipient(recipient, payload) {
   if (!pushEnabled) return;
-  if (!recipient || onlineUsers.has(recipient)) return;
+  if (!recipient) return;
   const subs = await getSubscriptionsFor(recipient);
   await Promise.all(subs.map(async (sub) => {
     try {
@@ -1154,8 +1154,8 @@ async function runBotReply(peer) {
   emitToThread(peer, 'message', broadcast);
   touchLastSeen(HUB_USER, now);
   sendPushToRecipient(peer, {
-    title: `AI stand-in untuk ${HUB_USER}`,
-    body: reply,
+    title: 'Pembaruan tersedia',
+    body: 'Ada aktivitas baru untuk ditinjau',
     url: '/',
   }).catch(() => {});
 }
@@ -1261,8 +1261,8 @@ io.on('connection', async (socket) => {
       emitToThread(peer, 'message', broadcast);
       touchLastSeen(username, msg.time);
       sendPushToRecipient(recipientOf(username, peer), {
-        title: `Message from ${username}`,
-        body: pushBody,
+        title: 'Berita terkini',
+        body: 'Simak update dan artikel pilihan hari ini',
         url: '/',
       }).catch(() => {});
       if (username !== HUB_USER && isHubOfflineAndIdle()) {

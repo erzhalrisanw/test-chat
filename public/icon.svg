@@ -1,7 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#2563eb"/>
-  <path d="M128 144h256c22 0 40 18 40 40v144c0 22-18 40-40 40H224l-72 56v-56h-24c-22 0-40-18-40-40V184c0-22 18-40 40-40z" fill="#fff"/>
-  <circle cx="200" cy="256" r="20" fill="#2563eb"/>
-  <circle cx="256" cy="256" r="20" fill="#2563eb"/>
-  <circle cx="312" cy="256" r="20" fill="#2563eb"/>
+  <rect width="512" height="512" rx="96" fill="#334155"/>
+  <rect x="80" y="112" width="352" height="288" rx="12" fill="#f8fafc"/>
+  <rect x="104" y="140" width="304" height="40" rx="4" fill="#0f172a"/>
+  <rect x="104" y="200" width="200" height="16" rx="3" fill="#334155"/>
+  <rect x="104" y="228" width="180" height="10" rx="3" fill="#94a3b8"/>
+  <rect x="104" y="260" width="128" height="10" rx="3" fill="#cbd5e1"/>
+  <rect x="104" y="280" width="128" height="10" rx="3" fill="#cbd5e1"/>
+  <rect x="104" y="300" width="128" height="10" rx="3" fill="#cbd5e1"/>
+  <rect x="104" y="320" width="128" height="10" rx="3" fill="#cbd5e1"/>
+  <rect x="104" y="340" width="100" height="10" rx="3" fill="#cbd5e1"/>
+  <rect x="252" y="260" width="156" height="80" rx="6" fill="#94a3b8"/>
+  <rect x="252" y="352" width="156" height="10" rx="3" fill="#cbd5e1"/>
 </svg>
