@@ -140,6 +140,23 @@ function renderPresence() {
 const typingBubbleEl = typingIndicatorEl.querySelector('.typing-bubble');
 const typingPetEl = document.getElementById('typing-pet');
 
+function applyTypingPetForUser(username) {
+  if (!typingPetEl) return;
+  const body = typingPetEl.querySelector('.pet-body');
+  if (!body) return;
+  if (username === 'ocean') {
+    if (body.tagName === 'IMG') return;
+    const img = document.createElement('img');
+    img.className = 'pet-body';
+    img.src = '/doraemon.svg';
+    img.alt = '';
+    img.width = 30;
+    img.height = 30;
+    img.draggable = false;
+    body.replaceWith(img);
+  }
+}
+
 function updatePetState() {
   if (!typingPetEl) return;
   const peerNames = Object.keys(typingState).filter((u) => u !== me);
@@ -1187,6 +1204,7 @@ function maybePlaySunrise() {
 function startChat(token, username) {
   me = username;
   if (meNameEl) meNameEl.textContent = username;
+  applyTypingPetForUser(username);
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');

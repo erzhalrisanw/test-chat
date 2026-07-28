@@ -415,6 +415,7 @@ box-shadow: 0 0 0 0 var(--toon-ink);
   transform-origin: 50% 100%;
 }
 #typing-pet .pet-body { display: inline-block; transform-origin: 50% 100%; }
+#typing-pet img.pet-body { width: 30px; height: 30px; }
 #typing-pet .pet-zz {
   font-family: 'Fredoka', system-ui, sans-serif;
   font-size: 11px;
