@@ -32,6 +32,7 @@ let replyTarget = null;
 
 const galleryBtn = document.getElementById('gallery-btn');
 const gameBtn = document.getElementById('game-btn');
+const pingBtn = document.getElementById('ping-btn');
 const galleryModal = document.getElementById('gallery-modal');
 const galleryGrid = document.getElementById('gallery-grid');
 const galleryClose = document.getElementById('gallery-close');
@@ -992,6 +993,42 @@ function triggerHeartBurst(msg) {
   triggerHeartBurstOnElement(bubble);
 }
 
+const SHOWER_EMOJIS = ['❤️', '💕', '💖', '💗', '💘', '💝', '🥰'];
+function spawnHeartShower({ intensity = 22, local = false } = {}) {
+  const container = document.createElement('div');
+  container.className = 'heart-shower' + (local ? ' local' : '');
+  for (let i = 0; i < intensity; i++) {
+    const h = document.createElement('span');
+    h.className = 'shower-heart';
+    h.textContent = SHOWER_EMOJIS[Math.floor(Math.random() * SHOWER_EMOJIS.length)];
+    h.style.left = Math.random() * 100 + 'vw';
+    h.style.fontSize = (20 + Math.random() * 26) + 'px';
+    h.style.animationDelay = (Math.random() * 0.7) + 's';
+    h.style.animationDuration = (2.4 + Math.random() * 1.8) + 's';
+    container.appendChild(h);
+  }
+  document.body.appendChild(container);
+  setTimeout(() => container.remove(), 4800);
+}
+
+let pingCooldownUntil = 0;
+if (pingBtn) {
+  pingBtn.addEventListener('click', () => {
+    const now = Date.now();
+    if (now < pingCooldownUntil) return;
+    if (!socket || !socket.connected) return;
+    const peer = getPartner();
+    if (!peer) return;
+    socket.emit('ping:thinking', { peer });
+    pingCooldownUntil = now + 3500;
+    pingBtn.classList.add('cooling', 'pulse');
+    setTimeout(() => pingBtn.classList.remove('pulse'), 500);
+    setTimeout(() => pingBtn.classList.remove('cooling'), 3500);
+    spawnHeartShower({ intensity: 8, local: true });
+    if ('vibrate' in navigator) { try { navigator.vibrate(40); } catch (_) {} }
+  });
+}
+
 const REACTION_EMOJIS = ['❤️', '🥰', '😂', '😮', '😢', '🙏', '👍', '👎', '🔥', '🎉'];
 const reactionsById = {};
 let openReactionPickerEl = null;
@@ -1131,7 +1168,157 @@ document.addEventListener('keydown', (e) => {
 
 function maybeLoveAnim(msg) {
   if (!msg || typeof msg.text !== 'string') return;
+  if (OTW_RE.test(msg.text)) return;
   if (/sayang/i.test(msg.text)) setTimeout(() => triggerHeartBurst(msg), 2000);
+}
+
+const CRACK_RE = /gempa|pecah|retak|hancur|meledak/i;
+function maybeCrackAnim(msg) {
+  if (!msg || typeof msg.text !== 'string') return;
+  if (OTW_RE.test(msg.text)) return;
+  if (!CRACK_RE.test(msg.text)) return;
+  triggerCrackFx();
+}
+
+let crackActive = false;
+function triggerCrackFx() {
+  if (crackActive) return;
+  crackActive = true;
+  const overlay = document.createElement('div');
+  overlay.className = 'crack-fx';
+  overlay.innerHTML = buildCrackSvg();
+  document.body.appendChild(overlay);
+  document.body.classList.add('shaking');
+  if ('vibrate' in navigator) { try { navigator.vibrate([80, 40, 80, 40, 140]); } catch (_) {} }
+  playBeep();
+  setTimeout(() => document.body.classList.remove('shaking'), 700);
+  setTimeout(() => {
+    overlay.classList.add('fading');
+    setTimeout(() => { overlay.remove(); crackActive = false; }, 600);
+  }, 1500);
+}
+
+function buildCrackSvg() {
+  const cx = 20 + Math.random() * 60;
+  const cy = 20 + Math.random() * 60;
+  const spokes = 7 + Math.floor(Math.random() * 3);
+  const parts = [];
+  for (let i = 0; i < spokes; i++) {
+    const angle = (Math.PI * 2 * i) / spokes + (Math.random() - 0.5) * 0.5;
+    const len = 60 + Math.random() * 50;
+    const x2 = cx + Math.cos(angle) * len;
+    const y2 = cy + Math.sin(angle) * len;
+    parts.push(`<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" />`);
+    const branches = 1 + Math.floor(Math.random() * 2);
+    for (let b = 0; b < branches; b++) {
+      const t = 0.35 + Math.random() * 0.5;
+      const mx = cx + Math.cos(angle) * len * t;
+      const my = cy + Math.sin(angle) * len * t;
+      const bAngle = angle + (Math.random() > 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.7);
+      const bLen = 8 + Math.random() * 22;
+      const bx = mx + Math.cos(bAngle) * bLen;
+      const by = my + Math.sin(bAngle) * bLen;
+      parts.push(`<line x1="${mx}" y1="${my}" x2="${bx}" y2="${by}" stroke-width="0.5" />`);
+    }
+  }
+  return `<svg viewBox="0 0 100 100" preserveAspectRatio="none">${parts.join('')}</svg>`;
+}
+
+const OTW_RE = /\botw\b/i;
+function maybeOtwAnim(msg) {
+  if (!msg || typeof msg.text !== 'string') return;
+  if (!OTW_RE.test(msg.text)) return;
+  triggerPlaneFly();
+}
+
+const OTW_VEHICLES = [
+  { emoji: '✈️', kind: 'plane' },
+  { emoji: '🏍️', kind: 'motor' },
+  { emoji: '🚗', kind: 'car' },
+];
+
+let planeActive = false;
+function triggerPlaneFly() {
+  if (planeActive) return;
+  planeActive = true;
+
+  const vehicle = OTW_VEHICLES[Math.floor(Math.random() * OTW_VEHICLES.length)];
+  const isPlane = vehicle.kind === 'plane';
+
+  const container = document.createElement('div');
+  container.className = 'plane-fly';
+
+  const el = document.createElement('div');
+  el.className = 'plane roaming ' + vehicle.kind;
+  el.innerHTML = '<span class="plane-emoji">' + vehicle.emoji + '</span>';
+  el.style.fontSize = (64 + Math.random() * 28) + 'px';
+
+  const points = [];
+  const startLeft = Math.random() < 0.5;
+
+  if (isPlane) {
+    const enterX = startLeft ? -12 : 112;
+    const exitX = startLeft ? 112 : -12;
+    const enterY = 15 + Math.random() * 55;
+    const exitY = 15 + Math.random() * 55;
+    points.push({ x: enterX, y: enterY });
+    const stepCount = 22 + Math.floor(Math.random() * 8);
+    const waveAmp = 8 + Math.random() * 10;
+    const waveFreq = 1.5 + Math.random() * 1.5;
+    const wavePhase = Math.random() * Math.PI * 2;
+    for (let i = 1; i < stepCount; i++) {
+      const t = i / stepCount;
+      const x = enterX + (exitX - enterX) * t;
+      const baseY = enterY + (exitY - enterY) * t;
+      const y = baseY + Math.sin(wavePhase + t * Math.PI * waveFreq) * waveAmp;
+      points.push({ x, y });
+    }
+    points.push({ x: exitX, y: exitY });
+  } else {
+    const roadY = 72 + Math.random() * 18;
+    const startX = startLeft ? -12 : 112;
+    const endX = startLeft ? 112 : -12;
+    points.push({ x: startX, y: roadY });
+    const stepCount = 10 + Math.floor(Math.random() * 6);
+    for (let i = 1; i < stepCount; i++) {
+      const t = i / stepCount;
+      const x = startX + (endX - startX) * t;
+      points.push({ x: x + (Math.random() - 0.5) * 4, y: roadY + (Math.random() - 0.5) * 3 });
+    }
+    points.push({ x: endX, y: roadY });
+    if (startLeft) el.querySelector('.plane-emoji').classList.add('face-right');
+  }
+
+  const rots = points.map((_, i) => {
+    if (!isPlane) return 0;
+    const a = points[Math.max(i - 1, 0)];
+    const b = points[Math.min(i + 1, points.length - 1)];
+    return Math.atan2(b.y - a.y, b.x - a.x) * (180 / Math.PI) + 45;
+  });
+
+  const host = document.querySelector('.messages-wrap') || document.body;
+  const rect = host.getBoundingClientRect();
+  const W = rect.width || window.innerWidth;
+  const H = rect.height || window.innerHeight;
+
+  const duration = isPlane ? (14 + Math.random() * 6) : (7 + Math.random() * 4);
+  const id = 'planePath' + Date.now() + Math.floor(Math.random() * 1000);
+  const kf = points.map((p, i) => {
+    const t = (i / (points.length - 1)) * 100;
+    const px = (p.x / 100) * W;
+    const py = (p.y / 100) * H;
+    return t.toFixed(2) + '% { transform: translate(' + px.toFixed(2) + 'px,' + py.toFixed(2) + 'px) rotate(' + rots[i].toFixed(1) + 'deg); }';
+  }).join(' ');
+
+  const style = document.createElement('style');
+  style.textContent = '@keyframes ' + id + ' { ' + kf + ' } '
+    + '.plane.roaming.' + id + ' { animation: ' + id + ' ' + duration.toFixed(2) + 's linear forwards; }';
+  el.classList.add(id);
+  container.appendChild(style);
+  container.appendChild(el);
+  host.appendChild(container);
+
+  setTimeout(() => { container.remove(); planeActive = false; }, (duration + 0.5) * 1000);
 }
 
 function notify(msg) {
@@ -1168,6 +1355,97 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
+const FORTUNES_FALLBACK = [
+  "Hari ini seseorang tersenyum karena mengingat kamu.",
+  "Pelan-pelan aja, hati kamu tahu jalan pulangnya.",
+  "Kata yang belum kamu ucapkan hari ini akan ada waktunya.",
+  "Cahaya kecil hari ini cukup untuk menerangi langkah kamu.",
+  "Percayalah, cinta selalu menemukan cara untuk sampai.",
+  "Kamu lebih kuat dari kekhawatiran yang lagi kamu rasa.",
+  "Yang tulus, sekecil apapun, akan kembali berlipat.",
+];
+
+function fortuneDayKey() {
+  const d = new Date();
+  if (d.getHours() < 4) d.setDate(d.getDate() - 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function pickFallbackFortune(seed) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  return FORTUNES_FALLBACK[h % FORTUNES_FALLBACK.length];
+}
+
+async function fetchServerFortune() {
+  try {
+    const token = localStorage.getItem('token');
+    if (!token) return null;
+    const params = isHub() && currentPeer ? '?peer=' + encodeURIComponent(currentPeer) : '';
+    const res = await fetch('/fortune' + params, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && typeof data.text === 'string' && data.text.trim() ? data.text.trim() : null;
+  } catch (_) { return null; }
+}
+
+function showFortuneModal(text) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'fortune-modal';
+  backdrop.innerHTML = ''
+    + '<div class="fortune-stage">'
+    +   '<button type="button" class="fortune-cookie" aria-label="Buka cookie">'
+    +     '<span class="cookie-half left">🥠</span>'
+    +     '<span class="cookie-half right">🥠</span>'
+    +   '</button>'
+    +   '<div class="fortune-hint">Klik cookie untuk membuka</div>'
+    +   '<div class="fortune-paper">'
+    +     '<div class="fortune-strip">'
+    +       '<div class="fortune-brand">Fortune Untukmu Hari Ini</div>'
+    +       '<div class="fortune-text"></div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<button type="button" class="fortune-close">Tutup</button>'
+    + '</div>';
+  backdrop.querySelector('.fortune-text').textContent = text;
+  const cookieBtn = backdrop.querySelector('.fortune-cookie');
+  cookieBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (backdrop.classList.contains('cracked')) return;
+    backdrop.classList.add('cracked');
+    if ('vibrate' in navigator) { try { navigator.vibrate([40, 30, 60]); } catch (_) {} }
+  });
+  const dismiss = () => {
+    backdrop.classList.add('closing');
+    setTimeout(() => backdrop.remove(), 320);
+  };
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop || e.target.classList.contains('fortune-close')) dismiss();
+  });
+  document.body.appendChild(backdrop);
+  requestAnimationFrame(() => backdrop.classList.add('open'));
+  if ('vibrate' in navigator) { try { navigator.vibrate(20); } catch (_) {} }
+}
+
+async function maybeShowFortune() {
+  if (new Date().getHours() < 4) return;
+  const key = fortuneDayKey();
+  const cacheKey = 'fortuneShown:' + key + ':' + (me || '');
+  if (localStorage.getItem(cacheKey)) return;
+  const delay = document.body.classList.contains('sunrise-playing') ? 7500 : 1500;
+  setTimeout(async () => {
+    let text = await fetchServerFortune();
+    if (!text) text = pickFallbackFortune(key + '|' + (me || ''));
+    localStorage.setItem(cacheKey, text);
+    showFortuneModal(text);
+  }, delay);
+}
+
 function maybePlaySunrise() {
   const now = new Date();
   const hour = now.getHours();
@@ -1201,6 +1479,7 @@ function startChat(token, username) {
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');
   maybePlaySunrise();
+  maybeShowFortune();
   messagesEl.innerHTML = '';
   showMessagesLoading();
   Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
@@ -1215,6 +1494,7 @@ function startChat(token, username) {
   updateNotifBtn();
   updateGalleryBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
+  if (pingBtn) pingBtn.classList.remove('hidden');
   renderMeAvatar();
   renderPresence();
   startPresenceTimer();
@@ -1328,6 +1608,13 @@ function startChat(token, username) {
     renderTyping();
   });
 
+  socket.on('ping:thinking', (payload) => {
+    if (!payload || payload.from === me) return;
+    spawnHeartShower();
+    playBeep();
+    if ('vibrate' in navigator) { try { navigator.vibrate([80, 60, 120]); } catch (_) {} }
+  });
+
   socket.on('presence:update', ({ username, online, lastSeen }) => {
     if (!username) return;
     presenceState[username] = {
@@ -1383,6 +1670,8 @@ function startChat(token, username) {
       return;
     }
     if (m.id && messagesEl.querySelector('.msg[data-id="' + m.id + '"]')) return;
+    maybeCrackAnim(m);
+    maybeOtwAnim(m);
     if (m.username === me && m.id && m.clientId != null) {
       var pendingEl = messagesEl.querySelector('.msg[data-temp-id="' + m.clientId + '"]');
       if (pendingEl) {
@@ -1424,6 +1713,7 @@ function startChat(token, username) {
     if (!Number.isFinite(id) || id <= 0) return;
     if (peer && peer !== currentPeer) return;
     applyUnsendToView(id);
+    triggerCrackFx();
   });
 
   socket.on('delete-message', (payload) => {

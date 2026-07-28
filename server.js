@@ -972,6 +972,29 @@ async function getGameScores(username) {
   return out;
 }
 
+app.get('/fortune', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  if (!botEnabled) return res.json({ ok: true, text: null });
+  let peer;
+  if (username === HUB_USER) {
+    const raw = typeof req.query.peer === 'string' ? req.query.peer : '';
+    if (!raw || !users.has(raw) || raw === HUB_USER) {
+      return res.status(400).json({ ok: false, error: 'peer required' });
+    }
+    peer = raw;
+  } else {
+    peer = username;
+  }
+  try {
+    const text = await fetchGeminiFortune(peer);
+    res.json({ ok: true, text });
+  } catch (err) {
+    console.error('fortune endpoint error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
 app.post('/game-score', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
@@ -1086,6 +1109,62 @@ async function sweepBotReplies() {
   }
 }
 
+async function fetchGeminiFortune(peer) {
+  if (!botEnabled) return null;
+  const history = await getHistory(peer, 40);
+  const startOfToday = new Date();
+  startOfToday.setHours(4, 0, 0, 0);
+  if (new Date().getHours() < 4) startOfToday.setDate(startOfToday.getDate() - 1);
+  const todayCut = startOfToday.getTime();
+
+  const todayLines = [];
+  const olderLines = [];
+  for (const m of history) {
+    if (m.unsent || !m.text) continue;
+    const speaker = m.username === HUB_USER ? 'A' : 'B';
+    const line = `${speaker}: ${m.text}`;
+    const ts = new Date(m.time).getTime();
+    if (Number.isFinite(ts) && ts >= todayCut) todayLines.push(line);
+    else olderLines.push(line);
+  }
+  const contextLines = todayLines.length >= 4
+    ? todayLines.slice(-20)
+    : [...olderLines.slice(-Math.max(0, 12 - todayLines.length)), ...todayLines].slice(-20);
+
+  const systemPrompt =
+    'Kamu adalah AI fortune cookie yang hangat & puitis. Baca vibe obrolan yang diberikan, lalu tulis SATU kalimat pendek bergaya fortune cookie dalam Bahasa Indonesia informal. ' +
+    'Nada wajib: manis + romantis + memotivasi. Boleh sedikit puitis atau mistis, tapi selalu bikin pembaca senyum atau tersentuh. ' +
+    'Maks 22 kata. Sisipkan kata-kata seperti "hati", "sayang", "cahaya", "pelan-pelan", "percaya", "tenang", "cinta", "senyum" bila cocok — tapi jangan dipaksakan sampai kaku. ' +
+    'JANGAN mengutip pesan spesifik, JANGAN sebut nama, JANGAN pakai quote marks, JANGAN pakai emoji. ' +
+    'Rasa yang samar-samar terkait vibe obrolan lebih baik daripada terlalu spesifik. ' +
+    'Balas hanya satu kalimat.';
+  const userPrompt = contextLines.length
+    ? `Vibe obrolan terakhir:\n---\n${contextLines.join('\n')}\n---\nTulis fortune cookie hari ini.`
+    : 'Belum banyak obrolan hari ini. Tulis fortune cookie umum untuk hari ini.';
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  const body = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: { temperature: 1.0, maxOutputTokens: 90 },
+  };
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => '');
+    console.error('Gemini fortune error:', resp.status, errBody.slice(0, 200));
+    return null;
+  }
+  const data = await resp.json();
+  const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
+  if (!Array.isArray(parts)) return null;
+  const text = parts.map((p) => p.text || '').join('').trim().replace(/^["']+|["']+$/g, '');
+  return text ? text.slice(0, 280) : null;
+}
+
 async function fetchGeminiReply(history, peer) {
   const contextLines = history
     .filter((m) => !m.unsent && (m.text || m.image || m.video || m.audio))
@@ -1173,6 +1252,7 @@ const socketCounts = new Map();
 const lastRead = new Map();
 const lastSeen = new Map();
 const activeCalls = new Map();
+const lastPingAt = new Map();
 
 function presenceSnapshot() {
   const snap = {};
@@ -1541,6 +1621,16 @@ io.on('connection', async (socket) => {
     if (!peer) return;
     const recipient = recipientOf(username, peer);
     io.to(userRoom(recipient)).emit('typing', { username, peer, typing });
+  });
+
+  socket.on('ping:thinking', (payload) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) return;
+    const now = Date.now();
+    if (now - (lastPingAt.get(username) || 0) < 3000) return;
+    lastPingAt.set(username, now);
+    const recipient = recipientOf(username, peer);
+    io.to(userRoom(recipient)).emit('ping:thinking', { from: username, peer });
   });
 
   socket.on('reaction:toggle', async (payload, ack) => {
