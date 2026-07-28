@@ -135,6 +135,17 @@ async function initDb() {
       PRIMARY KEY (username, game)
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      message_id INTEGER NOT NULL,
+      username TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      peer TEXT NOT NULL,
+      time TEXT NOT NULL,
+      PRIMARY KEY (message_id, username, emoji)
+    )
+  `);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_message_reactions_msg ON message_reactions (message_id)`);
 }
 
 async function loadAllReadState() {
@@ -459,6 +470,32 @@ function mapRow(r) {
   return out;
 }
 
+async function getReactionsForIds(ids) {
+  const map = {};
+  if (!ids.length) return map;
+  const placeholders = ids.map(() => '?').join(',');
+  const result = await db.execute({
+    sql: `SELECT message_id, username, emoji FROM message_reactions WHERE message_id IN (${placeholders})`,
+    args: ids,
+  });
+  for (const r of result.rows) {
+    const mid = Number(r.message_id);
+    if (!map[mid]) map[mid] = [];
+    map[mid].push({ username: String(r.username), emoji: String(r.emoji) });
+  }
+  return map;
+}
+
+async function attachReactions(messages) {
+  const ids = messages.filter((m) => m && m.id).map((m) => m.id);
+  if (!ids.length) return messages;
+  const map = await getReactionsForIds(ids);
+  for (const m of messages) {
+    m.reactions = map[m.id] || [];
+  }
+  return messages;
+}
+
 async function getMessageById(id) {
   const result = await db.execute({
     sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.sender_bot,
@@ -469,7 +506,9 @@ async function getMessageById(id) {
     args: [id],
   });
   if (!result.rows.length) return null;
-  return mapRow(result.rows[0]);
+  const msg = mapRow(result.rows[0]);
+  await attachReactions([msg]);
+  return msg;
 }
 
 async function getHistory(peer, limit = 50, beforeId = null) {
@@ -488,7 +527,9 @@ async function getHistory(peer, limit = 50, beforeId = null) {
        ORDER BY m.id DESC LIMIT ?`;
   const args = beforeId ? [peer, beforeId, limit] : [peer, limit];
   const result = await db.execute({ sql, args });
-  return result.rows.reverse().map(mapRow);
+  const messages = result.rows.reverse().map(mapRow);
+  await attachReactions(messages);
+  return messages;
 }
 
 const users = new Set(
@@ -1500,6 +1541,56 @@ io.on('connection', async (socket) => {
     if (!peer) return;
     const recipient = recipientOf(username, peer);
     io.to(userRoom(recipient)).emit('typing', { username, peer, typing });
+  });
+
+  socket.on('reaction:toggle', async (payload, ack) => {
+    const id = Number(payload && payload.id);
+    const rawEmoji = payload && typeof payload.emoji === 'string' ? payload.emoji.trim() : '';
+    // Reject empty, overly long, or emojis containing whitespace/newlines
+    if (!Number.isFinite(id) || id <= 0 || !rawEmoji || rawEmoji.length > 16 || /\s/.test(rawEmoji)) {
+      if (typeof ack === 'function') ack({ error: 'Invalid payload' });
+      return;
+    }
+    try {
+      const msg = await getMessageById(id);
+      if (!msg) {
+        if (typeof ack === 'function') ack({ error: 'Not found' });
+        return;
+      }
+      const peer = msg.peer;
+      const allowed = username === HUB_USER || username === peer;
+      if (!allowed) {
+        if (typeof ack === 'function') ack({ error: 'Forbidden' });
+        return;
+      }
+      const existing = await db.execute({
+        sql: 'SELECT 1 FROM message_reactions WHERE message_id = ? AND username = ? AND emoji = ? LIMIT 1',
+        args: [id, username, rawEmoji],
+      });
+      let added = false;
+      if (existing.rows.length) {
+        await db.execute({
+          sql: 'DELETE FROM message_reactions WHERE message_id = ? AND username = ? AND emoji = ?',
+          args: [id, username, rawEmoji],
+        });
+      } else {
+        await db.execute({
+          sql: 'INSERT INTO message_reactions (message_id, username, emoji, peer, time) VALUES (?, ?, ?, ?, ?)',
+          args: [id, username, rawEmoji, peer, new Date().toISOString()],
+        });
+        added = true;
+      }
+      const listRes = await db.execute({
+        sql: 'SELECT username, emoji FROM message_reactions WHERE message_id = ?',
+        args: [id],
+      });
+      const reactions = listRes.rows.map((r) => ({ username: String(r.username), emoji: String(r.emoji) }));
+      emitToThread(peer, 'reaction:update', { id, peer, reactions, actor: username, emoji: rawEmoji, added });
+      if (typeof ack === 'function') ack({ ok: true, added });
+    } catch (e) {
+      console.error('reaction error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
+    }
   });
 
   function resolveCallTarget(payloadPeer) {

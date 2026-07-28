@@ -67,6 +67,7 @@ function sendTypingStart() {
   if (!typingSending) {
     typingSending = true;
     socket.emit('typing', { typing: true, peer: currentPeer });
+    if (typeof updatePetState === 'function') updatePetState();
   }
   if (typingStopTimerId) clearTimeout(typingStopTimerId);
   typingStopTimerId = setTimeout(() => sendTypingStop(), TYPING_IDLE_MS);
@@ -77,6 +78,7 @@ function sendTypingStop() {
   if (!typingSending) return;
   typingSending = false;
   if (socket && currentPeer) socket.emit('typing', { typing: false, peer: currentPeer });
+  if (typeof updatePetState === 'function') updatePetState();
 }
 
 function formatLastSeen(iso) {
@@ -135,15 +137,32 @@ function renderPresence() {
   if (window.chatCall) window.chatCall.setCallButtonEnabled(!!info.online);
 }
 
+const typingBubbleEl = typingIndicatorEl.querySelector('.typing-bubble');
+const typingPetEl = document.getElementById('typing-pet');
+
+function updatePetState() {
+  if (!typingPetEl) return;
+  const peerNames = Object.keys(typingState).filter((u) => u !== me);
+  let cls = 'pet-idle';
+  if (typingSending) cls = 'pet-me-typing';
+  else if (peerNames.length) cls = 'pet-peer-typing';
+  if (!typingPetEl.classList.contains(cls)) {
+    typingPetEl.classList.remove('pet-idle', 'pet-me-typing', 'pet-peer-typing');
+    typingPetEl.classList.add(cls);
+  }
+}
+
 function renderTyping() {
   const names = Object.keys(typingState).filter((u) => u !== me);
   if (!names.length) {
-    typingIndicatorEl.classList.add('hidden');
+    if (typingBubbleEl) typingBubbleEl.classList.add('hidden');
     typingNameEl.textContent = '';
+    updatePetState();
     return;
   }
   typingNameEl.textContent = names.length === 1 ? names[0] : names.join(', ');
-  typingIndicatorEl.classList.remove('hidden');
+  if (typingBubbleEl) typingBubbleEl.classList.remove('hidden');
+  updatePetState();
 }
 
 function startPresenceTimer() {
@@ -962,6 +981,143 @@ function triggerHeartBurst(msg) {
   triggerHeartBurstOnElement(bubble);
 }
 
+const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
+const reactionsById = {};
+let openReactionPickerEl = null;
+
+function closeReactionPicker() {
+  if (!openReactionPickerEl) return;
+  openReactionPickerEl.remove();
+  openReactionPickerEl = null;
+}
+
+function openReactionPicker(msgEl, id) {
+  closeReactionPicker();
+  closeOpenMsgMenu();
+  const bar = document.createElement('div');
+  bar.className = 'msg-reaction-picker';
+  bar.setAttribute('role', 'menu');
+  const mine = (reactionsById[id] || []).filter((r) => r.username === me).map((r) => r.emoji);
+  REACTION_EMOJIS.forEach((emo) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'msg-reaction-pick' + (mine.includes(emo) ? ' selected' : '');
+    b.textContent = emo;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleReaction(id, emo);
+      closeReactionPicker();
+    });
+    bar.appendChild(b);
+  });
+  msgEl.appendChild(bar);
+  openReactionPickerEl = bar;
+  if ('vibrate' in navigator) { try { navigator.vibrate(20); } catch (_) {} }
+}
+
+function toggleReaction(id, emoji) {
+  if (!socket || !id || !emoji) return;
+  socket.emit('reaction:toggle', { id, emoji });
+}
+
+function renderReactionsFor(id) {
+  if (!id) return;
+  const el = messagesEl.querySelector(`.msg[data-id="${id}"]`);
+  if (!el) return;
+  const container = el.querySelector('.msg-reactions');
+  if (!container) return;
+  const list = reactionsById[id] || [];
+  const order = [];
+  const groups = {};
+  for (const r of list) {
+    if (!groups[r.emoji]) { groups[r.emoji] = { count: 0, mine: false }; order.push(r.emoji); }
+    groups[r.emoji].count++;
+    if (r.username === me) groups[r.emoji].mine = true;
+  }
+  container.innerHTML = '';
+  if (!order.length) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  for (const emo of order) {
+    const g = groups[emo];
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'msg-reaction-chip' + (g.mine ? ' mine' : '');
+    chip.title = g.mine ? 'Tap untuk lepas reaksi' : 'Tap untuk reaksi sama';
+    const emoSpan = document.createElement('span');
+    emoSpan.className = 'reaction-emo';
+    emoSpan.textContent = emo;
+    const countSpan = document.createElement('span');
+    countSpan.className = 'reaction-count';
+    countSpan.textContent = String(g.count);
+    chip.appendChild(emoSpan);
+    chip.appendChild(countSpan);
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleReaction(id, emo);
+    });
+    container.appendChild(chip);
+  }
+}
+
+function triggerReactionBurst(bubble, emoji) {
+  if (!bubble || !emoji) return;
+  const burst = document.createElement('div');
+  burst.className = 'reaction-burst';
+  bubble.appendChild(burst);
+  for (let i = 0; i < 5; i++) {
+    const h = document.createElement('span');
+    h.className = 'reaction-float';
+    h.textContent = emoji;
+    h.style.setProperty('--dx', (Math.random() * 44 - 22) + 'px');
+    h.style.left = (30 + Math.random() * 40) + '%';
+    h.style.animationDelay = (Math.random() * 0.18) + 's';
+    burst.appendChild(h);
+  }
+  setTimeout(() => burst.remove(), 1900);
+}
+
+function attachReactionLongPress(div, id) {
+  if (!id) return;
+  let timer = null;
+  let cancelled = false;
+  const start = (e) => {
+    if (e.target.closest('.msg-menu-btn, .msg-menu, .msg-reaction-chip, .msg-reaction-picker, .chat-img, .chat-vid, .chat-aud, .reply-quote, a')) return;
+    cancelled = false;
+    timer = setTimeout(() => {
+      timer = null;
+      if (cancelled) return;
+      openReactionPicker(div, id);
+    }, 420);
+  };
+  const cancel = () => {
+    cancelled = true;
+    if (timer) { clearTimeout(timer); timer = null; }
+  };
+  div.addEventListener('pointerdown', start);
+  div.addEventListener('pointerup', cancel);
+  div.addEventListener('pointerleave', cancel);
+  div.addEventListener('pointercancel', cancel);
+  div.addEventListener('pointermove', (e) => {
+    if (timer && (Math.abs(e.movementX) > 4 || Math.abs(e.movementY) > 4)) cancel();
+  });
+  div.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.chat-img, .chat-vid, .chat-aud, a')) return;
+    e.preventDefault();
+    openReactionPicker(div, id);
+  });
+}
+
+document.addEventListener('pointerdown', (e) => {
+  if (!openReactionPickerEl) return;
+  if (!e.target.closest('.msg-reaction-picker')) closeReactionPicker();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeReactionPicker();
+});
+
 function maybeLoveAnim(msg) {
   if (!msg || typeof msg.text !== 'string') return;
   if (/sayang/i.test(msg.text)) setTimeout(() => triggerHeartBurst(msg), 2000);
@@ -1236,6 +1392,19 @@ function startChat(token, username) {
     notify(m);
   });
 
+  socket.on('reaction:update', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = Number(payload.id);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (payload.peer && payload.peer !== currentPeer) return;
+    reactionsById[id] = Array.isArray(payload.reactions) ? payload.reactions : [];
+    renderReactionsFor(id);
+    if (payload.added && payload.emoji) {
+      const el = messagesEl.querySelector(`.msg[data-id="${id}"]`);
+      if (el) triggerReactionBurst(el, payload.emoji);
+    }
+  });
+
   socket.on('unsend', (payload) => {
     if (!payload || typeof payload !== 'object') return;
     const id = Number(payload.id);
@@ -1401,6 +1570,14 @@ function buildMessageNodes(msg) {
     quoteEl.addEventListener('click', () => jumpToMessage(replyTo.id));
   }
   attachMsgMenu(div, { id, username, isUnsent, hideContent });
+  const reactionsContainer = document.createElement('div');
+  reactionsContainer.className = 'msg-reactions hidden';
+  div.appendChild(reactionsContainer);
+  if (id) {
+    if (Array.isArray(msg.reactions)) reactionsById[id] = msg.reactions.slice();
+    renderReactionsFor(id);
+    if (!isUnsent && !hideContent) attachReactionLongPress(div, id);
+  }
   return [div];
 }
 
