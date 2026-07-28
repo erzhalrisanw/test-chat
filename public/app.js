@@ -998,7 +998,7 @@ function triggerHeartBurst(msg) {
   triggerHeartBurstOnElement(bubble);
 }
 
-const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
+const REACTION_EMOJIS = ['❤️', '🥰', '😂', '😮', '😢', '🙏', '👍', '👎', '🔥', '🎉'];
 const reactionsById = {};
 let openReactionPickerEl = null;
 
