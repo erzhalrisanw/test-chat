@@ -1390,6 +1390,45 @@ io.on('connection', async (socket) => {
     }));
   });
 
+  socket.on('forward', async (payload, ack) => {
+    if (username !== HUB_USER) {
+      if (typeof ack === 'function') ack({ error: 'Not allowed' });
+      return;
+    }
+    const sourceId = Number(payload && payload.sourceId);
+    if (!Number.isFinite(sourceId) || sourceId <= 0) {
+      if (typeof ack === 'function') ack({ error: 'Invalid source' });
+      return;
+    }
+    const source = await getMessageById(sourceId);
+    if (!source || source.unsent) {
+      if (typeof ack === 'function') ack({ error: 'Source unavailable' });
+      return;
+    }
+    await handleOutgoing(payload, ack, (peer) => {
+      const stickerVal = source.sticker && isStickerRef(source.sticker) ? source.sticker : null;
+      const imageVal = stickerVal ? stickerVal : (source.image || null);
+      const msg = {
+        username,
+        text: source.text || null,
+        image: imageVal,
+        video: source.video || null,
+        audio: source.audio || null,
+        time: new Date().toISOString(),
+        replyToId: null,
+        peer,
+      };
+      let pushBody = source.text || '';
+      if (!pushBody) {
+        if (stickerVal) pushBody = 'sticker';
+        else if (source.image) pushBody = '📷 Sent a photo';
+        else if (source.video) pushBody = '🎬 Sent a video';
+        else if (source.audio) pushBody = '🎤 Sent a voice note';
+      }
+      return { msg, pushBody };
+    });
+  });
+
   socket.on('loadMore', async (payload, ack) => {
     const beforeId = Number(payload && payload.beforeId);
     const peer = resolvePeer(username, payload && payload.peer);

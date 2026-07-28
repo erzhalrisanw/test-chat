@@ -1409,9 +1409,11 @@ function attachMsgMenu(div, opts) {
   const { id, username, isUnsent, hideContent } = opts;
   const canReply = id && !hideContent && !isUnsent;
   const canUnsend = id && username === me && !isUnsent;
-  if (!canReply && !canUnsend) return;
+  const canForward = id && isHub() && !hideContent && !isUnsent;
+  if (!canReply && !canUnsend && !canForward) return;
   const items = [];
   if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
+  if (canForward) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="forward"><span class="msg-menu-icon">➤</span><span class="msg-menu-label">Teruskan</span></button>');
   if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
   const menuMarkup =
     '<button class="msg-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Aksi pesan" title="Aksi pesan">⋯</button>' +
@@ -1445,6 +1447,8 @@ function attachMsgMenu(div, opts) {
         const hasAudio = !!div.querySelector('audio.chat-aud');
         const hasSticker = !!div.querySelector('.chat-sticker');
         setReplyTarget({ id: currentId, username, text: replyText, hasImage, hasVideo, hasAudio, hasSticker });
+      } else if (action === 'forward' && currentId) {
+        openForwardPicker(currentId);
       } else if (action === 'unsend' && currentId) {
         requestUnsend(currentId);
       }
@@ -1464,6 +1468,67 @@ function closeOpenMsgMenu() {
 document.addEventListener('click', () => closeOpenMsgMenu());
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeOpenMsgMenu();
+});
+
+const forwardModal = document.getElementById('forward-modal');
+const forwardList = document.getElementById('forward-list');
+const forwardCloseBtn = document.getElementById('forward-close');
+let forwardSourceId = null;
+
+function openForwardPicker(id) {
+  if (!isHub() || !id) return;
+  forwardSourceId = id;
+  forwardList.innerHTML = '';
+  const targets = availablePeers.filter((p) => p !== currentPeer);
+  if (!targets.length) {
+    const empty = document.createElement('div');
+    empty.className = 'forward-empty';
+    empty.textContent = 'Tidak ada peer lain';
+    forwardList.appendChild(empty);
+  } else {
+    targets.forEach((peer) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'forward-item';
+      const info = presenceState[peer] || {};
+      const dot = document.createElement('span');
+      dot.className = 'forward-dot' + (info.online ? ' online' : '');
+      const name = document.createElement('span');
+      name.className = 'forward-name';
+      name.textContent = peer;
+      btn.appendChild(dot);
+      btn.appendChild(name);
+      btn.addEventListener('click', () => {
+        sendForward(forwardSourceId, peer);
+        closeForwardPicker();
+      });
+      forwardList.appendChild(btn);
+    });
+  }
+  forwardModal.classList.remove('hidden');
+}
+
+function closeForwardPicker() {
+  forwardModal.classList.add('hidden');
+  forwardSourceId = null;
+}
+
+function sendForward(sourceId, targetPeer) {
+  if (!socket || !sourceId || !targetPeer) return;
+  socket.emit('forward', { sourceId, peer: targetPeer }, (ack) => {
+    if (ack && ack.error) {
+      console.error('forward failed:', ack.error);
+      addSystem('Gagal meneruskan pesan: ' + ack.error);
+    }
+  });
+}
+
+if (forwardCloseBtn) forwardCloseBtn.addEventListener('click', closeForwardPicker);
+if (forwardModal) forwardModal.addEventListener('click', (e) => {
+  if (e.target === forwardModal) closeForwardPicker();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !forwardModal.classList.contains('hidden')) closeForwardPicker();
 });
 
 function requestUnsend(id) {

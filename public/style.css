@@ -2626,3 +2626,92 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   background: var(--toon-yellow);
   opacity: 0.85;
 }
+
+#forward-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+#forward-modal.hidden { display: none; }
+.forward-dialog {
+  background: var(--toon-cream);
+  border: 3px solid var(--toon-ink);
+  border-radius: 16px;
+  box-shadow: 0 6px 0 0 var(--toon-ink);
+  width: min(320px, 100%);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.forward-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--toon-teal);
+  color: #fff;
+  font-weight: 700;
+  border-bottom: 3px solid var(--toon-ink);
+  text-shadow: 0 2px 0 rgba(var(--ink-rgb), .35);
+}
+.forward-header button {
+  background: var(--toon-pink);
+  border: 2px solid var(--toon-ink);
+  color: #fff;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: 0 2px 0 0 var(--toon-ink);
+}
+.forward-header button:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
+#forward-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.forward-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 2px solid var(--toon-ink);
+  border-radius: 10px;
+  background: var(--toon-input-bg);
+  color: var(--toon-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 2px 0 0 var(--toon-ink);
+}
+.forward-item:hover { filter: brightness(1.04); }
+.forward-item:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
+.forward-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  border: 1.5px solid var(--toon-ink);
+  flex: 0 0 auto;
+}
+.forward-dot.online { background: #22c55e; }
+.forward-name { flex: 1; }
+.forward-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--toon-ink);
+  opacity: 0.7;
+  font-weight: 600;
+}
