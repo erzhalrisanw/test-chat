@@ -40,6 +40,7 @@
 
   function open() {
     modal.classList.remove('hidden');
+    syncBestsFromServer();
     showPicker();
   }
   function close() {
@@ -81,6 +82,26 @@
     } catch (_) {}
   }
   const GAME_LABEL = { '2048': '2048', 'snake': 'Snake', 'dino': 'Dino' };
+  const BEST_LS_KEYS = { '2048': 'game2048_best', 'snake': 'gameSnake_best', 'dino': 'gameDino_best' };
+
+  async function syncBestsFromServer() {
+    const { me, peer } = getMeAndPeer();
+    if (!me || !peer) return;
+    try {
+      const url = me === HUB_USER ? '/leaderboard?peer=' + encodeURIComponent(peer) : '/leaderboard';
+      const res = await fetch(url, { headers: authHeaders() });
+      const data = await res.json();
+      if (!data || !data.ok || !data.scores) return;
+      const myScores = data.scores[me] || {};
+      for (const g of Object.keys(BEST_LS_KEYS)) {
+        const serverBest = Number(myScores[g] || 0);
+        const localBest = parseInt(localStorage.getItem(BEST_LS_KEYS[g]) || '0', 10) || 0;
+        if (serverBest > localBest) {
+          try { localStorage.setItem(BEST_LS_KEYS[g], String(serverBest)); } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
   async function showLeaderboard() {
     unmountCurrent();
     picker.classList.add('hidden');
@@ -160,7 +181,7 @@
     bestWrap.classList.add('hidden');
     movesWrap.classList.add('hidden');
   }
-  function selectGame(id) {
+  async function selectGame(id) {
     const g = GAMES[id];
     if (!g) return;
     unmountCurrent();
@@ -171,6 +192,8 @@
     backBtn.classList.remove('hidden');
     if (lbBtn) lbBtn.classList.add('hidden');
     titleEl.textContent = g.title;
+    await syncBestsFromServer();
+    if (currentGameId !== id) return;
     cleanupFn = g.mount(board) || null;
   }
   function restart() {
