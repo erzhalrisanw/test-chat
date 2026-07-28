@@ -243,7 +243,6 @@
       scoreEl.textContent = score;
       if (score > best) {
         best = score;
-        bestEl.textContent = best;
         try { localStorage.setItem('game2048_best', String(best)); } catch (_) {}
         submitScore('2048', best);
       }
@@ -287,6 +286,7 @@
       render();
       if (isGameOver()) {
         over = true;
+        bestEl.textContent = best;
         const ov = document.createElement('div');
         ov.className = 'g2048-overlay';
         ov.innerHTML = '<div>Game Over</div><div style="font-size:14px;opacity:.8">Score ' + score + '</div>';
@@ -415,7 +415,6 @@
         scoreEl.textContent = score;
         if (score > best) {
           best = score;
-          bestEl.textContent = best;
           try { localStorage.setItem('gameSnake_best', String(best)); } catch (_) {}
           submitScore('snake', best);
         }
@@ -428,6 +427,7 @@
     function gameOver() {
       over = true;
       if (timer) { clearInterval(timer); timer = null; }
+      bestEl.textContent = best;
       draw();
     }
     function setDir(dx, dy) {
@@ -634,7 +634,6 @@
         scoreEl.textContent = score;
         if (score > best) {
           best = score;
-          bestEl.textContent = best;
           try { localStorage.setItem('gameDino_best', String(best)); } catch (_) {}
         }
         if (score > 0 && score % 200 === 0 && speed < MAX_SPEED) {
@@ -688,6 +687,7 @@
     function gameOver() {
       over = true;
       if (raf) { cancelAnimationFrame(raf); raf = null; }
+      bestEl.textContent = best;
       draw();
       if (score > 0) submitScore('dino', best);
     }
