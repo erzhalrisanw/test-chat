@@ -286,6 +286,7 @@ function resetThreadView() {
   oldestLoadedId = null;
   hasMoreHistory = false;
   loadingMore = false;
+  if (typeof clearPendingKeywordAnims === 'function') clearPendingKeywordAnims();
   Object.keys(typingState).forEach((k) => delete typingState[k]);
   Object.keys(typingExpireTimers).forEach((k) => {
     clearTimeout(typingExpireTimers[k]);
@@ -1231,6 +1232,85 @@ function maybeOtwAnim(msg) {
   triggerPlaneFly();
 }
 
+const LUV_RE = /\b(?:luv|love|lup|luph|lof)\s*(?:u|you|yu|yuh)\b/i;
+
+let luvActive = false;
+function triggerLuvArrow() {
+  if (luvActive) return;
+  luvActive = true;
+  const overlay = document.createElement('div');
+  overlay.className = 'luv-arrow-fx';
+  overlay.innerHTML =
+    '<div class="luv-heart-big">❤️</div>' +
+    '<svg class="luv-arrow-shape" viewBox="0 0 220 40" preserveAspectRatio="none">' +
+      '<line x1="30" y1="20" x2="180" y2="20" stroke="#2b1a0d" stroke-width="5" stroke-linecap="round"/>' +
+      '<polygon points="200,20 175,7 175,33" fill="#2b1a0d"/>' +
+      '<polygon points="30,20 8,8 16,20 8,32" fill="#c0392b"/>' +
+      '<polygon points="42,20 22,10 28,20 22,30" fill="#e74c3c"/>' +
+    '</svg>';
+  document.body.appendChild(overlay);
+  playBeep();
+  setTimeout(() => {
+    document.body.classList.add('shaking');
+    if ('vibrate' in navigator) { try { navigator.vibrate([40, 30, 90]); } catch (_) {} }
+  }, 850);
+  setTimeout(() => document.body.classList.remove('shaking'), 1250);
+  setTimeout(() => {
+    overlay.classList.add('fading');
+    setTimeout(() => { overlay.remove(); luvActive = false; }, 500);
+  }, 2400);
+}
+
+const pendingKeywordAnims = {};
+
+function detectKeywordAnim(text) {
+  if (typeof text !== 'string') return null;
+  if (OTW_RE.test(text)) return 'otw';
+  if (LUV_RE.test(text)) return 'luv';
+  if (CRACK_RE.test(text)) return 'crack';
+  return null;
+}
+
+function runKeywordAnim(kind) {
+  if (kind === 'otw') triggerPlaneFly();
+  else if (kind === 'crack') triggerCrackFx();
+  else if (kind === 'luv') triggerLuvArrow();
+}
+
+function tryQueueKeywordAnim(msg) {
+  if (!msg || !msg.peer) return;
+  if (msg.unsent) return;
+  const kind = detectKeywordAnim(msg.text);
+  if (!kind) return;
+  const id = Number(msg.id) || 0;
+  if (id <= 0) return;
+  const peer = msg.peer;
+  const isMine = msg.username === me;
+  if (isMine && peer === currentPeer && id <= lastReadByOthers) {
+    runKeywordAnim(kind);
+    return;
+  }
+  if (!pendingKeywordAnims[peer]) pendingKeywordAnims[peer] = [];
+  pendingKeywordAnims[peer].push({ id, kind, mine: isMine });
+}
+
+function flushKeywordAnims(peer, upToId, mineOnly) {
+  const list = pendingKeywordAnims[peer];
+  if (!list || !list.length) return;
+  const remaining = [];
+  list.forEach((item) => {
+    const matchOwner = mineOnly ? item.mine : !item.mine;
+    if (matchOwner && item.id <= upToId) runKeywordAnim(item.kind);
+    else remaining.push(item);
+  });
+  if (remaining.length) pendingKeywordAnims[peer] = remaining;
+  else delete pendingKeywordAnims[peer];
+}
+
+function clearPendingKeywordAnims() {
+  Object.keys(pendingKeywordAnims).forEach((k) => delete pendingKeywordAnims[k]);
+}
+
 const OTW_VEHICLES = [
   { emoji: '✈️', kind: 'plane' },
   { emoji: '🏍️', kind: 'motor' },
@@ -1541,9 +1621,16 @@ function startChat(token, username) {
       messagesEl.appendChild(sep);
       oldestLoadedId = list[0].id || null;
     }
-    list.forEach((m) => {
+    const myLastRead = (readStateMap[me] && readStateMap[me][currentPeer]) || 0;
+    const KEYWORD_SCAN_TAIL = 5;
+    const scanFromIdx = Math.max(0, list.length - KEYWORD_SCAN_TAIL);
+    list.forEach((m, idx) => {
       addMessage(m);
       if (m.id) lastIncomingId = Math.max(lastIncomingId, m.id);
+      if (idx < scanFromIdx) return;
+      if (m && m.username !== me && m.id && m.id > myLastRead) {
+        tryQueueKeywordAnim(m);
+      }
     });
     applyReadStateForCurrentPeer();
     maybeMarkRead();
@@ -1656,6 +1743,7 @@ function startChat(token, username) {
       lastReadByOthers = lastReadId;
       updateReceipts();
     }
+    flushKeywordAnims(peer, lastReadId, true);
   });
 
   socket.on('message', (m) => {
@@ -1670,8 +1758,7 @@ function startChat(token, username) {
       return;
     }
     if (m.id && messagesEl.querySelector('.msg[data-id="' + m.id + '"]')) return;
-    maybeCrackAnim(m);
-    maybeOtwAnim(m);
+    tryQueueKeywordAnim(m);
     if (m.username === me && m.id && m.clientId != null) {
       var pendingEl = messagesEl.querySelector('.msg[data-temp-id="' + m.clientId + '"]');
       if (pendingEl) {
@@ -2186,6 +2273,7 @@ function maybeMarkRead() {
   if (document.visibilityState !== 'visible') return;
   if (chatView.classList.contains('hidden')) return;
   socket.emit('read', { msgId: lastIncomingId, peer: currentPeer });
+  flushKeywordAnims(currentPeer, lastIncomingId, false);
 }
 
 function updateReceipts() {

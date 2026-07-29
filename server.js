@@ -1296,8 +1296,8 @@ io.on('connection', async (socket) => {
     }
   }
 
-  await emitHistoryFor(initialPeer);
   socket.emit('readState', readStateSnapshot(username));
+  await emitHistoryFor(initialPeer);
   socket.emit('presence:init', presenceSnapshot());
   if (username === HUB_USER) socket.emit('peers', peersList());
   if (wasOffline) {

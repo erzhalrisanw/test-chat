@@ -1687,6 +1687,51 @@ will-change: transform, opacity;
   100% { opacity: 1; transform: scale(1); }
 }
 
+.luv-arrow-fx {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 960;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity .5s ease-out;
+}
+.luv-arrow-fx.fading { opacity: 0; }
+.luv-heart-big {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: clamp(120px, 30vw, 220px);
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 8px 22px rgba(255, 30, 90, .55));
+  animation: luv-heart-impact 2.3s ease-in-out both;
+}
+.luv-arrow-shape {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: clamp(220px, 45vw, 340px);
+  height: auto;
+  transform: translate(-160vw, -50%);
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .35));
+  animation: luv-arrow-fly 1s cubic-bezier(.35,.05,.25,1) forwards;
+}
+@keyframes luv-arrow-fly {
+  0%   { transform: translate(-160vw, -50%); }
+  88%  { transform: translate(-50%, -50%); }
+  100% { transform: translate(-42%, -50%); }
+}
+@keyframes luv-heart-impact {
+  0%, 36% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  40%     { transform: translate(-50%, -50%) scale(1.22) rotate(-6deg); }
+  46%     { transform: translate(-52%, -50%) scale(.9) rotate(5deg); }
+  52%     { transform: translate(-48%, -50%) scale(1.14) rotate(-3deg); }
+  60%     { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+  75%     { transform: translate(-50%, -50%) scale(1.06); }
+  100%    { transform: translate(-50%, -50%) scale(1); }
+}
+
 .fortune-modal {
   position: fixed;
   inset: 0;
