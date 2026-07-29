@@ -80,6 +80,10 @@
           <button id="weather-toggle" type="button" title="Cuaca" aria-label="Cuaca" aria-haspopup="true" aria-expanded="false"><span class="weather-toggle-icon">🌤</span></button>
           <div id="weather-menu" class="hidden" role="menu"></div>
         </div>
+        <div id="pet-switcher">
+          <button id="pet-toggle" type="button" title="Ganti pet & animasi" aria-label="Ganti pet & animasi" aria-haspopup="true" aria-expanded="false"><span class="pet-toggle-icon">🐱</span></button>
+          <div id="pet-menu" class="hidden" role="menu"></div>
+        </div>
         <button id="notif-toggle" title="Notifications">🔕 Off</button>
         <button id="logout">Logout</button>
       </div>
@@ -90,21 +94,21 @@
         <div class="spinner"></div>
         <span>Loading chat...</span>
       </div>
+      <div id="typing-indicator">
+        <div id="typing-pet" class="pet-idle" aria-hidden="true">
+          <span class="pet-body">🐱</span>
+          <span class="pet-zz">z</span>
+        </div>
+        <span class="typing-bubble hidden">
+          <span class="typing-name"></span>
+          <span class="typing-dots"><span></span><span></span><span></span></span>
+        </span>
+      </div>
     </div>
     <div id="call-incoming" class="hidden">
       <span class="call-incoming-text"><b id="call-incoming-from"></b> is calling...</span>
       <button id="call-accept" type="button" class="call-ok" title="Accept">Accept</button>
       <button id="call-decline" type="button" class="call-danger" title="Decline">Decline</button>
-    </div>
-    <div id="typing-indicator">
-      <div id="typing-pet" class="pet-idle" aria-hidden="true">
-        <span class="pet-body">🐱</span>
-        <span class="pet-zz">z</span>
-      </div>
-      <span class="typing-bubble hidden">
-        <span class="typing-name"></span>
-        <span class="typing-dots"><span></span><span></span><span></span></span>
-      </span>
     </div>
     <div id="reply-preview" class="hidden">
       <div class="reply-preview-bar"></div>

@@ -75,9 +75,15 @@ async function initDb() {
     )
   `);
   const usCols = await db.execute(`PRAGMA table_info(user_settings)`);
-  const hasThemeCol = usCols.rows.some((r) => String(r.name) === 'theme');
-  if (!hasThemeCol) {
+  const usColNames = new Set(usCols.rows.map((r) => String(r.name)));
+  if (!usColNames.has('theme')) {
     await db.execute(`ALTER TABLE user_settings ADD COLUMN theme TEXT`);
+  }
+  if (!usColNames.has('pet')) {
+    await db.execute(`ALTER TABLE user_settings ADD COLUMN pet TEXT`);
+  }
+  if (!usColNames.has('pet_active_anim')) {
+    await db.execute(`ALTER TABLE user_settings ADD COLUMN pet_active_anim TEXT`);
   }
   await db.execute(`
     CREATE TABLE IF NOT EXISTS read_state (
@@ -261,6 +267,41 @@ async function setUserTheme(username, theme) {
     sql: `INSERT INTO user_settings (username, theme) VALUES (?, ?)
           ON CONFLICT(username) DO UPDATE SET theme = excluded.theme`,
     args: [username, theme],
+  });
+}
+
+const VALID_PETS = new Set([
+  'cat', 'tiger', 'dog', 'fox', 'panda', 'lion', 'bear', 'monkey',
+  'frog', 'pig', 'rabbit', 'penguin', 'unicorn', 'dragon', 'octopus',
+  'ghost', 'robot', 'doraemon',
+]);
+const VALID_PET_ANIMS = new Set(['breathe', 'shake', 'jump', 'roll']);
+
+async function getUserPet(username) {
+  const result = await db.execute({
+    sql: 'SELECT pet, pet_active_anim FROM user_settings WHERE username = ?',
+    args: [username],
+  });
+  if (!result.rows.length) return { pet: null, active: null };
+  const row = result.rows[0];
+  const pet = VALID_PETS.has(row.pet) ? row.pet : null;
+  const active = VALID_PET_ANIMS.has(row.pet_active_anim) ? row.pet_active_anim : null;
+  return { pet, active };
+}
+
+async function setUserPet(username, patch) {
+  const cols = [];
+  const args = [username];
+  if (patch.pet !== undefined) { cols.push('pet'); args.push(patch.pet); }
+  if (patch.active !== undefined) { cols.push('pet_active_anim'); args.push(patch.active); }
+  if (!cols.length) return;
+  const insertCols = ['username', ...cols].join(', ');
+  const placeholders = args.map(() => '?').join(', ');
+  const updates = cols.map((c) => `${c} = excluded.${c}`).join(', ');
+  await db.execute({
+    sql: `INSERT INTO user_settings (${insertCols}) VALUES (${placeholders})
+          ON CONFLICT(username) DO UPDATE SET ${updates}`,
+    args,
   });
 }
 
@@ -923,7 +964,8 @@ app.get('/user-settings', async (req, res) => {
   try {
     const notifEnabled = await getNotifEnabled(username);
     const theme = await getUserTheme(username);
-    res.json({ ok: true, notifEnabled, theme });
+    const petData = await getUserPet(username);
+    res.json({ ok: true, notifEnabled, theme, pet: petData.pet, petActiveAnim: petData.active });
   } catch (err) {
     console.error('settings get error:', err.message);
     res.status(500).json({ ok: false });
@@ -933,19 +975,28 @@ app.get('/user-settings', async (req, res) => {
 app.post('/user-settings', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
-  const { notifEnabled, theme } = req.body || {};
+  const { notifEnabled, theme, pet, petActiveAnim } = req.body || {};
   if (notifEnabled !== undefined && typeof notifEnabled !== 'boolean') {
     return res.status(400).json({ ok: false });
   }
   if (theme !== undefined && !VALID_THEMES.has(theme)) {
     return res.status(400).json({ ok: false });
   }
-  if (notifEnabled === undefined && theme === undefined) {
+  if (pet !== undefined && !VALID_PETS.has(pet)) {
+    return res.status(400).json({ ok: false });
+  }
+  if (petActiveAnim !== undefined && !VALID_PET_ANIMS.has(petActiveAnim)) {
+    return res.status(400).json({ ok: false });
+  }
+  if (notifEnabled === undefined && theme === undefined && pet === undefined && petActiveAnim === undefined) {
     return res.status(400).json({ ok: false });
   }
   try {
     if (typeof notifEnabled === 'boolean') await setNotifEnabled(username, notifEnabled);
     if (theme !== undefined) await setUserTheme(username, theme);
+    if (pet !== undefined || petActiveAnim !== undefined) {
+      await setUserPet(username, { pet, active: petActiveAnim });
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error('settings set error:', err.message);

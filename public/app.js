@@ -141,22 +141,202 @@ function renderPresence() {
 const typingBubbleEl = typingIndicatorEl.querySelector('.typing-bubble');
 const typingPetEl = document.getElementById('typing-pet');
 
-function applyTypingPetForUser(username) {
+const PETS = [
+  { id: 'cat', label: 'Kucing', emoji: '🐱' },
+  { id: 'tiger', label: 'Harimau', emoji: '🐯' },
+  { id: 'dog', label: 'Anjing', emoji: '🐶' },
+  { id: 'fox', label: 'Rubah', emoji: '🦊' },
+  { id: 'panda', label: 'Panda', emoji: '🐼' },
+  { id: 'lion', label: 'Singa', emoji: '🦁' },
+  { id: 'bear', label: 'Beruang', emoji: '🐻' },
+  { id: 'monkey', label: 'Monyet', emoji: '🐵' },
+  { id: 'frog', label: 'Kodok', emoji: '🐸' },
+  { id: 'pig', label: 'Babi', emoji: '🐷' },
+  { id: 'rabbit', label: 'Kelinci', emoji: '🐰' },
+  { id: 'penguin', label: 'Penguin', emoji: '🐧' },
+  { id: 'unicorn', label: 'Unicorn', emoji: '🦄' },
+  { id: 'dragon', label: 'Naga', emoji: '🐲' },
+  { id: 'octopus', label: 'Gurita', emoji: '🐙' },
+  { id: 'ghost', label: 'Hantu', emoji: '👻' },
+  { id: 'robot', label: 'Robot', emoji: '🤖' },
+  { id: 'doraemon', label: 'Doraemon', img: '/doraemon.svg' },
+];
+const PET_ANIMS = [
+  { id: 'breathe', label: 'Nafas/Tidur', kf: 'pet-idle-breathe', dur: '3.2s', timing: 'ease-in-out' },
+  { id: 'shake', label: 'Goyang', kf: 'pet-shake', dur: '.4s', timing: 'ease-in-out' },
+  { id: 'jump', label: 'Melonjak', kf: 'pet-jump', dur: '.9s', timing: 'ease-in-out' },
+  { id: 'roll', label: 'Koprol', kf: 'pet-roll', dur: '4s', timing: 'linear' },
+];
+const PET_DEFAULT_ANIMS = { active: 'shake' };
+const petToggleBtn = document.getElementById('pet-toggle');
+const petMenuEl = document.getElementById('pet-menu');
+let petPrefs = null;
+
+function defaultPetIdForUser(username) {
+  return username === 'ocean' ? 'doraemon' : 'cat';
+}
+function loadPetPrefs(username) {
+  const fallback = { pet: defaultPetIdForUser(username), ...PET_DEFAULT_ANIMS };
+  try {
+    const raw = localStorage.getItem('petPrefs:' + username);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    const pet = PETS.find((p) => p.id === parsed.pet) ? parsed.pet : fallback.pet;
+    const pick = (v, def) => (PET_ANIMS.find((a) => a.id === v) ? v : def);
+    const activeSrc = parsed.active !== undefined ? parsed.active : parsed.typing;
+    return { pet, active: pick(activeSrc, fallback.active) };
+  } catch (_) {
+    return fallback;
+  }
+}
+function savePetPrefs() {
+  if (!me || !petPrefs) return;
+  try { localStorage.setItem('petPrefs:' + me, JSON.stringify(petPrefs)); } catch (_) {}
+  savePetPrefsToServer(petPrefs);
+}
+
+async function savePetPrefsToServer(prefs) {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    await fetch('/user-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pet: prefs.pet, petActiveAnim: prefs.active }),
+    });
+  } catch (_) {}
+}
+function applyPetBody(petId) {
   if (!typingPetEl) return;
+  const pet = PETS.find((p) => p.id === petId) || PETS[0];
   const body = typingPetEl.querySelector('.pet-body');
   if (!body) return;
-  if (username === 'ocean') {
-    if (body.tagName === 'IMG') return;
+  if (pet.img) {
+    if (body.tagName === 'IMG' && body.getAttribute('src') === pet.img) return;
     const img = document.createElement('img');
     img.className = 'pet-body';
-    img.src = '/doraemon.svg';
+    img.src = pet.img;
     img.alt = '';
     img.width = 30;
     img.height = 30;
     img.draggable = false;
     body.replaceWith(img);
+  } else {
+    if (body.tagName === 'SPAN' && body.textContent === pet.emoji) return;
+    const span = document.createElement('span');
+    span.className = 'pet-body';
+    span.textContent = pet.emoji;
+    body.replaceWith(span);
+  }
+  if (petToggleBtn) {
+    const iconEl = petToggleBtn.querySelector('.pet-toggle-icon');
+    if (iconEl) {
+      if (pet.img) iconEl.innerHTML = `<img src="${pet.img}" alt="" />`;
+      else iconEl.textContent = pet.emoji;
+    }
   }
 }
+function applyPetAnims(prefs) {
+  if (!typingPetEl) return;
+  const anim = PET_ANIMS.find((a) => a.id === prefs.active) || PET_ANIMS[0];
+  typingPetEl.style.setProperty('--pet-active-anim', anim.kf);
+  typingPetEl.style.setProperty('--pet-active-dur', anim.dur);
+  typingPetEl.style.setProperty('--pet-active-timing', anim.timing);
+}
+function applyPetPrefs(prefs) {
+  petPrefs = prefs;
+  applyPetBody(prefs.pet);
+  applyPetAnims(prefs);
+}
+function applyTypingPetForUser(username) {
+  applyPetPrefs(loadPetPrefs(username));
+}
+function renderPetMenu() {
+  if (!petMenuEl || !petPrefs) return;
+  petMenuEl.innerHTML = '';
+  const addTitle = (text) => {
+    const t = document.createElement('div');
+    t.className = 'pet-menu-section-title';
+    t.textContent = text;
+    petMenuEl.appendChild(t);
+  };
+  addTitle('Pet');
+  const grid = document.createElement('div');
+  grid.className = 'pet-menu-grid';
+  PETS.forEach((pet) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pet-menu-pet' + (pet.id === petPrefs.pet ? ' active' : '');
+    btn.title = pet.label;
+    btn.setAttribute('aria-label', pet.label);
+    if (pet.img) btn.innerHTML = `<img src="${pet.img}" alt="" />`;
+    else btn.textContent = pet.emoji;
+    btn.addEventListener('click', () => {
+      petPrefs.pet = pet.id;
+      savePetPrefs();
+      applyPetPrefs(petPrefs);
+      renderPetMenu();
+    });
+    grid.appendChild(btn);
+  });
+  petMenuEl.appendChild(grid);
+
+  const addAnimRow = (title, key) => {
+    addTitle(title);
+    const row = document.createElement('div');
+    row.className = 'pet-menu-anims';
+    PET_ANIMS.forEach((anim) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pet-menu-anim' + (anim.id === petPrefs[key] ? ' active' : '');
+      b.textContent = anim.label;
+      b.addEventListener('click', () => {
+        petPrefs[key] = anim.id;
+        savePetPrefs();
+        applyPetAnims(petPrefs);
+        renderPetMenu();
+      });
+      row.appendChild(b);
+    });
+    petMenuEl.appendChild(row);
+  };
+  addAnimRow('Saat ngetik', 'active');
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'pet-menu-reset';
+  reset.textContent = 'Reset';
+  reset.addEventListener('click', () => {
+    try { localStorage.removeItem('petPrefs:' + me); } catch (_) {}
+    applyPetPrefs(loadPetPrefs(me));
+    renderPetMenu();
+  });
+  petMenuEl.appendChild(reset);
+}
+function openPetMenu() {
+  renderPetMenu();
+  if (petMenuEl) petMenuEl.classList.remove('hidden');
+  if (petToggleBtn) petToggleBtn.setAttribute('aria-expanded', 'true');
+}
+function closePetMenu() {
+  if (petMenuEl) petMenuEl.classList.add('hidden');
+  if (petToggleBtn) petToggleBtn.setAttribute('aria-expanded', 'false');
+}
+function togglePetMenu() {
+  if (!petMenuEl) return;
+  if (petMenuEl.classList.contains('hidden')) openPetMenu();
+  else closePetMenu();
+}
+if (petToggleBtn) {
+  petToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePetMenu();
+  });
+}
+document.addEventListener('click', (e) => {
+  if (!petMenuEl || petMenuEl.classList.contains('hidden')) return;
+  if (!petMenuEl.contains(e.target) && e.target !== petToggleBtn && !petToggleBtn.contains(e.target)) closePetMenu();
+});
 
 function updatePetState() {
   if (!typingPetEl) return;
@@ -845,6 +1025,18 @@ async function loadNotifEnabled() {
     }
     if (data && typeof data.theme === 'string' && data.theme !== currentTheme()) {
       applyTheme(data.theme);
+    }
+    if (data && petPrefs) {
+      const serverPet = PETS.find((p) => p.id === data.pet) ? data.pet : null;
+      const serverActive = PET_ANIMS.find((a) => a.id === data.petActiveAnim) ? data.petActiveAnim : null;
+      let changed = false;
+      if (serverPet && serverPet !== petPrefs.pet) { petPrefs.pet = serverPet; changed = true; }
+      if (serverActive && serverActive !== petPrefs.active) { petPrefs.active = serverActive; changed = true; }
+      if (changed) {
+        try { localStorage.setItem('petPrefs:' + me, JSON.stringify(petPrefs)); } catch (_) {}
+        applyPetPrefs(petPrefs);
+        if (petMenuEl && !petMenuEl.classList.contains('hidden')) renderPetMenu();
+      }
     }
   } catch (_) {}
 }
