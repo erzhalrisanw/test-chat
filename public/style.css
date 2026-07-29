@@ -2735,20 +2735,35 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   color: #fff;
   box-shadow: 0 2px 0 0 var(--toon-ink);
 }
-#pet-menu .pet-menu-reset {
+#pet-menu .pet-menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+#pet-menu .pet-menu-actions-spacer { flex: 1; }
+#pet-menu .pet-menu-reset,
+#pet-menu .pet-menu-close,
+#pet-menu .pet-menu-apply {
   background: transparent;
   border: 2px solid var(--toon-ink);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 6px 12px;
   font-family: inherit;
   font-weight: 700;
   font-size: 12px;
   color: var(--toon-ink);
   cursor: pointer;
-  align-self: flex-end;
   box-shadow: none;
 }
-#pet-menu .pet-menu-reset:hover { background: rgba(var(--ink-rgb), 0.08); filter: none; }
+#pet-menu .pet-menu-reset:hover,
+#pet-menu .pet-menu-close:hover { background: rgba(var(--ink-rgb), 0.08); filter: none; }
+#pet-menu .pet-menu-apply {
+  background: var(--toon-pink);
+  color: #fff;
+  box-shadow: 0 2px 0 0 var(--toon-ink);
+}
+#pet-menu .pet-menu-apply:hover { filter: brightness(1.05); }
 
 /* Weather overlay + switcher */
 #weather-canvas {

@@ -251,8 +251,10 @@ function applyPetPrefs(prefs) {
 function applyTypingPetForUser(username) {
   applyPetPrefs(loadPetPrefs(username));
 }
+let petDraft = null;
+
 function renderPetMenu() {
-  if (!petMenuEl || !petPrefs) return;
+  if (!petMenuEl || !petDraft) return;
   petMenuEl.innerHTML = '';
   const addTitle = (text) => {
     const t = document.createElement('div');
@@ -266,15 +268,13 @@ function renderPetMenu() {
   PETS.forEach((pet) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'pet-menu-pet' + (pet.id === petPrefs.pet ? ' active' : '');
+    btn.className = 'pet-menu-pet' + (pet.id === petDraft.pet ? ' active' : '');
     btn.title = pet.label;
     btn.setAttribute('aria-label', pet.label);
     if (pet.img) btn.innerHTML = `<img src="${pet.img}" alt="" />`;
     else btn.textContent = pet.emoji;
     btn.addEventListener('click', () => {
-      petPrefs.pet = pet.id;
-      savePetPrefs();
-      applyPetPrefs(petPrefs);
+      petDraft.pet = pet.id;
       renderPetMenu();
     });
     grid.appendChild(btn);
@@ -288,12 +288,10 @@ function renderPetMenu() {
     PET_ANIMS.forEach((anim) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'pet-menu-anim' + (anim.id === petPrefs[key] ? ' active' : '');
+      b.className = 'pet-menu-anim' + (anim.id === petDraft[key] ? ' active' : '');
       b.textContent = anim.label;
       b.addEventListener('click', () => {
-        petPrefs[key] = anim.id;
-        savePetPrefs();
-        applyPetAnims(petPrefs);
+        petDraft[key] = anim.id;
         renderPetMenu();
       });
       row.appendChild(b);
@@ -302,18 +300,47 @@ function renderPetMenu() {
   };
   addAnimRow('Saat ngetik', 'active');
 
+  const actions = document.createElement('div');
+  actions.className = 'pet-menu-actions';
+
   const reset = document.createElement('button');
   reset.type = 'button';
   reset.className = 'pet-menu-reset';
   reset.textContent = 'Reset';
   reset.addEventListener('click', () => {
-    try { localStorage.removeItem('petPrefs:' + me); } catch (_) {}
-    applyPetPrefs(loadPetPrefs(me));
+    const defaults = { pet: defaultPetIdForUser(me), ...PET_DEFAULT_ANIMS };
+    petDraft = defaults;
     renderPetMenu();
   });
-  petMenuEl.appendChild(reset);
+  actions.appendChild(reset);
+
+  const spacer = document.createElement('span');
+  spacer.className = 'pet-menu-actions-spacer';
+  actions.appendChild(spacer);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'pet-menu-close';
+  close.textContent = 'Close';
+  close.addEventListener('click', () => closePetMenu());
+  actions.appendChild(close);
+
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'pet-menu-apply';
+  apply.textContent = 'Pilih';
+  apply.addEventListener('click', () => {
+    petPrefs = { ...petDraft };
+    applyPetPrefs(petPrefs);
+    savePetPrefs();
+    closePetMenu();
+  });
+  actions.appendChild(apply);
+
+  petMenuEl.appendChild(actions);
 }
 function openPetMenu() {
+  petDraft = petPrefs ? { ...petPrefs } : { pet: defaultPetIdForUser(me), ...PET_DEFAULT_ANIMS };
   renderPetMenu();
   if (petMenuEl) petMenuEl.classList.remove('hidden');
   if (petToggleBtn) petToggleBtn.setAttribute('aria-expanded', 'true');
@@ -321,6 +348,7 @@ function openPetMenu() {
 function closePetMenu() {
   if (petMenuEl) petMenuEl.classList.add('hidden');
   if (petToggleBtn) petToggleBtn.setAttribute('aria-expanded', 'false');
+  petDraft = null;
 }
 function togglePetMenu() {
   if (!petMenuEl) return;
@@ -332,6 +360,9 @@ if (petToggleBtn) {
     e.stopPropagation();
     togglePetMenu();
   });
+}
+if (petMenuEl) {
+  petMenuEl.addEventListener('click', (e) => e.stopPropagation());
 }
 document.addEventListener('click', (e) => {
   if (!petMenuEl || petMenuEl.classList.contains('hidden')) return;
@@ -1261,11 +1292,14 @@ function toggleReaction(id, emoji) {
   socket.emit('reaction:toggle', { id, emoji });
 }
 
-function renderReactionsFor(id) {
+function renderReactionsFor(id, containerOverride) {
   if (!id) return;
-  const el = messagesEl.querySelector(`.msg[data-id="${id}"]`);
-  if (!el) return;
-  const container = el.querySelector('.msg-reactions');
+  let container = containerOverride;
+  if (!container) {
+    const el = messagesEl.querySelector(`.msg[data-id="${id}"]`);
+    if (!el) return;
+    container = el.querySelector('.msg-reactions');
+  }
   if (!container) return;
   const list = reactionsById[id] || [];
   const order = [];
@@ -2156,7 +2190,7 @@ function buildMessageNodes(msg) {
   div.appendChild(reactionsContainer);
   if (id) {
     if (Array.isArray(msg.reactions)) reactionsById[id] = msg.reactions.slice();
-    renderReactionsFor(id);
+    renderReactionsFor(id, reactionsContainer);
     if (!isUnsent && !hideContent) attachReactionLongPress(div, id);
   }
   return [div];
