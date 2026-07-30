@@ -1512,7 +1512,7 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Invalid payload' });
       return;
     }
-    const { dataUrl, replyToId } = payload;
+    const { dataUrl, caption, replyToId } = payload;
     const m = /^data:(audio\/(webm|mp4|ogg|mpeg|wav))(;codecs=[A-Za-z0-9.,-]+)?;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!m) {
       if (typeof ack === 'function') ack({ error: 'Invalid audio' });
@@ -1522,16 +1522,20 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Too large' });
       return;
     }
-    await handleOutgoing(payload, ack, (peer) => ({
-      msg: {
-        username,
-        audio: dataUrl,
-        time: new Date().toISOString(),
-        replyToId: Number(replyToId) || null,
-        peer,
-      },
-      pushBody: '🎤 Sent a voice note',
-    }));
+    await handleOutgoing(payload, ack, (peer) => {
+      const safe = applyUserTextTransforms(username, typeof caption === 'string' ? caption.slice(0, 500) : '');
+      return {
+        msg: {
+          username,
+          audio: dataUrl,
+          text: safe || null,
+          time: new Date().toISOString(),
+          replyToId: Number(replyToId) || null,
+          peer,
+        },
+        pushBody: '🎤 Sent a voice note',
+      };
+    });
   });
 
   socket.on('sticker', async (payload, ack) => {

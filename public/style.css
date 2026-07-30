@@ -3269,3 +3269,141 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   opacity: 0.7;
   font-weight: 600;
 }
+
+.view-once-toggle {
+  background: var(--toon-input-bg);
+  border: 2px solid var(--toon-ink);
+  color: var(--toon-ink);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 0 0 var(--toon-ink);
+  line-height: 1;
+  white-space: nowrap;
+}
+.view-once-toggle:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
+.view-once-toggle[aria-pressed="true"] {
+  background: var(--toon-pink, #ec4899);
+  color: #fff;
+}
+#preview button.view-once-toggle,
+#recorder button.view-once-toggle {
+  width: auto;
+  height: auto;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--toon-input-bg);
+  color: var(--toon-ink);
+  border: 2px solid var(--toon-ink);
+  box-shadow: 0 2px 0 0 var(--toon-ink);
+}
+#preview button.view-once-toggle[aria-pressed="true"],
+#recorder button.view-once-toggle[aria-pressed="true"] {
+  background: var(--toon-pink, #ec4899);
+  color: #fff;
+}
+
+.content-protected img,
+.content-protected video,
+.content-protected .chat-img,
+.content-protected .chat-vid,
+.content-protected .chat-sticker {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+  pointer-events: auto;
+}
+.content-protected img,
+.content-protected video {
+  -webkit-tap-highlight-color: transparent;
+}
+.content-protected.screen-obscured #chat-view,
+.content-protected.screen-obscured #image-viewer,
+.content-protected.screen-obscured #gallery-modal {
+  filter: blur(40px) brightness(0.3);
+  transition: filter .1s;
+}
+#screenshot-shield {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+}
+#screenshot-shield.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+#screenshot-shield .ss-shield-inner {
+  text-align: center;
+  padding: 24px 32px;
+}
+#screenshot-shield .ss-shield-icon {
+  font-size: 48px;
+  margin-bottom: 8px;
+}
+#screenshot-shield .ss-shield-text {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+#screenshot-shield .ss-shield-sub {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.view-once-bubble {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 2px dashed var(--toon-ink);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--toon-ink);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  min-width: 160px;
+}
+.view-once-bubble .vo-icon {
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+.view-once-bubble .vo-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.view-once-bubble .vo-hint {
+  font-size: 11px;
+  opacity: 0.7;
+  font-weight: 500;
+}
+.view-once-bubble.opened {
+  cursor: default;
+  opacity: 0.7;
+}
+.view-once-bubble.opened .vo-hint::after { content: ''; }
+.msg.mine .view-once-bubble {
+  background: rgba(255, 255, 255, 0.25);
+}

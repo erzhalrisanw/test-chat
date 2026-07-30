@@ -15,14 +15,111 @@ const preview = document.getElementById('preview');
 const previewImg = document.getElementById('preview-img');
 const previewVideo = document.getElementById('preview-video');
 const previewCancel = document.getElementById('preview-cancel');
+const previewViewOnceBtn = document.getElementById('preview-view-once');
+const recViewOnceBtn = document.getElementById('rec-view-once');
 
 let pendingImage = null;
 let pendingVideo = null;
+let pendingViewOnce = false;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_DURATION_MS = 15000;
 let pendingQueue = [];
 let tempIdCounter = 0;
+
+const VIEW_ONCE_MARKER = '\u2063\u200B\u2063\u200B';
+function hasViewOnceMarker(s) {
+  return typeof s === 'string' && s.indexOf(VIEW_ONCE_MARKER) !== -1;
+}
+function stripViewOnceMarker(s) {
+  if (typeof s !== 'string') return s;
+  return s.split(VIEW_ONCE_MARKER).join('');
+}
+function isViewOnceOpened(id) {
+  if (!id) return false;
+  try { return localStorage.getItem('viewOnceOpened:' + id) === '1'; } catch (_) { return false; }
+}
+function markViewOnceOpened(id) {
+  if (!id) return;
+  try { localStorage.setItem('viewOnceOpened:' + id, '1'); } catch (_) {}
+}
+function setPendingViewOnce(on) {
+  pendingViewOnce = !!on;
+  [previewViewOnceBtn, recViewOnceBtn].forEach(function(btn) {
+    if (btn) btn.setAttribute('aria-pressed', pendingViewOnce ? 'true' : 'false');
+  });
+}
+
+let contentProtectionActive = false;
+function showScreenshotShield(reason) {
+  let shield = document.getElementById('screenshot-shield');
+  if (!shield) {
+    shield = document.createElement('div');
+    shield.id = 'screenshot-shield';
+    shield.innerHTML = '<div class="ss-shield-inner"><div class="ss-shield-icon">🔒</div><div class="ss-shield-text">Konten dilindungi</div><div class="ss-shield-sub">Screenshot/rekam layar tidak diizinkan</div></div>';
+    document.body.appendChild(shield);
+  }
+  shield.classList.add('visible');
+  if (shield._hideTimer) clearTimeout(shield._hideTimer);
+  shield._hideTimer = setTimeout(function() { shield.classList.remove('visible'); }, 1500);
+}
+function applyContentProtection(username) {
+  if (username === 'occupatus') {
+    document.body.classList.remove('content-protected');
+    return;
+  }
+  if (contentProtectionActive) return;
+  contentProtectionActive = true;
+  document.body.classList.add('content-protected');
+
+  document.addEventListener('contextmenu', function(e) {
+    if (!contentProtectionActive) return;
+    e.preventDefault();
+  }, true);
+  document.addEventListener('dragstart', function(e) {
+    if (!contentProtectionActive) return;
+    const t = e.target;
+    if (t && (t.tagName === 'IMG' || t.tagName === 'VIDEO')) e.preventDefault();
+  }, true);
+  document.addEventListener('keydown', function(e) {
+    if (!contentProtectionActive) return;
+    const k = e.key;
+    if (k === 'PrintScreen' || k === 'F12') {
+      showScreenshotShield('key');
+      e.preventDefault();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (k === '3' || k === '4' || k === '5' || k === 's' || k === 'S')) {
+      showScreenshotShield('shortcut');
+    }
+    if ((e.ctrlKey || e.metaKey) && (k === 'p' || k === 'P' || k === 's' || k === 'S')) {
+      e.preventDefault();
+      showScreenshotShield('save');
+    }
+  }, true);
+  document.addEventListener('keyup', function(e) {
+    if (!contentProtectionActive) return;
+    if (e.key === 'PrintScreen') {
+      try { navigator.clipboard && navigator.clipboard.writeText && navigator.clipboard.writeText(''); } catch (_) {}
+      showScreenshotShield('key');
+    }
+  }, true);
+  document.addEventListener('visibilitychange', function() {
+    if (!contentProtectionActive) return;
+    if (document.hidden) {
+      document.body.classList.add('screen-obscured');
+    } else {
+      document.body.classList.remove('screen-obscured');
+    }
+  });
+  window.addEventListener('blur', function() {
+    if (!contentProtectionActive) return;
+    document.body.classList.add('screen-obscured');
+  });
+  window.addEventListener('focus', function() {
+    if (!contentProtectionActive) return;
+    document.body.classList.remove('screen-obscured');
+  });
+}
 
 const replyPreview = document.getElementById('reply-preview');
 const replyPreviewUser = document.getElementById('reply-preview-user');
@@ -1781,6 +1878,7 @@ function startChat(token, username) {
   me = username;
   if (meNameEl) meNameEl.textContent = username;
   applyTypingPetForUser(username);
+  applyContentProtection(username);
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');
@@ -2094,7 +2192,14 @@ function shouldHideUnsentContent(msg) {
 
 function replySnippet(msg) {
   if (msg && msg.unsent && !isHub()) return UNSENT_PLACEHOLDER_TEXT;
-  if (msg.text) return msg.text;
+  var hasMedia = !!(msg.image || msg.hasImage || msg.video || msg.hasVideo || msg.audio || msg.hasAudio);
+  if (hasMedia && hasViewOnceMarker(msg.text)) {
+    if (msg.image || msg.hasImage) return '🕐 Foto sekali lihat';
+    if (msg.video || msg.hasVideo) return '🕐 Video sekali lihat';
+    if (msg.audio || msg.hasAudio) return '🕐 Voice note sekali lihat';
+  }
+  var cleanText = hasMedia ? stripViewOnceMarker(msg.text) : msg.text;
+  if (cleanText) return cleanText;
   if (msg.sticker || msg.hasSticker) return '🎨 Sticker';
   if (msg.image || msg.hasImage) return '📷 Photo';
   if (msg.video || msg.hasVideo) return '🎬 Video';
@@ -2144,10 +2249,30 @@ function buildMessageNodes(msg) {
       '</div>';
   }
   let body = '';
+  const hasMedia = !!(image || msg.video || msg.audio);
+  const isViewOnce = hasMedia && hasViewOnceMarker(text);
+  const displayText = isViewOnce ? stripViewOnceMarker(text) : text;
   if (hideContent) {
     body = '<span class="msg-text unsent-placeholder">' + escapeHtml(UNSENT_PLACEHOLDER_TEXT) + '</span>';
+  } else if (isViewOnce) {
+    body = displayText ? '<span class="msg-text">' + linkify(displayText) + '</span>' : '';
+    let voKind = 'foto';
+    if (msg.video) voKind = 'video';
+    else if (msg.audio) voKind = 'voice note';
+    const opened = id ? isViewOnceOpened(id) : false;
+    const openedCls = opened ? ' opened' : '';
+    const hint = opened ? 'Sudah dibuka' : 'Ketuk untuk lihat sekali';
+    const voBubble =
+      '<div class="view-once-bubble' + openedCls + '" role="button" tabindex="0" aria-label="Sekali lihat">' +
+        '<span class="vo-icon">🕐</span>' +
+        '<span class="vo-label">' +
+          '<span class="vo-title">Sekali lihat · ' + escapeHtml(voKind) + '</span>' +
+          '<span class="vo-hint">' + escapeHtml(hint) + '</span>' +
+        '</span>' +
+      '</div>';
+    body = body ? body + voBubble : voBubble;
   } else {
-    body = text ? '<span class="msg-text">' + linkify(text) + '</span>' : '';
+    body = displayText ? '<span class="msg-text">' + linkify(displayText) + '</span>' : '';
     if (sticker && /^\/stickers\/[a-z0-9_./-]+\.(svg|png|webp|jpe?g|gif|webm)$/i.test(sticker)) {
       const isVideoSticker = /\.webm$/i.test(sticker);
       const isPhotoSticker = /\.(png|webp|jpe?g|gif)$/i.test(sticker);
@@ -2171,6 +2296,18 @@ function buildMessageNodes(msg) {
     }
   }
   div.innerHTML = meta + quote + body;
+  const voEl = div.querySelector('.view-once-bubble');
+  if (voEl && isViewOnce) {
+    voEl.addEventListener('click', function() {
+      if (voEl.classList.contains('opened')) return;
+      const targetId = Number(div.dataset.id);
+      if (targetId) markViewOnceOpened(targetId);
+      const hintEl = voEl.querySelector('.vo-hint');
+      if (hintEl) hintEl.textContent = 'Sudah dibuka';
+      voEl.classList.add('opened');
+      openViewOncePreview(msg, false);
+    });
+  }
   const imgEl = div.querySelector('img.chat-img');
   if (imgEl) {
     imgEl.addEventListener('click', () => openImageViewer(image));
@@ -2234,11 +2371,14 @@ function attachMsgMenu(div, opts) {
       if (action === 'reply' && currentId) {
         const textEl = div.querySelector('.msg-text');
         const replyText = textEl ? textEl.textContent : '';
-        const hasImage = !!div.querySelector('img.chat-img');
-        const hasVideo = !!div.querySelector('video.chat-vid');
-        const hasAudio = !!div.querySelector('audio.chat-aud');
+        const voEl = div.querySelector('.view-once-bubble');
+        const voKind = voEl ? (voEl.querySelector('.vo-title') || {}).textContent || '' : '';
+        const hasImage = !!div.querySelector('img.chat-img') || /foto/i.test(voKind);
+        const hasVideo = !!div.querySelector('video.chat-vid') || /video/i.test(voKind);
+        const hasAudio = !!div.querySelector('audio.chat-aud') || /voice/i.test(voKind);
         const hasSticker = !!div.querySelector('.chat-sticker');
-        setReplyTarget({ id: currentId, username, text: replyText, hasImage, hasVideo, hasAudio, hasSticker });
+        const snapText = voEl ? VIEW_ONCE_MARKER + replyText : replyText;
+        setReplyTarget({ id: currentId, username, text: snapText, hasImage, hasVideo, hasAudio, hasSticker });
       } else if (action === 'forward' && currentId) {
         openForwardPicker(currentId);
       } else if (action === 'unsend' && currentId) {
@@ -2689,11 +2829,50 @@ function openImageViewer(src) {
   document.body.style.overflow = 'hidden';
 }
 
+let viewerCloseCb = null;
 function closeImageViewer() {
   imageViewer.classList.add('hidden');
   viewerContent.innerHTML = '';
   viewerItems = [];
   document.body.style.overflow = '';
+  const cb = viewerCloseCb;
+  viewerCloseCb = null;
+  if (typeof cb === 'function') { try { cb(); } catch (_) {} }
+}
+
+function openViewOncePreview(msg, markOnClose, onOpened) {
+  if (msg.audio) {
+    viewerContent.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px;color:#fff;';
+    const label = document.createElement('div');
+    label.textContent = '🕐 Voice note sekali lihat';
+    label.style.cssText = 'font-weight:700;';
+    const aud = document.createElement('audio');
+    aud.src = msg.audio;
+    aud.controls = true;
+    aud.autoplay = true;
+    wrap.appendChild(label);
+    wrap.appendChild(aud);
+    viewerContent.appendChild(wrap);
+    viewerItems = [];
+    viewerCounter.style.display = 'none';
+    viewerPrev.style.display = 'none';
+    viewerNext.style.display = 'none';
+    imageViewer.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    viewerCloseCb = markOnClose ? onOpened : null;
+    return;
+  }
+  const src = msg.video || msg.image;
+  if (!src) return;
+  const type = msg.video ? 'video' : 'image';
+  viewerItems = [{ type: type, src: src }];
+  viewerIndex = 0;
+  renderViewerItem();
+  imageViewer.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  viewerCloseCb = markOnClose ? onOpened : null;
 }
 
 function viewerStep(delta) {
@@ -2974,17 +3153,20 @@ chatForm.addEventListener('submit', function(e) {
   var text = msgInput.value.trim();
   var replyToId = replyTarget ? replyTarget.id : null;
   var replyToSnap = replyTarget ? Object.assign({}, replyTarget) : null;
+  var isVO = pendingViewOnce;
   if (pendingVideo) {
     var pv = pendingVideo;
     pendingVideo = null;
-    queueVideoUpload(pv, text, replyToId, replyToSnap);
+    var captionV = isVO ? (VIEW_ONCE_MARKER + (text || '')) : text;
+    queueVideoUpload(pv, captionV, replyToId, replyToSnap);
     clearPreview();
     clearReply();
     msgInput.value = '';
     return;
   }
   if (pendingImage) {
-    queueMessage('image', { dataUrl: pendingImage, caption: text, replyToId: replyToId, replyTo: replyToSnap });
+    var captionI = isVO ? (VIEW_ONCE_MARKER + (text || '')) : text;
+    queueMessage('image', { dataUrl: pendingImage, caption: captionI, replyToId: replyToId, replyTo: replyToSnap });
     clearPreview();
     clearReply();
     msgInput.value = '';
@@ -3038,6 +3220,19 @@ fileInput.addEventListener('change', function() {
 
 previewCancel.addEventListener('click', clearPreview);
 
+if (previewViewOnceBtn) {
+  previewViewOnceBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    setPendingViewOnce(!pendingViewOnce);
+  });
+}
+if (recViewOnceBtn) {
+  recViewOnceBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    setPendingViewOnce(!pendingViewOnce);
+  });
+}
+
 function setPendingVideo(blob) {
   if (pendingVideo && pendingVideo.previewUrl) {
     try { URL.revokeObjectURL(pendingVideo.previewUrl); } catch (_) {}
@@ -3067,6 +3262,7 @@ function clearPreview() {
   previewVideo.classList.add('hidden');
   preview.classList.add('hidden');
   msgInput.placeholder = 'Type a message...';
+  setPendingViewOnce(false);
 }
 
 cameraBtn.addEventListener('click', function() { openCamera(); });
@@ -3546,6 +3742,7 @@ function resetRecorderUI() {
   if (audioAutoStopId) { clearTimeout(audioAutoStopId); audioAutoStopId = null; }
   recorderBar.classList.add('hidden');
   recTimerEl.textContent = '0:00';
+  setPendingViewOnce(false);
 }
 
 async function startVoiceRecording() {
@@ -3617,7 +3814,11 @@ async function onVoiceRecordingStop() {
     var dataUrl = await blobToDataUrl(blob);
     var replyToId = replyTarget ? replyTarget.id : null;
     var replyToSnap = replyTarget ? Object.assign({}, replyTarget) : null;
-    queueMessage('audio', { dataUrl: dataUrl, replyToId: replyToId, replyTo: replyToSnap });
+    var isVO = pendingViewOnce;
+    var audioMsg = { dataUrl: dataUrl, replyToId: replyToId, replyTo: replyToSnap };
+    if (isVO) audioMsg.caption = VIEW_ONCE_MARKER;
+    queueMessage('audio', audioMsg);
+    setPendingViewOnce(false);
     clearReply();
   } catch (err) {
     alert('Failed to process voice note: ' + (err.message || err));
