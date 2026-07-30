@@ -2259,9 +2259,10 @@ function buildMessageNodes(msg) {
     let voKind = 'foto';
     if (msg.video) voKind = 'video';
     else if (msg.audio) voKind = 'voice note';
-    const opened = id ? isViewOnceOpened(id) : false;
+    const isMine = username === me;
+    const opened = !isMine && id ? isViewOnceOpened(id) : false;
     const openedCls = opened ? ' opened' : '';
-    const hint = opened ? 'Sudah dibuka' : 'Ketuk untuk lihat sekali';
+    const hint = isMine ? 'Ketuk untuk lihat ulang' : (opened ? 'Sudah dibuka' : 'Ketuk untuk lihat sekali');
     const voBubble =
       '<div class="view-once-bubble' + openedCls + '" role="button" tabindex="0" aria-label="Sekali lihat">' +
         '<span class="vo-icon">🕐</span>' +
@@ -2298,13 +2299,16 @@ function buildMessageNodes(msg) {
   div.innerHTML = meta + quote + body;
   const voEl = div.querySelector('.view-once-bubble');
   if (voEl && isViewOnce) {
+    const isMine = username === me;
     voEl.addEventListener('click', function() {
-      if (voEl.classList.contains('opened')) return;
+      if (!isMine && voEl.classList.contains('opened')) return;
       const targetId = Number(div.dataset.id);
-      if (targetId) markViewOnceOpened(targetId);
-      const hintEl = voEl.querySelector('.vo-hint');
-      if (hintEl) hintEl.textContent = 'Sudah dibuka';
-      voEl.classList.add('opened');
+      if (!isMine) {
+        if (targetId) markViewOnceOpened(targetId);
+        const hintEl = voEl.querySelector('.vo-hint');
+        if (hintEl) hintEl.textContent = 'Sudah dibuka';
+        voEl.classList.add('opened');
+      }
       openViewOncePreview(msg, false);
     });
   }
