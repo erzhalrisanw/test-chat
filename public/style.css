@@ -497,31 +497,6 @@ box-shadow: 0 0 0 0 var(--toon-ink);
   30% { transform: translateY(-4px); opacity: 1; }
 }
 
-#midnight-countdown {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px 14px;
-  background: var(--toon-yellow);
-  border-bottom: 3px solid var(--toon-ink);
-  color: var(--toon-ink);
-  font-family: inherit;
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: .3px;
-}
-#midnight-countdown.hidden { display: none; }
-#midnight-countdown .mc-icon { font-size: 16px; }
-#midnight-countdown .mc-time {
-  font-variant-numeric: tabular-nums;
-  background: var(--toon-cream);
-  border: 2px solid var(--toon-ink);
-  border-radius: 999px;
-  padding: 2px 10px;
-  box-shadow: 0 2px 0 0 var(--toon-ink);
-}
-
 .messages-wrap {
 flex: 1;
 position: relative;
