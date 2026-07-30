@@ -225,6 +225,7 @@ function renderPresence() {
   if (!partner) {
     presenceEl.classList.add('hidden');
     if (window.chatCall) window.chatCall.setCallButtonEnabled(false);
+    updateMidnightCountdown();
     return;
   }
   const info = presenceState[partner] || {};
@@ -233,6 +234,44 @@ function renderPresence() {
   presenceEl.classList.toggle('online', !!info.online);
   if (presenceTextEl) presenceTextEl.textContent = text;
   if (window.chatCall) window.chatCall.setCallButtonEnabled(!!info.online);
+  updateMidnightCountdown();
+}
+
+const midnightCountdownEl = document.getElementById('midnight-countdown');
+const midnightCountdownTimeEl = document.getElementById('midnight-countdown-time');
+let midnightCountdownTimer = null;
+
+function isOceanOccupatusChat() {
+  const partner = getPartner();
+  return (me === 'ocean' && partner === 'occupatus') || (me === 'occupatus' && partner === 'ocean');
+}
+
+function formatMidnightRemaining() {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  let diff = Math.max(0, midnight - now);
+  const h = Math.floor(diff / 3600000); diff -= h * 3600000;
+  const m = Math.floor(diff / 60000); diff -= m * 60000;
+  const s = Math.floor(diff / 1000);
+  const pad = (n) => (n < 10 ? '0' + n : String(n));
+  return pad(h) + ':' + pad(m) + ':' + pad(s);
+}
+
+function updateMidnightCountdown() {
+  if (!midnightCountdownEl) return;
+  if (!isOceanOccupatusChat()) {
+    midnightCountdownEl.classList.add('hidden');
+    if (midnightCountdownTimer) { clearInterval(midnightCountdownTimer); midnightCountdownTimer = null; }
+    return;
+  }
+  midnightCountdownEl.classList.remove('hidden');
+  if (midnightCountdownTimeEl) midnightCountdownTimeEl.textContent = formatMidnightRemaining();
+  if (!midnightCountdownTimer) {
+    midnightCountdownTimer = setInterval(function() {
+      if (midnightCountdownTimeEl) midnightCountdownTimeEl.textContent = formatMidnightRemaining();
+    }, 1000);
+  }
 }
 
 const typingBubbleEl = typingIndicatorEl.querySelector('.typing-bubble');
