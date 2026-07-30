@@ -68,6 +68,7 @@
           </button>
           <div id="peer-switcher-menu" class="hidden" role="menu"></div>
         </div>
+        <button id="clear-history-btn" class="hidden" title="Hapus history chat">🧹</button>
         <button id="gallery-btn" class="hidden" title="Gallery">🖼️</button>
         <button id="game-btn" class="hidden" title="Main game sejenak">🎮</button>
         <button id="call-btn" class="hidden" title="Video call">📹</button>
@@ -188,6 +189,25 @@
         <button id="forward-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
       </div>
       <div id="forward-list"></div>
+    </div>
+  </div>
+
+  <div id="clear-history-modal" class="hidden">
+    <div class="clear-history-dialog">
+      <div class="clear-history-header">
+        <span>Hapus history chat</span>
+        <button id="clear-history-cancel" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div class="clear-history-body">
+        <p>Semua pesan, reaksi, foto, dan video dengan <strong id="clear-history-peer"></strong> akan dihapus permanen untuk kedua belah pihak, termasuk file di Cloudflare R2.</p>
+        <p>Ketik <code id="clear-history-peer-echo"></code> untuk melanjutkan.</p>
+        <input id="clear-history-input" type="text" autocomplete="off" spellcheck="false" />
+        <div id="clear-history-error" class="clear-history-error hidden"></div>
+      </div>
+      <div class="clear-history-actions">
+        <button id="clear-history-cancel-2" type="button">Batal</button>
+        <button id="clear-history-confirm" type="button" disabled>Hapus permanen</button>
+      </div>
     </div>
   </div>
 

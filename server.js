@@ -958,6 +958,76 @@ app.delete('/gallery/:id', async (req, res) => {
   }
 });
 
+app.delete('/history/:peer', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  if (username !== HUB_USER) return res.status(403).json({ ok: false, error: 'Forbidden' });
+
+  const peer = String(req.params.peer || '').trim();
+  if (!peer || peer === HUB_USER || !users.has(peer)) {
+    return res.status(400).json({ ok: false, error: 'Invalid peer' });
+  }
+
+  try {
+    const rows = (await db.execute({
+      sql: `SELECT id, video FROM messages
+            WHERE peer = ? AND video IS NOT NULL AND video != ''`,
+      args: [peer],
+    })).rows;
+
+    let r2Deleted = 0;
+    let r2Failed = 0;
+    if (r2Enabled) {
+      for (const r of rows) {
+        const v = r.video;
+        if (typeof v !== 'string' || !v.startsWith(R2_PUBLIC_URL + '/')) continue;
+        const key = v.slice(R2_PUBLIC_URL.length + 1);
+        try {
+          await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+          r2Deleted++;
+        } catch (e) {
+          r2Failed++;
+          console.error('r2 delete failed for', key, ':', e.message);
+        }
+      }
+    }
+
+    await db.execute({
+      sql: `DELETE FROM message_reactions
+            WHERE message_id IN (SELECT id FROM messages WHERE peer = ?)`,
+      args: [peer],
+    });
+    const del = await db.execute({
+      sql: 'DELETE FROM messages WHERE peer = ?',
+      args: [peer],
+    });
+    await db.execute({
+      sql: `DELETE FROM read_state
+            WHERE (username = ? AND peer = ?) OR (username = ? AND peer = ?)`,
+      args: [HUB_USER, peer, peer, HUB_USER],
+    });
+
+    // Sync in-memory read cache.
+    const hubInner = lastRead.get(HUB_USER);
+    if (hubInner) hubInner.delete(peer);
+    const peerInner = lastRead.get(peer);
+    if (peerInner) peerInner.delete(HUB_USER);
+
+    emitToThread(peer, 'clear-history', { peer, actor: HUB_USER });
+
+    res.json({
+      ok: true,
+      peer,
+      messagesDeleted: Number(del.rowsAffected || 0),
+      r2Deleted,
+      r2Failed,
+    });
+  } catch (err) {
+    console.error('clear history error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
 app.get('/user-settings', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });

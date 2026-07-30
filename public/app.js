@@ -1936,6 +1936,7 @@ function startChat(token, username) {
   renderPeerSwitcherButton();
   updateNotifBtn();
   updateGalleryBtn();
+  updateClearHistoryBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
   if (pingBtn) pingBtn.classList.remove('hidden');
   renderMeAvatar();
@@ -2173,6 +2174,13 @@ function startChat(token, username) {
     if (!Number.isFinite(id) || id <= 0) return;
     if (peer && peer !== currentPeer) return;
     applyDeleteToView(id);
+  });
+
+  socket.on('clear-history', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const peer = payload.peer;
+    if (!peer) return;
+    applyClearHistoryToView(peer);
   });
 
   socket.on('system', (m) => {
@@ -3538,6 +3546,90 @@ async function onRecordingStop() {
 function updateGalleryBtn() {
   if (GALLERY_ALLOWED.has(me)) galleryBtn.classList.remove('hidden');
   else galleryBtn.classList.add('hidden');
+}
+
+const clearHistoryBtn = document.getElementById('clear-history-btn');
+const clearHistoryModal = document.getElementById('clear-history-modal');
+const clearHistoryPeerEl = document.getElementById('clear-history-peer');
+const clearHistoryPeerEcho = document.getElementById('clear-history-peer-echo');
+const clearHistoryInput = document.getElementById('clear-history-input');
+const clearHistoryConfirm = document.getElementById('clear-history-confirm');
+const clearHistoryCancel = document.getElementById('clear-history-cancel');
+const clearHistoryCancel2 = document.getElementById('clear-history-cancel-2');
+const clearHistoryError = document.getElementById('clear-history-error');
+
+function updateClearHistoryBtn() {
+  if (!clearHistoryBtn) return;
+  if (isHub()) clearHistoryBtn.classList.remove('hidden');
+  else clearHistoryBtn.classList.add('hidden');
+}
+
+function openClearHistoryModal() {
+  if (!isHub() || !currentPeer) return;
+  clearHistoryPeerEl.textContent = currentPeer;
+  clearHistoryPeerEcho.textContent = currentPeer;
+  clearHistoryInput.value = '';
+  clearHistoryConfirm.disabled = true;
+  clearHistoryError.classList.add('hidden');
+  clearHistoryError.textContent = '';
+  clearHistoryModal.classList.remove('hidden');
+  setTimeout(() => clearHistoryInput.focus(), 0);
+}
+
+function closeClearHistoryModal() {
+  clearHistoryModal.classList.add('hidden');
+}
+
+async function submitClearHistory() {
+  const peer = clearHistoryPeerEl.textContent;
+  if (!peer || clearHistoryInput.value.trim() !== peer) return;
+  clearHistoryConfirm.disabled = true;
+  clearHistoryConfirm.textContent = 'Menghapus…';
+  try {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/history/' + encodeURIComponent(peer), {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || ('HTTP ' + res.status));
+    }
+    closeClearHistoryModal();
+  } catch (err) {
+    clearHistoryError.textContent = 'Gagal menghapus: ' + (err.message || err);
+    clearHistoryError.classList.remove('hidden');
+    clearHistoryConfirm.disabled = false;
+  } finally {
+    clearHistoryConfirm.textContent = 'Hapus permanen';
+  }
+}
+
+if (clearHistoryBtn) clearHistoryBtn.addEventListener('click', openClearHistoryModal);
+if (clearHistoryCancel) clearHistoryCancel.addEventListener('click', closeClearHistoryModal);
+if (clearHistoryCancel2) clearHistoryCancel2.addEventListener('click', closeClearHistoryModal);
+if (clearHistoryInput) clearHistoryInput.addEventListener('input', () => {
+  const peer = clearHistoryPeerEl.textContent;
+  clearHistoryConfirm.disabled = clearHistoryInput.value.trim() !== peer;
+});
+if (clearHistoryConfirm) clearHistoryConfirm.addEventListener('click', submitClearHistory);
+if (clearHistoryModal) clearHistoryModal.addEventListener('click', (e) => {
+  if (e.target === clearHistoryModal) closeClearHistoryModal();
+});
+
+function applyClearHistoryToView(peer) {
+  if (!peer) return;
+  if (Object.prototype.hasOwnProperty.call(unreadByPeer, peer)) unreadByPeer[peer] = 0;
+  if (readStateMap && typeof readStateMap === 'object') {
+    delete readStateMap[peer];
+    if (readStateMap[HUB_USER]) delete readStateMap[HUB_USER][peer];
+  }
+  const shouldClearView = !isHub() || peer === currentPeer;
+  if (shouldClearView && messagesEl) {
+    messagesEl.innerHTML = '';
+    try { lastReadByOthers = 0; } catch (_) {}
+  }
+  if (typeof renderPeerSwitcherButton === 'function') renderPeerSwitcherButton();
 }
 
 var GALLERY_PAGE_SIZE = 8;
