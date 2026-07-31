@@ -35,6 +35,12 @@ function stripViewOnceMarker(s) {
   if (typeof s !== 'string') return s;
   return s.split(VIEW_ONCE_MARKER).join('');
 }
+
+const TRUTH_DARE_MARKER = '\u2063\u200C\u2063\u200C';
+function parseTruthDarePayload(text) {
+  if (typeof text !== 'string' || text.indexOf(TRUTH_DARE_MARKER) !== 0) return null;
+  try { return JSON.parse(text.slice(TRUTH_DARE_MARKER.length)); } catch (_) { return null; }
+}
 function isViewOnceOpened(id) {
   if (!id) return false;
   try { return localStorage.getItem('viewOnceOpened:' + id) === '1'; } catch (_) { return false; }
@@ -2144,6 +2150,15 @@ function startChat(token, username) {
     applyClearHistoryToView(peer);
   });
 
+  socket.on('truth-dare:update', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = Number(payload.id);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (payload.peer && payload.peer !== currentPeer) return;
+    if (!payload.payload) return;
+    applyTruthDareUpdate(id, payload.payload);
+  });
+
   socket.on('system', (m) => {
     if (m.text) addSystem(m.text);
   });
@@ -2200,6 +2215,11 @@ function shouldHideUnsentContent(msg) {
 
 function replySnippet(msg) {
   if (msg && msg.unsent && !isHub()) return UNSENT_PLACEHOLDER_TEXT;
+  var td = parseTruthDarePayload(msg && msg.text);
+  if (td) {
+    if (td.state === 'answered') return '🎲 T/D · ' + (td.choice === 'truth' ? 'Truth' : 'Dare');
+    return '🎲 Truth or Dare?';
+  }
   var hasMedia = !!(msg.image || msg.hasImage || msg.video || msg.hasVideo || msg.audio || msg.hasAudio);
   if (hasMedia && hasViewOnceMarker(msg.text)) {
     if (msg.image || msg.hasImage) return '🕐 Foto sekali lihat';
@@ -2213,6 +2233,68 @@ function replySnippet(msg) {
   if (msg.video || msg.hasVideo) return '🎬 Video';
   if (msg.audio || msg.hasAudio) return '🎤 Voice note';
   return '';
+}
+
+function renderTruthDareCardHtml(td, viewer) {
+  const isChallenger = viewer === td.challenger;
+  const cls = ['td-card'];
+  if (td.state === 'pending') cls.push('td-pending');
+  else cls.push('td-answered', 'td-' + td.choice);
+  let inner = '';
+  if (td.state === 'pending') {
+    const body = isChallenger
+      ? '<div class="td-waiting">Menunggu lawan memilih…</div>'
+      : '<div class="td-sub"><b>' + escapeHtml(td.challenger) + '</b> menantangmu. Pilih:</div>' +
+        '<div class="td-buttons">' +
+          '<button type="button" class="td-btn td-btn-truth" data-td-choice="truth">✨ Truth</button>' +
+          '<button type="button" class="td-btn td-btn-dare" data-td-choice="dare">🔥 Dare</button>' +
+        '</div>';
+    inner =
+      '<div class="td-header"><span class="td-emoji">🎲</span><span class="td-title">Truth or Dare</span></div>' +
+      body;
+  } else {
+    const label = td.choice === 'truth' ? '✨ Truth' : '🔥 Dare';
+    inner =
+      '<div class="td-header"><span class="td-emoji">🎲</span><span class="td-title">Truth or Dare</span>' +
+        '<span class="td-choice-pill">' + label + '</span></div>' +
+      '<div class="td-prompt">' + escapeHtml(td.prompt || '') + '</div>' +
+      '<div class="td-foot">dipilih oleh <b>' + escapeHtml(td.picker || '') + '</b></div>';
+  }
+  return '<div class="' + cls.join(' ') + '">' + inner + '</div>';
+}
+
+function applyTruthDareUpdate(id, payload) {
+  const el = messagesEl.querySelector('.msg[data-id="' + id + '"]');
+  if (!el) return;
+  const card = el.querySelector('.td-card');
+  if (!card) return;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = renderTruthDareCardHtml(payload, me);
+  const fresh = wrapper.firstChild;
+  card.replaceWith(fresh);
+  wireTruthDareButtons(el, id);
+}
+
+function wireTruthDareButtons(rootEl, id) {
+  const btns = rootEl.querySelectorAll('.td-btn[data-td-choice]');
+  btns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const choice = btn.getAttribute('data-td-choice');
+      if (choice !== 'truth' && choice !== 'dare') return;
+      rootEl.querySelectorAll('.td-btn').forEach(function(b) { b.disabled = true; });
+      btn.textContent = choice === 'truth' ? 'Meracik pertanyaan…' : 'Meracik tantangan…';
+      socket.emit('truth-dare:pick', { id: id, choice: choice }, function(ack) {
+        if (ack && ack.error) {
+          const sub = rootEl.querySelector('.td-sub');
+          if (sub) sub.textContent = 'Gagal: ' + ack.error;
+          rootEl.querySelectorAll('.td-btn').forEach(function(b) {
+            b.disabled = false;
+            b.textContent = b.getAttribute('data-td-choice') === 'truth' ? '✨ Truth' : '🔥 Dare';
+          });
+        }
+      });
+    });
+  });
 }
 
 function buildMessageNodes(msg) {
@@ -2260,8 +2342,11 @@ function buildMessageNodes(msg) {
   const hasMedia = !!(image || msg.video || msg.audio);
   const isViewOnce = hasMedia && hasViewOnceMarker(text);
   const displayText = isViewOnce ? stripViewOnceMarker(text) : text;
+  const tdPayload = hideContent ? null : parseTruthDarePayload(text);
   if (hideContent) {
     body = '<span class="msg-text unsent-placeholder">' + escapeHtml(UNSENT_PLACEHOLDER_TEXT) + '</span>';
+  } else if (tdPayload) {
+    body = renderTruthDareCardHtml(tdPayload, me);
   } else if (isViewOnce) {
     body = displayText ? '<span class="msg-text">' + linkify(displayText) + '</span>' : '';
     let voKind = 'foto';
@@ -2332,6 +2417,9 @@ function buildMessageNodes(msg) {
   const quoteEl = div.querySelector('.reply-quote');
   if (quoteEl && replyTo) {
     quoteEl.addEventListener('click', () => jumpToMessage(replyTo.id));
+  }
+  if (tdPayload && tdPayload.state === 'pending' && id) {
+    wireTruthDareButtons(div, id);
   }
   attachMsgMenu(div, { id, username, isUnsent, hideContent });
   const reactionsContainer = document.createElement('div');
@@ -3927,6 +4015,19 @@ micBtn.addEventListener('click', function() {
 });
 recSendBtn.addEventListener('click', finishVoiceRecording);
 recCancelBtn.addEventListener('click', cancelVoiceRecording);
+
+const truthDareBtn = document.getElementById('truth-dare-btn');
+if (truthDareBtn) {
+  truthDareBtn.addEventListener('click', function() {
+    if (!currentPeer) return;
+    if (!socket || !socket.connected) return;
+    truthDareBtn.disabled = true;
+    socket.emit('truth-dare:challenge', { peer: currentPeer }, function(ack) {
+      truthDareBtn.disabled = false;
+      if (ack && ack.error) alert('Gagal mulai Truth or Dare: ' + ack.error);
+    });
+  });
+}
 
 logoutBtn.addEventListener('click', function() {
   if (socket) socket.disconnect();

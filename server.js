@@ -1242,6 +1242,7 @@ async function fetchGeminiFortune(peer) {
   const olderLines = [];
   for (const m of history) {
     if (m.unsent || !m.text) continue;
+    if (parseTruthDarePayload(m.text)) continue;
     const speaker = m.username === HUB_USER ? 'A' : 'B';
     const line = `${speaker}: ${m.text}`;
     const ts = new Date(m.time).getTime();
@@ -1291,6 +1292,11 @@ async function fetchGeminiReply(history, peer) {
     .filter((m) => !m.unsent && (m.text || m.image || m.video || m.audio))
     .map((m) => {
       const speaker = m.username === HUB_USER ? 'occupatus' : peer;
+      const td = parseTruthDarePayload(m.text);
+      if (td) {
+        if (td.state === 'answered') return `${speaker}: [main Truth or Dare — ${td.choice}: ${td.prompt}]`;
+        return `${speaker}: [ngajak main Truth or Dare]`;
+      }
       if (m.text) return `${speaker}: ${m.text}`;
       if (m.image) return `${speaker}: [mengirim foto]`;
       if (m.video) return `${speaker}: [mengirim video]`;
@@ -1336,12 +1342,68 @@ async function fetchGeminiReply(history, peer) {
   return text ? text.slice(0, 1000) : null;
 }
 
+const TRUTH_DARE_MARKER = '\u2063\u200C\u2063\u200C';
+
+function encodeTruthDarePayload(payload) {
+  return TRUTH_DARE_MARKER + JSON.stringify(payload);
+}
+
+function parseTruthDarePayload(text) {
+  if (typeof text !== 'string' || !text.startsWith(TRUTH_DARE_MARKER)) return null;
+  try {
+    return JSON.parse(text.slice(TRUTH_DARE_MARKER.length));
+  } catch (_) {
+    return null;
+  }
+}
+
+async function fetchGeminiTruthOrDare(choice) {
+  if (!botEnabled) return null;
+  const isTruth = choice === 'truth';
+  const systemPrompt = isTruth
+    ? 'Kamu adalah pembuat pertanyaan Truth untuk game Truth or Dare antara dua orang dekat via chat. ' +
+      'Tulis SATU pertanyaan personal dalam Bahasa Indonesia informal yang menggoda rasa penasaran tapi tetap sopan. ' +
+      'Boleh sedikit romantis, sedikit nakal, atau menggali perasaan. Hindari topik yang menyakitkan, terlalu vulgar, atau soal SARA. ' +
+      'Maks 22 kata. Balas hanya satu pertanyaan diakhiri tanda tanya, tanpa quote marks, tanpa emoji, tanpa nomor.'
+    : 'Kamu adalah pembuat tantangan Dare untuk game Truth or Dare antara dua orang dekat via chat. ' +
+      'Tulis SATU tantangan dalam Bahasa Indonesia informal yang bisa dilakukan lewat chat (kirim voice note, foto sekitar, tulis pesan tertentu, tiru suara, dsb.). ' +
+      'Harus aman, tidak melibatkan orang lain, tidak berbahaya, tidak vulgar, tidak memalukan berlebihan. Boleh lucu atau manis. ' +
+      'Maks 22 kata. Balas hanya satu tantangan, tanpa quote marks, tanpa emoji, tanpa nomor.';
+  const userPrompt = isTruth
+    ? 'Buat satu pertanyaan Truth sekarang.'
+    : 'Buat satu tantangan Dare sekarang.';
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+  const body = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+    generationConfig: { temperature: 1.0, maxOutputTokens: 90 },
+  };
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => '');
+    console.error('Gemini truth-or-dare error:', resp.status, errBody.slice(0, 200));
+    return null;
+  }
+  const data = await resp.json();
+  const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
+  if (!Array.isArray(parts)) return null;
+  const text = parts.map((p) => p.text || '').join('').trim().replace(/^["']+|["']+$/g, '');
+  return text ? text.slice(0, 280) : null;
+}
+
 async function runBotReply(peer) {
   if (!botEnabled) return;
   const history = await getHistory(peer, 20);
   if (!history.length) return;
   const last = history[history.length - 1];
   if (last.username === HUB_USER) return;
+  const lastTd = parseTruthDarePayload(last.text);
+  if (lastTd && lastTd.state === 'pending') return;
 
   const reply = await fetchGeminiReply(history, peer);
   if (!reply) return;
@@ -1736,6 +1798,80 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ ok: true, id, peer: msg.peer });
     } catch (e) {
       console.error('unsend error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
+    }
+  });
+
+  socket.on('truth-dare:challenge', async (payload, ack) => {
+    if (!botEnabled) {
+      if (typeof ack === 'function') ack({ error: 'AI belum aktif' });
+      return;
+    }
+    await handleOutgoing(payload && typeof payload === 'object' ? payload : {}, ack, (peer) => {
+      return {
+        msg: {
+          username,
+          text: encodeTruthDarePayload({ state: 'pending', challenger: username }),
+          time: new Date().toISOString(),
+          replyToId: null,
+          peer,
+        },
+        pushBody: '🎲 Truth or Dare?',
+      };
+    });
+  });
+
+  socket.on('truth-dare:pick', async (payload, ack) => {
+    const id = Number(payload && payload.id);
+    const choice = payload && payload.choice;
+    if (!Number.isFinite(id) || id <= 0 || (choice !== 'truth' && choice !== 'dare')) {
+      if (typeof ack === 'function') ack({ error: 'Invalid payload' });
+      return;
+    }
+    try {
+      const msg = await getMessageById(id);
+      if (!msg || msg.unsent) {
+        if (typeof ack === 'function') ack({ error: 'Not found' });
+        return;
+      }
+      const parsed = parseTruthDarePayload(msg.text);
+      if (!parsed) {
+        if (typeof ack === 'function') ack({ error: 'Bukan kartu T/D' });
+        return;
+      }
+      if (parsed.state !== 'pending') {
+        if (typeof ack === 'function') ack({ error: 'Sudah dijawab' });
+        return;
+      }
+      if (username === parsed.challenger) {
+        if (typeof ack === 'function') ack({ error: 'Tunggu peer memilih' });
+        return;
+      }
+      const prompt = await fetchGeminiTruthOrDare(choice);
+      if (!prompt) {
+        if (typeof ack === 'function') ack({ error: 'Gagal generate' });
+        return;
+      }
+      const nextPayload = {
+        state: 'answered',
+        challenger: parsed.challenger,
+        picker: username,
+        choice,
+        prompt,
+      };
+      const nextText = encodeTruthDarePayload(nextPayload);
+      await db.execute({
+        sql: 'UPDATE messages SET text = ? WHERE id = ?',
+        args: [nextText, id],
+      });
+      emitToThread(msg.peer, 'truth-dare:update', {
+        id,
+        peer: msg.peer,
+        payload: nextPayload,
+      });
+      if (typeof ack === 'function') ack({ ok: true, id, peer: msg.peer });
+    } catch (e) {
+      console.error('truth-dare:pick error:', e.message);
       if (typeof ack === 'function') ack({ error: e.message });
     }
   });
