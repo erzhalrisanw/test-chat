@@ -170,6 +170,7 @@
     });
   }
   function openMenu() {
+    document.dispatchEvent(new CustomEvent('header:submenu:open', { detail: 'weather' }));
     renderMenu();
     menuEl.classList.remove('hidden');
     toggleBtn.setAttribute('aria-expanded', 'true');
@@ -191,6 +192,10 @@
     if (menuEl.classList.contains('hidden')) return;
     if (!menuEl.contains(e.target) && e.target !== toggleBtn) closeMenu();
   });
+  document.addEventListener('header:submenu:open', (e) => {
+    if (e.detail !== 'weather') closeMenu();
+  });
+  document.addEventListener('header:menu:close', () => closeMenu());
   window.addEventListener('resize', () => {
     if (mode === 'off') return;
     resize();

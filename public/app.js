@@ -443,6 +443,7 @@ function renderPetMenu() {
   petMenuEl.appendChild(actions);
 }
 function openPetMenu() {
+  document.dispatchEvent(new CustomEvent('header:submenu:open', { detail: 'pet' }));
   petDraft = petPrefs ? { ...petPrefs } : { pet: defaultPetIdForUser(me), ...PET_DEFAULT_ANIMS };
   renderPetMenu();
   if (petMenuEl) petMenuEl.classList.remove('hidden');
@@ -467,6 +468,10 @@ if (petToggleBtn) {
 if (petMenuEl) {
   petMenuEl.addEventListener('click', (e) => e.stopPropagation());
 }
+document.addEventListener('header:submenu:open', (e) => {
+  if (e.detail !== 'pet') closePetMenu();
+});
+document.addEventListener('header:menu:close', () => closePetMenu());
 document.addEventListener('click', (e) => {
   if (!petMenuEl || petMenuEl.classList.contains('hidden')) return;
   if (!petMenuEl.contains(e.target) && e.target !== petToggleBtn && !petToggleBtn.contains(e.target)) closePetMenu();
@@ -665,11 +670,13 @@ function closeHeaderMenu() {
   if (!headerMenu) return;
   headerMenu.classList.add('hidden');
   headerMenuBtn.setAttribute('aria-expanded', 'false');
+  document.dispatchEvent(new CustomEvent('header:menu:close'));
 }
 function toggleHeaderMenu() {
   if (!headerMenu) return;
   const isHidden = headerMenu.classList.toggle('hidden');
   headerMenuBtn.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
+  if (isHidden) document.dispatchEvent(new CustomEvent('header:menu:close'));
 }
 if (headerMenuBtn && headerMenu) {
   headerMenuBtn.addEventListener('click', (e) => {
@@ -4327,6 +4334,7 @@ function renderThemeMenu() {
   });
 }
 function openThemeMenu() {
+  document.dispatchEvent(new CustomEvent('header:submenu:open', { detail: 'theme' }));
   renderThemeMenu();
   if (themeMenuEl) themeMenuEl.classList.remove('hidden');
   if (themeToggleBtn) themeToggleBtn.setAttribute('aria-expanded', 'true');
@@ -4351,6 +4359,10 @@ document.addEventListener('click', (e) => {
   if (!themeMenuEl || themeMenuEl.classList.contains('hidden')) return;
   if (!themeMenuEl.contains(e.target) && e.target !== themeToggleBtn) closeThemeMenu();
 });
+document.addEventListener('header:submenu:open', (e) => {
+  if (e.detail !== 'theme') closeThemeMenu();
+});
+document.addEventListener('header:menu:close', () => closeThemeMenu());
 
 var savedToken = localStorage.getItem('token');
 var savedUser = localStorage.getItem('username');

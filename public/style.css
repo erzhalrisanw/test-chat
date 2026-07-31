@@ -3713,8 +3713,12 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   #header-menu #theme-menu,
   #header-menu #weather-menu,
   #header-menu #pet-menu {
-    top: calc(100% + 6px);
+    top: auto;
+    bottom: calc(100% + 6px);
     right: 0;
     left: auto;
+    max-height: min(70vh, calc(100vh - 80px));
+    overflow-y: auto;
   }
+  #header-menu #pet-menu { width: min(260px, calc(100vw - 32px)); }
 }
