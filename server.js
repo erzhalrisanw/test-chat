@@ -1357,27 +1357,84 @@ function parseTruthDarePayload(text) {
   }
 }
 
+const TRUTH_CATEGORIES = [
+  'kenangan masa kecil atau masa sekolah yang bikin ngakak atau memalukan',
+  'kebiasaan aneh, guilty pleasure, atau hal random yang cuma kamu yang tau',
+  'opini kontroversial soal makanan, film, musik, atau tren',
+  'momen paling awkward atau embarrassing yang pernah dialami',
+  'crush pertama, mantan, atau pengalaman cinta monyet',
+  'ketakutan terbesar, insecurity, atau hal yang bikin overthinking',
+  'mimpi teraneh atau khayalan liar yang pernah kepikiran',
+  'kebohongan terbesar yang pernah dilontarkan ke orangtua atau teman',
+  'hal random tentang tubuh, penampilan, atau kebiasaan personal',
+  'fantasi romantis atau tipe ideal yang bikin baper',
+  'pengalaman first kiss, pdkt, atau momen deg-degan sama seseorang',
+  'topik dewasa: pengalaman intim, ketertarikan fisik, atau hal spicy pribadi',
+  'topik dewasa: fantasi nakal, kink ringan, atau preferensi seksual',
+  'topik dewasa: pengalaman pertama kali (kissing, dating, atau lebih)',
+  'pendapat jujur tentang lawan main (peer) — apa yang paling menarik atau bikin penasaran',
+  'kalau ketemu peer di dunia nyata besok, hal pertama yang mau dilakukan',
+  'ide gila, mimpi besar, atau bucket list yang belum kesampaian',
+  'hal paling memalukan yang pernah di-search di internet atau di history',
+  'rahasia kecil yang belum pernah diceritain ke siapa-siapa',
+  'pengalaman mabuk, nyoba hal baru, atau momen out of character',
+];
+
+const DARE_CATEGORIES = [
+  'kirim voice note dengan gaya tertentu (whisper mode, suara kartun, logat daerah, atau baca puisi)',
+  'kirim foto sekitar sekarang: sudut kamar teraneh, isi kulkas, wajah tanpa filter, atau outfit sekarang',
+  'ketik pesan dengan cara nyeleneh (semua huruf kapital, alay 4l4y, bahasa jawa halus, atau tanpa vokal)',
+  'tiru suara atau bikin ASMR singkat (makan kerupuk, ngetok meja, hujan pakai mulut)',
+  'nyanyi 1 bait lagu apapun via voice note dengan penuh penghayatan',
+  'kirim screenshot random: foto ke-7 di galeri, chat terakhir dengan mama, atau app yang paling sering dibuka',
+  'gombalin peer pakai gombalan paling cringe yang bisa kamu bikin sekarang juga',
+  'ceritain plot film/anime terakhir yang ditonton pakai emoji doang, minimal 8 emoji',
+  'kirim voice note ngomong hal random selama 15 detik pakai gaya reporter berita',
+  'buka kamera depan, screenshot ekspresi paling jelek yang bisa kamu bikin, terus kirim',
+  'topik dewasa: kirim foto bagian tubuh non-vital yang menurutmu paling menarik (tangan, leher, pundak, tulang selangka)',
+  'topik dewasa: voice note bilang sesuatu yang seductive atau menggoda ke peer',
+  'topik dewasa: ceritain fantasi terpendam kamu dalam 2 kalimat',
+  'topik dewasa: kirim outfit pose paling percaya diri kamu (boleh mirror selfie)',
+  'topik dewasa: ketik apa yang bakal kamu lakuin ke peer kalau ada di sebelah kamu sekarang',
+  'roleplay singkat: mulai chat berikutnya sebagai karakter tertentu (dokter, guru galak, alien) sampai peer nebak',
+  'bikin haiku atau pantun dadakan tentang peer, kirim sekarang',
+  'kirim rekomendasi lagu yang paling mewakili perasaan kamu ke peer sekarang',
+  'bikin kuis 1 pertanyaan random tentang diri kamu, peer harus jawab bener sebelum lanjut',
+  'ceritain aib kecil kamu hari ini dalam 1 pesan (jujur, no filter)',
+];
+
 async function fetchGeminiTruthOrDare(choice) {
   if (!botEnabled) return null;
   const isTruth = choice === 'truth';
+  const pool = isTruth ? TRUTH_CATEGORIES : DARE_CATEGORIES;
+  const category = pool[Math.floor(Math.random() * pool.length)];
+  const spiceLevel = Math.random();
+  const spiceHint = spiceLevel < 0.35
+    ? 'Level: santai dan lucu.'
+    : spiceLevel < 0.7
+      ? 'Level: agak nakal, menggoda, bikin deg-degan.'
+      : 'Level: berani, spicy, dewasa — jangan ragu masuk ke topik intim atau seksual dengan tetap consensual dan playful.';
   const systemPrompt = isTruth
-    ? 'Kamu adalah pembuat pertanyaan Truth untuk game Truth or Dare antara dua orang dekat via chat. ' +
-      'Tulis SATU pertanyaan personal dalam Bahasa Indonesia informal yang menggoda rasa penasaran tapi tetap sopan. ' +
-      'Boleh sedikit romantis, sedikit nakal, atau menggali perasaan. Hindari topik yang menyakitkan, terlalu vulgar, atau soal SARA. ' +
-      'Maks 22 kata. Balas hanya satu pertanyaan diakhiri tanda tanya, tanpa quote marks, tanpa emoji, tanpa nomor.'
-    : 'Kamu adalah pembuat tantangan Dare untuk game Truth or Dare antara dua orang dekat via chat. ' +
-      'Tulis SATU tantangan dalam Bahasa Indonesia informal yang bisa dilakukan lewat chat (kirim voice note, foto sekitar, tulis pesan tertentu, tiru suara, dsb.). ' +
-      'Harus aman, tidak melibatkan orang lain, tidak berbahaya, tidak vulgar, tidak memalukan berlebihan. Boleh lucu atau manis. ' +
-      'Maks 22 kata. Balas hanya satu tantangan, tanpa quote marks, tanpa emoji, tanpa nomor.';
+    ? 'Kamu adalah pembuat pertanyaan Truth untuk game Truth or Dare antara dua orang dewasa yang sudah dekat (bisa pasangan, gebetan, atau sahabat) via chat pribadi. ' +
+      'Tulis SATU pertanyaan personal dalam Bahasa Indonesia informal (gaya obrolan santai, boleh pakai "lo/gue" atau "kamu/aku"). ' +
+      'Wajib eksplorasi topik yang bervariasi setiap kali — jangan generik, jangan mainstream, jangan mirip pertanyaan sebelumnya. ' +
+      'Boleh masuk ke topik dewasa/seksual selama tetap consensual dan tidak vulgar berlebihan. ' +
+      'Hindari SARA, hal yang benar-benar menyakitkan/traumatis, atau melibatkan minor. ' +
+      'Maks 25 kata. Balas hanya satu pertanyaan diakhiri tanda tanya, tanpa quote marks, tanpa emoji, tanpa nomor, tanpa prefix "Truth:".'
+    : 'Kamu adalah pembuat tantangan Dare untuk game Truth or Dare antara dua orang dewasa yang sudah dekat via chat pribadi. ' +
+      'Tulis SATU tantangan dalam Bahasa Indonesia informal yang bisa dilakukan lewat chat (voice note, foto, screenshot, ketik gaya tertentu, roleplay, dsb.). ' +
+      'Wajib variatif — jangan itu-itu aja. Boleh lucu, manis, kreatif, spicy, atau dewasa (consensual, playful). ' +
+      'Hindari melibatkan orang lain di dunia nyata, hal berbahaya secara fisik, konten ilegal, atau melibatkan minor. ' +
+      'Maks 25 kata. Balas hanya satu tantangan sebagai kalimat perintah, tanpa quote marks, tanpa emoji, tanpa nomor, tanpa prefix "Dare:".';
   const userPrompt = isTruth
-    ? 'Buat satu pertanyaan Truth sekarang.'
-    : 'Buat satu tantangan Dare sekarang.';
+    ? `Buat satu pertanyaan Truth sekarang. Kategori kali ini: ${category}. ${spiceHint} Jangan sebut kategori atau level di jawaban.`
+    : `Buat satu tantangan Dare sekarang. Kategori kali ini: ${category}. ${spiceHint} Jangan sebut kategori atau level di jawaban.`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
   const body = {
     system_instruction: { parts: [{ text: systemPrompt }] },
     contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    generationConfig: { temperature: 1.0, maxOutputTokens: 90 },
+    generationConfig: { temperature: 1.3, topP: 0.98, maxOutputTokens: 120 },
   };
   const resp = await fetch(url, {
     method: 'POST',
