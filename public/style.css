@@ -3600,3 +3600,121 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   font-size: 11px;
   opacity: 0.7;
 }
+
+#header-menu-wrap { position: relative; display: inline-flex; }
+#chat-view header #header-menu-btn {
+  padding: 6px 12px;
+  font-size: 18px;
+  line-height: 1;
+}
+#header-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: var(--toon-cream);
+  border: 3px solid var(--toon-ink);
+  border-radius: 12px;
+  box-shadow: 0 4px 0 0 var(--toon-ink);
+  min-width: 220px;
+  z-index: 50;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.header-menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--toon-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: left;
+  text-shadow: none;
+}
+#chat-view header #header-menu button.header-menu-item,
+#chat-view header #header-menu .header-menu-sub > button {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  width: 100%;
+  color: var(--toon-ink);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: left;
+  text-shadow: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#chat-view header #header-menu button.header-menu-item:hover,
+#chat-view header #header-menu .header-menu-sub > button:hover {
+  background: rgba(var(--ink-rgb), 0.08);
+  filter: none;
+}
+#chat-view header #header-menu button.header-menu-item:active,
+#chat-view header #header-menu .header-menu-sub > button:active {
+  transform: none;
+  box-shadow: none;
+}
+#chat-view header #header-menu #logout.header-menu-item {
+  background: transparent;
+  color: var(--toon-pink);
+}
+#chat-view header #header-menu #logout.header-menu-item:hover {
+  background: rgba(255, 92, 138, 0.12);
+}
+#chat-view header #header-menu #notif-toggle.off .header-menu-state { opacity: 0.6; }
+.header-menu-icon {
+  font-size: 16px;
+  line-height: 1;
+  width: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.header-menu-icon img { width: 20px; height: 20px; }
+.header-menu-label { flex: 1; min-width: 0; }
+.header-menu-state { font-weight: 600; opacity: 0.75; margin-left: 4px; }
+.header-menu-caret { opacity: 0.5; font-size: 11px; }
+.header-menu-sep {
+  height: 2px;
+  background: rgba(var(--ink-rgb), 0.08);
+  margin: 4px 2px;
+  border-radius: 1px;
+}
+.header-menu-sub { display: flex; }
+#header-menu #theme-switcher,
+#header-menu #weather-switcher,
+#header-menu #pet-switcher {
+  position: relative;
+  width: 100%;
+}
+#header-menu #theme-menu,
+#header-menu #weather-menu,
+#header-menu #pet-menu {
+  position: absolute;
+  top: -4px;
+  right: calc(100% + 10px);
+  left: auto;
+}
+@media (max-width: 640px) {
+  #header-menu { min-width: 200px; }
+  #header-menu #theme-menu,
+  #header-menu #weather-menu,
+  #header-menu #pet-menu {
+    top: calc(100% + 6px);
+    right: 0;
+    left: auto;
+  }
+}

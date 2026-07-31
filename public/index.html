@@ -68,25 +68,32 @@
           </button>
           <div id="peer-switcher-menu" class="hidden" role="menu"></div>
         </div>
-        <button id="clear-history-btn" class="hidden" title="Hapus history chat">🧹</button>
-        <button id="gallery-btn" class="hidden" title="Gallery">🖼️</button>
-        <button id="game-btn" class="hidden" title="Main game sejenak">🎮</button>
-        <button id="call-btn" class="hidden" title="Video call">📹</button>
-        <button id="ping-btn" class="hidden" title="Thinking of you">💗</button>
-        <div id="theme-switcher">
-          <button id="theme-toggle" type="button" title="Ganti tema" aria-label="Ganti tema" aria-haspopup="true" aria-expanded="false"><span class="theme-toggle-icon">🌙</span></button>
-          <div id="theme-menu" class="hidden" role="menu"></div>
+        <div id="header-menu-wrap">
+          <button id="header-menu-btn" type="button" title="Menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false">☰</button>
+          <div id="header-menu" class="hidden" role="menu">
+            <button id="call-btn" class="hidden header-menu-item" title="Video call"><span class="header-menu-icon">📹</span><span class="header-menu-label">Video Call</span></button>
+            <button id="game-btn" class="hidden header-menu-item" title="Main game sejenak"><span class="header-menu-icon">🎮</span><span class="header-menu-label">Game</span></button>
+            <button id="gallery-btn" class="hidden header-menu-item" title="Gallery"><span class="header-menu-icon">🖼️</span><span class="header-menu-label">Gallery</span></button>
+            <button id="ping-btn" class="hidden header-menu-item" title="Thinking of you"><span class="header-menu-icon">💗</span><span class="header-menu-label">Thinking of You</span></button>
+            <button id="clear-history-btn" class="hidden header-menu-item" title="Hapus history chat"><span class="header-menu-icon">🧹</span><span class="header-menu-label">Hapus History</span></button>
+            <div class="header-menu-sep"></div>
+            <div id="theme-switcher" class="header-menu-sub">
+              <button id="theme-toggle" type="button" title="Ganti tema" aria-label="Ganti tema" aria-haspopup="true" aria-expanded="false"><span class="header-menu-icon theme-toggle-icon">🌙</span><span class="header-menu-label">Tema</span><span class="header-menu-caret">▸</span></button>
+              <div id="theme-menu" class="hidden" role="menu"></div>
+            </div>
+            <div id="weather-switcher" class="header-menu-sub">
+              <button id="weather-toggle" type="button" title="Cuaca" aria-label="Cuaca" aria-haspopup="true" aria-expanded="false"><span class="header-menu-icon weather-toggle-icon">🌤</span><span class="header-menu-label">Cuaca</span><span class="header-menu-caret">▸</span></button>
+              <div id="weather-menu" class="hidden" role="menu"></div>
+            </div>
+            <div id="pet-switcher" class="header-menu-sub">
+              <button id="pet-toggle" type="button" title="Ganti pet & animasi" aria-label="Ganti pet & animasi" aria-haspopup="true" aria-expanded="false"><span class="header-menu-icon pet-toggle-icon">🐱</span><span class="header-menu-label">Pet</span><span class="header-menu-caret">▸</span></button>
+              <div id="pet-menu" class="hidden" role="menu"></div>
+            </div>
+            <div class="header-menu-sep"></div>
+            <button id="notif-toggle" class="header-menu-item" title="Notifications"><span class="header-menu-icon">🔕</span><span class="header-menu-label">Notif <span class="header-menu-state">Off</span></span></button>
+            <button id="logout" class="header-menu-item header-menu-danger"><span class="header-menu-icon">🚪</span><span class="header-menu-label">Logout</span></button>
+          </div>
         </div>
-        <div id="weather-switcher">
-          <button id="weather-toggle" type="button" title="Cuaca" aria-label="Cuaca" aria-haspopup="true" aria-expanded="false"><span class="weather-toggle-icon">🌤</span></button>
-          <div id="weather-menu" class="hidden" role="menu"></div>
-        </div>
-        <div id="pet-switcher">
-          <button id="pet-toggle" type="button" title="Ganti pet & animasi" aria-label="Ganti pet & animasi" aria-haspopup="true" aria-expanded="false"><span class="pet-toggle-icon">🐱</span></button>
-          <div id="pet-menu" class="hidden" role="menu"></div>
-        </div>
-        <button id="notif-toggle" title="Notifications">🔕 Off</button>
-        <button id="logout">Logout</button>
       </div>
     </header>
     <div class="messages-wrap">

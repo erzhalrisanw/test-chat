@@ -659,6 +659,36 @@ document.addEventListener('click', (e) => {
 });
 attachMenu.addEventListener('click', () => closeAttachMenu());
 
+const headerMenuBtn = document.getElementById('header-menu-btn');
+const headerMenu = document.getElementById('header-menu');
+function closeHeaderMenu() {
+  if (!headerMenu) return;
+  headerMenu.classList.add('hidden');
+  headerMenuBtn.setAttribute('aria-expanded', 'false');
+}
+function toggleHeaderMenu() {
+  if (!headerMenu) return;
+  const isHidden = headerMenu.classList.toggle('hidden');
+  headerMenuBtn.setAttribute('aria-expanded', isHidden ? 'false' : 'true');
+}
+if (headerMenuBtn && headerMenu) {
+  headerMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleHeaderMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (headerMenu.classList.contains('hidden')) return;
+    if (!headerMenu.contains(e.target) && e.target !== headerMenuBtn) closeHeaderMenu();
+  });
+  headerMenu.addEventListener('click', (e) => {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+    if (target.closest('.header-menu-sub')) return;
+    if (target.closest('#theme-menu, #weather-menu, #pet-menu')) return;
+    closeHeaderMenu();
+  });
+}
+
 const EMOJIS = [
   '😀','😁','😂','🤣','😊','😍','😘','😎','🤩','🥳','😉','😋','😜','🤪','😇','🙂',
   '🙃','😌','😔','😢','😭','😤','😡','🤬','🤔','🤯','😱','🥺','🤗','🤭','🤫','🤥',
@@ -1124,7 +1154,10 @@ async function prepareVideoForUpload(file, onStage) {
 }
 
 function updateNotifBtn() {
-  notifBtn.textContent = notifEnabled ? '🔔 On' : '🔕 Off';
+  const icon = notifBtn.querySelector('.header-menu-icon');
+  const state = notifBtn.querySelector('.header-menu-state');
+  if (icon) icon.textContent = notifEnabled ? '🔔' : '🔕';
+  if (state) state.textContent = notifEnabled ? 'On' : 'Off';
   notifBtn.classList.toggle('off', !notifEnabled);
 }
 
