@@ -1074,10 +1074,10 @@ app.post('/user-settings', async (req, res) => {
   }
 });
 
-const LEADERBOARD_GAMES = new Set(['2048', 'snake', 'dino']);
+const LEADERBOARD_GAMES = new Set(['2048', 'snake', 'dino', 'racing']);
 
 async function getGameScores(username) {
-  const out = { '2048': 0, 'snake': 0, 'dino': 0 };
+  const out = { '2048': 0, 'snake': 0, 'dino': 0, 'racing': 0 };
   try {
     const rs = await db.execute({
       sql: 'SELECT game, score FROM game_scores WHERE username = ?',

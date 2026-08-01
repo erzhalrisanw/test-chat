@@ -21,7 +21,7 @@
   const hintEl = document.getElementById('game-hint');
 
   const HUB_USER = 'occupatus';
-  const LEADERBOARD_GAMES = ['2048', 'snake', 'dino'];
+  const LEADERBOARD_GAMES = ['2048', 'snake', 'dino', 'racing'];
 
   let currentGameId = null;
   let cleanupFn = null;
@@ -31,6 +31,7 @@
     'snake':  { title: 'Snake',    mount: mountSnake },
     'memory': { title: 'Memory',   mount: mountMemory },
     'dino':   { title: 'Dino Run', mount: mountDino },
+    'racing': { title: 'Racing',   mount: mountRacing },
   };
 
   function styleVar(name, fallback) {
@@ -81,8 +82,8 @@
       });
     } catch (_) {}
   }
-  const GAME_LABEL = { '2048': '2048', 'snake': 'Snake', 'dino': 'Dino' };
-  const BEST_LS_KEYS = { '2048': 'game2048_best', 'snake': 'gameSnake_best', 'dino': 'gameDino_best' };
+  const GAME_LABEL = { '2048': '2048', 'snake': 'Snake', 'dino': 'Dino', 'racing': 'Racing' };
+  const BEST_LS_KEYS = { '2048': 'game2048_best', 'snake': 'gameSnake_best', 'dino': 'gameDino_best', 'racing': 'gameRacing_best' };
 
   async function syncBestsFromServer() {
     const { me, peer } = getMeAndPeer();
@@ -744,6 +745,248 @@
       if (raf) cancelAnimationFrame(raf);
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('keyup', onKeyUp);
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Racing — top-down, dodge oncoming cars
+  // ------------------------------------------------------------------
+  function mountRacing(host) {
+    const W = 300, H = 460;
+    const LANES = 3;
+    const LANE_W = W / LANES;
+    const tapZone = document.createElement('div');
+    tapZone.className = 'gracing-tap';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'gracing-canvas';
+    canvas.width = W;
+    canvas.height = H;
+    tapZone.appendChild(canvas);
+    host.appendChild(tapZone);
+    const ctx = canvas.getContext('2d');
+
+    const CAR_W = 40, CAR_H = 66;
+    let lane = 1;
+    let targetX = laneCenter(lane) - CAR_W / 2;
+    let carX = targetX;
+    const carY = H - CAR_H - 16;
+
+    let enemies = [];
+    let dashes = [0, 100, 200, 300, 400];
+    let speed = 2.2;
+    const MAX_SPEED = 6.0;
+    let spawnCd = 60;
+    let score = 0;
+    let best = parseInt(localStorage.getItem('gameRacing_best') || '0', 10) || 0;
+    let over = false;
+    let raf = null;
+    let tick = 0;
+
+    bestWrap.classList.remove('hidden');
+    bestEl.textContent = best;
+    hintEl.textContent = '← → / swipe / tap kiri-kanan';
+
+    function laneCenter(i) { return i * LANE_W + LANE_W / 2; }
+    function setLane(i) {
+      if (over) return;
+      lane = Math.max(0, Math.min(LANES - 1, i));
+      targetX = laneCenter(lane) - CAR_W / 2;
+    }
+
+    function spawn() {
+      const MIN_SAME_LANE_GAP = 170;
+      const DANGER_BAND = 220;
+      const freeLanes = [];
+      for (let i = 0; i < LANES; i++) {
+        let ok = true;
+        for (let j = 0; j < enemies.length; j++) {
+          if (enemies[j].lane === i && enemies[j].y < MIN_SAME_LANE_GAP) { ok = false; break; }
+        }
+        if (ok) freeLanes.push(i);
+      }
+      if (!freeLanes.length) return;
+      const lanesInBand = new Set();
+      for (let i = 0; i < enemies.length; i++) {
+        if (enemies[i].y < DANGER_BAND) lanesInBand.add(enemies[i].lane);
+      }
+      const safe = freeLanes.filter((l) => {
+        const test = new Set(lanesInBand);
+        test.add(l);
+        return test.size < LANES;
+      });
+      if (!safe.length) return;
+      const l = safe[Math.floor(Math.random() * safe.length)];
+      const colors = ['#ff5d8f', '#ffd23f', '#a855f7', '#f97316', '#22c55e'];
+      enemies.push({
+        lane: l,
+        x: laneCenter(l) - CAR_W / 2,
+        y: -CAR_H,
+        color: colors[Math.floor(Math.random() * colors.length)],
+      });
+    }
+    function aabb(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function loop() {
+      if (over) return;
+      tick++;
+
+      carX += (targetX - carX) * 0.28;
+
+      spawnCd -= speed;
+      if (spawnCd <= 0) {
+        spawn();
+        spawnCd = 60 + Math.random() * 50;
+      }
+
+      for (let i = 0; i < dashes.length; i++) {
+        dashes[i] += speed;
+        if (dashes[i] > H) dashes[i] -= H + 40;
+      }
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        enemies[i].y += speed;
+        if (enemies[i].y > H) enemies.splice(i, 1);
+      }
+
+      const playerBox = { x: carX + 4, y: carY + 4, w: CAR_W - 8, h: CAR_H - 8 };
+      for (let i = 0; i < enemies.length; i++) {
+        const e = enemies[i];
+        if (aabb(playerBox, { x: e.x + 4, y: e.y + 4, w: CAR_W - 8, h: CAR_H - 8 })) {
+          gameOver();
+          return;
+        }
+      }
+
+      if (tick % 3 === 0) {
+        score++;
+        scoreEl.textContent = score;
+        if (score > best) {
+          best = score;
+          try { localStorage.setItem('gameRacing_best', String(best)); } catch (_) {}
+        }
+        if (score > 0 && score % 80 === 0 && speed < MAX_SPEED) {
+          speed = Math.min(MAX_SPEED, speed + 0.15);
+        }
+      }
+
+      draw();
+      raf = requestAnimationFrame(loop);
+    }
+
+    function drawCar(x, y, color) {
+      const ink = styleVar('--toon-ink', '#000');
+      ctx.fillStyle = color;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = 2;
+      roundRect(x, y, CAR_W, CAR_H, 8, true, true);
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(x + 6, y + 10, CAR_W - 12, 14);
+      ctx.fillRect(x + 6, y + CAR_H - 26, CAR_W - 12, 12);
+      ctx.fillStyle = ink;
+      ctx.fillRect(x - 2, y + 8, 4, 10);
+      ctx.fillRect(x + CAR_W - 2, y + 8, 4, 10);
+      ctx.fillRect(x - 2, y + CAR_H - 18, 4, 10);
+      ctx.fillRect(x + CAR_W - 2, y + CAR_H - 18, 4, 10);
+    }
+
+    function roundRect(x, y, w, h, r, fill, stroke) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    function draw() {
+      ctx.fillStyle = '#2a2a30';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = '#3a3a42';
+      ctx.fillRect(0, 0, 8, H);
+      ctx.fillRect(W - 8, 0, 8, H);
+
+      ctx.fillStyle = '#f5f5f5';
+      for (let i = 1; i < LANES; i++) {
+        const lx = i * LANE_W - 2;
+        for (let j = 0; j < dashes.length; j++) {
+          ctx.fillRect(lx, dashes[j], 4, 20);
+        }
+      }
+
+      for (let i = 0; i < enemies.length; i++) {
+        drawCar(enemies[i].x, enemies[i].y, enemies[i].color);
+      }
+      drawCar(carX, carY, styleVar('--toon-teal', '#2fb7c4'));
+
+      if (over) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 24px system-ui, sans-serif';
+        ctx.fillText('Crashed!', W / 2, H / 2 - 6);
+        ctx.font = '14px system-ui, sans-serif';
+        ctx.fillText('Score ' + score, W / 2, H / 2 + 18);
+      }
+    }
+
+    function gameOver() {
+      over = true;
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      bestEl.textContent = best;
+      draw();
+      if (score > 0) submitScore('racing', best);
+    }
+
+    function onKey(e) {
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        e.preventDefault(); setLane(lane - 1);
+      } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        e.preventDefault(); setLane(lane + 1);
+      }
+    }
+    let touch = null;
+    function onTouchStart(e) {
+      const t = e.changedTouches[0];
+      touch = { x: t.clientX, y: t.clientY, moved: false };
+    }
+    function onTouchEnd(e) {
+      if (!touch) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touch.x;
+      const dy = t.clientY - touch.y;
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+      if (ax > 20 && ax > ay) {
+        setLane(lane + (dx > 0 ? 1 : -1));
+      } else if (ax < 15 && ay < 15) {
+        const rect = canvas.getBoundingClientRect();
+        const relX = t.clientX - rect.left;
+        setLane(relX < rect.width / 2 ? lane - 1 : lane + 1);
+      }
+      touch = null;
+    }
+    function onMouseDown(e) {
+      const rect = canvas.getBoundingClientRect();
+      const relX = e.clientX - rect.left;
+      setLane(relX < rect.width / 2 ? lane - 1 : lane + 1);
+    }
+
+    document.addEventListener('keydown', onKey);
+    tapZone.addEventListener('touchstart', onTouchStart, { passive: true });
+    tapZone.addEventListener('touchend', onTouchEnd, { passive: true });
+    tapZone.addEventListener('mousedown', onMouseDown);
+
+    draw();
+    raf = requestAnimationFrame(loop);
+
+    return function () {
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener('keydown', onKey);
     };
   }
 

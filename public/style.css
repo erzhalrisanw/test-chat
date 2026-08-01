@@ -3128,6 +3128,29 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   pointer-events: none;
 }
 
+/* Racing */
+.gracing-tap {
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  touch-action: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.gracing-canvas {
+  background: #2a2a30;
+  border: 3px solid var(--toon-ink);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  display: block;
+  touch-action: none;
+  pointer-events: none;
+}
+
 /* Memory */
 .gmem-grid {
   display: grid;
