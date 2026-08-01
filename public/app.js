@@ -37,9 +37,20 @@ function stripViewOnceMarker(s) {
 }
 
 const TRUTH_DARE_MARKER = '\u2063\u200C\u2063\u200C';
+const TRUTH_STREAK_LIMIT = 4;
 function parseTruthDarePayload(text) {
   if (typeof text !== 'string' || text.indexOf(TRUTH_DARE_MARKER) !== 0) return null;
   try { return JSON.parse(text.slice(TRUTH_DARE_MARKER.length)); } catch (_) { return null; }
+}
+function truthStreakKey(peer) { return 'td_truth_streak_' + (peer || ''); }
+function getTruthStreak(peer) {
+  if (!peer) return 0;
+  const v = parseInt(localStorage.getItem(truthStreakKey(peer)) || '0', 10);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+function setTruthStreak(peer, n) {
+  if (!peer) return;
+  try { localStorage.setItem(truthStreakKey(peer), String(Math.max(0, n | 0))); } catch (_) {}
 }
 function isViewOnceOpened(id) {
   if (!id) return false;
@@ -2196,7 +2207,16 @@ function startChat(token, username) {
     if (!Number.isFinite(id) || id <= 0) return;
     if (payload.peer && payload.peer !== currentPeer) return;
     if (!payload.payload) return;
-    applyTruthDareUpdate(id, payload.payload);
+    const td = payload.payload;
+    if (td.state === 'answered' && td.picker === me && td.challenger) {
+      if (td.choice === 'truth') {
+        setTruthStreak(td.challenger, getTruthStreak(td.challenger) + 1);
+      } else if (td.choice === 'dare') {
+        setTruthStreak(td.challenger, 0);
+      }
+      refreshPendingTruthDareCards(td.challenger);
+    }
+    applyTruthDareUpdate(id, td);
   });
 
   socket.on('system', (m) => {
@@ -2280,15 +2300,26 @@ function renderTruthDareCardHtml(td, viewer) {
   const cls = ['td-card'];
   if (td.state === 'pending') cls.push('td-pending');
   else cls.push('td-answered', 'td-' + td.choice);
+  const challengerAttr = td.challenger ? ' data-td-challenger="' + escapeHtml(td.challenger) + '"' : '';
   let inner = '';
   if (td.state === 'pending') {
-    const body = isChallenger
-      ? '<div class="td-waiting">Menunggu lawan memilih…</div>'
-      : '<div class="td-sub"><b>' + escapeHtml(td.challenger) + '</b> menantangmu. Pilih:</div>' +
+    let body;
+    if (isChallenger) {
+      body = '<div class="td-waiting">Menunggu lawan memilih…</div>';
+    } else {
+      const streak = getTruthStreak(td.challenger);
+      const truthDisabled = streak >= TRUTH_STREAK_LIMIT;
+      const truthAttr = truthDisabled ? ' disabled' : '';
+      const hint = truthDisabled
+        ? '<div class="td-sub td-streak-hint">Sudah ' + streak + '× Truth berturut — pilih Dare dulu.</div>'
+        : '';
+      body =
+        '<div class="td-sub"><b>' + escapeHtml(td.challenger) + '</b> menantangmu. Pilih:</div>' +
         '<div class="td-buttons">' +
-          '<button type="button" class="td-btn td-btn-truth" data-td-choice="truth">✨ Truth</button>' +
+          '<button type="button" class="td-btn td-btn-truth" data-td-choice="truth"' + truthAttr + '>✨ Truth</button>' +
           '<button type="button" class="td-btn td-btn-dare" data-td-choice="dare">🔥 Dare</button>' +
-        '</div>';
+        '</div>' + hint;
+    }
     inner =
       '<div class="td-header"><span class="td-emoji">🎲</span><span class="td-title">Truth or Dare</span></div>' +
       body;
@@ -2300,7 +2331,30 @@ function renderTruthDareCardHtml(td, viewer) {
       '<div class="td-prompt">' + escapeHtml(td.prompt || '') + '</div>' +
       '<div class="td-foot">dipilih oleh <b>' + escapeHtml(td.picker || '') + '</b></div>';
   }
-  return '<div class="' + cls.join(' ') + '">' + inner + '</div>';
+  return '<div class="' + cls.join(' ') + '"' + challengerAttr + '>' + inner + '</div>';
+}
+
+function refreshPendingTruthDareCards(challenger) {
+  if (!challenger || !messagesEl) return;
+  const selector = '.td-card.td-pending[data-td-challenger="' + challenger.replace(/"/g, '\\"') + '"]';
+  const cards = messagesEl.querySelectorAll(selector);
+  const streak = getTruthStreak(challenger);
+  const disable = streak >= TRUTH_STREAK_LIMIT;
+  cards.forEach(function(card) {
+    const truthBtn = card.querySelector('.td-btn-truth');
+    if (truthBtn) truthBtn.disabled = disable;
+    let hint = card.querySelector('.td-streak-hint');
+    if (disable) {
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'td-sub td-streak-hint';
+        card.appendChild(hint);
+      }
+      hint.textContent = 'Sudah ' + streak + '× Truth berturut — pilih Dare dulu.';
+    } else if (hint) {
+      hint.remove();
+    }
+  });
 }
 
 function applyTruthDareUpdate(id, payload) {
