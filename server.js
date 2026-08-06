@@ -1407,23 +1407,27 @@ async function fetchGeminiTruthOrDare(choice) {
   if (!botEnabled) return null;
   const isTruth = choice === 'truth';
   const pool = isTruth ? TRUTH_CATEGORIES : DARE_CATEGORIES;
-  const category = pool[Math.floor(Math.random() * pool.length)];
+  const allowSpicyCategory = Math.random() < 0.15;
+  const filteredPool = allowSpicyCategory
+    ? pool
+    : pool.filter((c) => !c.startsWith('topik dewasa'));
+  const category = filteredPool[Math.floor(Math.random() * filteredPool.length)];
   const spiceLevel = Math.random();
-  const spiceHint = spiceLevel < 0.35
-    ? 'Level: santai dan lucu.'
-    : spiceLevel < 0.7
-      ? 'Level: agak nakal, menggoda, bikin deg-degan.'
-      : 'Level: berani, spicy, dewasa — jangan ragu masuk ke topik intim atau seksual dengan tetap consensual dan playful.';
+  const spiceHint = spiceLevel < 0.75
+    ? 'Level: santai, umum, dan lucu — hindari topik seksual atau terlalu intim.'
+    : spiceLevel < 0.92
+      ? 'Level: agak menggoda atau bikin deg-degan, tapi tetap sopan dan tidak vulgar.'
+      : 'Level: boleh sedikit spicy atau dewasa, tetap consensual dan playful, jangan vulgar berlebihan.';
   const systemPrompt = isTruth
     ? 'Kamu adalah pembuat pertanyaan Truth untuk game Truth or Dare antara dua orang dewasa yang sudah dekat (bisa pasangan, gebetan, atau sahabat) via chat pribadi. ' +
       'Tulis SATU pertanyaan personal dalam Bahasa Indonesia informal (gaya obrolan santai, boleh pakai "lo/gue" atau "kamu/aku"). ' +
       'Wajib eksplorasi topik yang bervariasi setiap kali — jangan generik, jangan mainstream, jangan mirip pertanyaan sebelumnya. ' +
-      'Boleh masuk ke topik dewasa/seksual selama tetap consensual dan tidak vulgar berlebihan. ' +
+      'DEFAULT-nya pertanyaan umum: kebiasaan, opini, kenangan, hobi, cerita lucu, mimpi, ketakutan, dsb. Jangan sering-sering topik seksual atau terlalu intim — cukup sesekali saja kalau memang diminta level spicy. ' +
       'Hindari SARA, hal yang benar-benar menyakitkan/traumatis, atau melibatkan minor. ' +
       'Maks 25 kata. Balas hanya satu pertanyaan diakhiri tanda tanya, tanpa quote marks, tanpa emoji, tanpa nomor, tanpa prefix "Truth:".'
     : 'Kamu adalah pembuat tantangan Dare untuk game Truth or Dare antara dua orang dewasa yang sudah dekat via chat pribadi. ' +
       'Tulis SATU tantangan dalam Bahasa Indonesia informal yang bisa dilakukan lewat chat (voice note, foto, screenshot, ketik gaya tertentu, roleplay, dsb.). ' +
-      'Wajib variatif — jangan itu-itu aja. Boleh lucu, manis, kreatif, spicy, atau dewasa (consensual, playful). ' +
+      'Wajib variatif — jangan itu-itu aja. DEFAULT-nya tantangan umum yang lucu, kreatif, manis, atau random. Jangan sering-sering ke arah seksual/dewasa — cukup sesekali kalau diminta level spicy. ' +
       'Hindari melibatkan orang lain di dunia nyata, hal berbahaya secara fisik, konten ilegal, atau melibatkan minor. ' +
       'Maks 25 kata. Balas hanya satu tantangan sebagai kalimat perintah, tanpa quote marks, tanpa emoji, tanpa nomor, tanpa prefix "Dare:".';
   const userPrompt = isTruth
@@ -1493,6 +1497,40 @@ const lastRead = new Map();
 const lastSeen = new Map();
 const activeCalls = new Map();
 const lastPingAt = new Map();
+const tttSessions = new Map();
+
+const TTT_WIN_LINES = [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8],
+  [0, 3, 6], [1, 4, 7], [2, 5, 8],
+  [0, 4, 8], [2, 4, 6],
+];
+
+function tttEvaluate(board) {
+  for (const [a, b, c] of TTT_WIN_LINES) {
+    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+      return { symbol: board[a], line: [a, b, c] };
+    }
+  }
+  if (board.every((c) => c)) return { symbol: null, line: null, draw: true };
+  return null;
+}
+
+function tttPublicState(session) {
+  if (!session) return null;
+  return {
+    peer: session.peer,
+    status: session.status,
+    inviter: session.inviter,
+    opponent: session.opponent,
+    symbols: session.symbols,
+    turn: session.turn,
+    board: session.board.slice(),
+    winner: session.winner,
+    winnerSymbol: session.winnerSymbol,
+    winLine: session.winLine,
+    startedAt: session.startedAt,
+  };
+}
 
 function presenceSnapshot() {
   const snap = {};
@@ -1931,6 +1969,199 @@ io.on('connection', async (socket) => {
       console.error('truth-dare:pick error:', e.message);
       if (typeof ack === 'function') ack({ error: e.message });
     }
+  });
+
+  socket.on('tictactoe:sync', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = tttSessions.get(peer) || null;
+    if (typeof ack === 'function') ack({ ok: true, session: tttPublicState(session) });
+  });
+
+  socket.on('tictactoe:invite', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const existing = tttSessions.get(peer);
+    if (existing && existing.status !== 'done') {
+      if (typeof ack === 'function') ack({ error: 'Sesi masih aktif' });
+      return;
+    }
+    const opponent = recipientOf(username, peer);
+    const session = {
+      peer,
+      status: 'pending',
+      inviter: username,
+      opponent,
+      symbols: { [username]: 'X', [opponent]: 'O' },
+      turn: 'X',
+      board: Array(9).fill(null),
+      winner: null,
+      winnerSymbol: null,
+      winLine: null,
+      startedAt: new Date().toISOString(),
+    };
+    tttSessions.set(peer, session);
+    emitToThread(peer, 'tictactoe:state', { peer, session: tttPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true, session: tttPublicState(session) });
+  });
+
+  socket.on('tictactoe:accept', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = tttSessions.get(peer);
+    if (!session || session.status !== 'pending') {
+      if (typeof ack === 'function') ack({ error: 'Tidak ada undangan' });
+      return;
+    }
+    if (username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan penerima undangan' });
+      return;
+    }
+    session.status = 'active';
+    session.startedAt = new Date().toISOString();
+    emitToThread(peer, 'tictactoe:state', { peer, session: tttPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true, session: tttPublicState(session) });
+  });
+
+  socket.on('tictactoe:decline', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = tttSessions.get(peer);
+    if (!session || session.status !== 'pending') {
+      if (typeof ack === 'function') ack({ error: 'Tidak ada undangan' });
+      return;
+    }
+    if (username !== session.opponent && username !== session.inviter) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    tttSessions.delete(peer);
+    emitToThread(peer, 'tictactoe:state', { peer, session: null, reason: 'declined', by: username });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('tictactoe:move', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const index = Number(payload && payload.index);
+    if (!Number.isInteger(index) || index < 0 || index > 8) {
+      if (typeof ack === 'function') ack({ error: 'Kotak tidak valid' });
+      return;
+    }
+    const session = tttSessions.get(peer);
+    if (!session || session.status !== 'active') {
+      if (typeof ack === 'function') ack({ error: 'Game belum dimulai' });
+      return;
+    }
+    const mySymbol = session.symbols[username];
+    if (!mySymbol) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    if (session.turn !== mySymbol) {
+      if (typeof ack === 'function') ack({ error: 'Belum giliran kamu' });
+      return;
+    }
+    if (session.board[index]) {
+      if (typeof ack === 'function') ack({ error: 'Kotak sudah terisi' });
+      return;
+    }
+    session.board[index] = mySymbol;
+    const result = tttEvaluate(session.board);
+    if (result) {
+      session.status = 'done';
+      if (result.symbol) {
+        session.winnerSymbol = result.symbol;
+        session.winner = Object.keys(session.symbols).find((u) => session.symbols[u] === result.symbol) || null;
+        session.winLine = result.line;
+      } else {
+        session.winner = 'draw';
+      }
+    } else {
+      session.turn = mySymbol === 'X' ? 'O' : 'X';
+    }
+    emitToThread(peer, 'tictactoe:state', { peer, session: tttPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true, session: tttPublicState(session) });
+  });
+
+  socket.on('tictactoe:rematch', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = tttSessions.get(peer);
+    if (!session || session.status !== 'done') {
+      if (typeof ack === 'function') ack({ error: 'Belum ada sesi selesai' });
+      return;
+    }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    const newInviter = username;
+    const newOpponent = newInviter === session.inviter ? session.opponent : session.inviter;
+    const next = {
+      peer,
+      status: 'active',
+      inviter: newInviter,
+      opponent: newOpponent,
+      symbols: { [newInviter]: 'X', [newOpponent]: 'O' },
+      turn: 'X',
+      board: Array(9).fill(null),
+      winner: null,
+      winnerSymbol: null,
+      winLine: null,
+      startedAt: new Date().toISOString(),
+    };
+    tttSessions.set(peer, next);
+    emitToThread(peer, 'tictactoe:state', { peer, session: tttPublicState(next) });
+    if (typeof ack === 'function') ack({ ok: true, session: tttPublicState(next) });
+  });
+
+  socket.on('tictactoe:leave', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = tttSessions.get(peer);
+    if (!session) {
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    if (session.status === 'active') {
+      session.status = 'done';
+      const otherSymbol = session.symbols[username] === 'X' ? 'O' : 'X';
+      session.winnerSymbol = otherSymbol;
+      session.winner = Object.keys(session.symbols).find((u) => session.symbols[u] === otherSymbol) || null;
+      session.winLine = null;
+      session.resigned = username;
+      emitToThread(peer, 'tictactoe:state', { peer, session: tttPublicState(session), reason: 'resigned', by: username });
+    } else {
+      tttSessions.delete(peer);
+      emitToThread(peer, 'tictactoe:state', { peer, session: null, reason: 'left', by: username });
+    }
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
   socket.on('typing', (payload) => {

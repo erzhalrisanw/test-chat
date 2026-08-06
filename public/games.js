@@ -25,13 +25,23 @@
 
   let currentGameId = null;
   let cleanupFn = null;
+  let sharedSocket = null;
+  let getPartnerFn = null;
+  let getMeFn = null;
+
+  function init(opts) {
+    if (opts && opts.socket) sharedSocket = opts.socket;
+    if (opts && typeof opts.getPartner === 'function') getPartnerFn = opts.getPartner;
+    if (opts && typeof opts.getMe === 'function') getMeFn = opts.getMe;
+  }
 
   const GAMES = {
-    '2048':   { title: '2048',     mount: mount2048 },
-    'snake':  { title: 'Snake',    mount: mountSnake },
-    'memory': { title: 'Memory',   mount: mountMemory },
-    'dino':   { title: 'Dino Run', mount: mountDino },
-    'racing': { title: 'Racing',   mount: mountRacing },
+    '2048':      { title: '2048',        mount: mount2048 },
+    'snake':     { title: 'Snake',       mount: mountSnake },
+    'memory':    { title: 'Memory',      mount: mountMemory },
+    'dino':      { title: 'Dino Run',    mount: mountDino },
+    'racing':    { title: 'Racing',      mount: mountRacing },
+    'tictactoe': { title: 'Tic-Tac-Toe', mount: mountTicTacToe },
   };
 
   function styleVar(name, fallback) {
@@ -39,10 +49,14 @@
     return v || fallback;
   }
 
-  function open() {
+  function open(gameId) {
     modal.classList.remove('hidden');
     syncBestsFromServer();
-    showPicker();
+    if (gameId && GAMES[gameId]) {
+      selectGame(gameId);
+    } else {
+      showPicker();
+    }
   }
   function close() {
     unmountCurrent();
@@ -990,5 +1004,193 @@
     };
   }
 
-  window.MiniGames = { open: open, close: close };
+  // ------------------------------------------------------------------
+  // Tic-Tac-Toe (multiplayer)
+  // ------------------------------------------------------------------
+  function mountTicTacToe(rootEl) {
+    if (!sharedSocket) {
+      rootEl.innerHTML = '<div class="ttt-wrap"><div class="ttt-status">Koneksi belum siap. Coba lagi sebentar.</div></div>';
+      hintEl.textContent = '';
+      return function () {};
+    }
+    const me = (getMeFn && getMeFn()) || localStorage.getItem('username') || '';
+    const meIsHub = me === HUB_USER;
+    const peer = meIsHub
+      ? (getPartnerFn ? getPartnerFn() : localStorage.getItem('activePeer'))
+      : me;
+    if (!peer) {
+      rootEl.innerHTML = '<div class="ttt-wrap"><div class="ttt-status">Pilih peer aktif dulu di daftar chat.</div></div>';
+      hintEl.textContent = '';
+      return function () {};
+    }
+
+    scoreEl.textContent = '0';
+    bestWrap.classList.add('hidden');
+    movesWrap.classList.add('hidden');
+    hintEl.textContent = 'Sinkron dengan peer via realtime chat.';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'ttt-wrap';
+    const statusEl = document.createElement('div');
+    statusEl.className = 'ttt-status';
+    const grid = document.createElement('div');
+    grid.className = 'ttt-grid';
+    const actions = document.createElement('div');
+    actions.className = 'ttt-actions';
+    wrap.appendChild(statusEl);
+    wrap.appendChild(grid);
+    wrap.appendChild(actions);
+    rootEl.innerHTML = '';
+    rootEl.appendChild(wrap);
+
+    const cells = [];
+    for (let i = 0; i < 9; i++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ttt-cell';
+      btn.dataset.index = String(i);
+      btn.addEventListener('click', () => onCellClick(i));
+      grid.appendChild(btn);
+      cells.push(btn);
+    }
+
+    let currentSession = null;
+
+    function symOf(username) {
+      return currentSession && currentSession.symbols ? currentSession.symbols[username] : null;
+    }
+
+    function render() {
+      actions.innerHTML = '';
+      const s = currentSession;
+      if (!s) {
+        statusEl.textContent = 'Ajak peer main Tic-Tac-Toe.';
+        for (const c of cells) {
+          c.textContent = '';
+          c.className = 'ttt-cell';
+          c.disabled = true;
+        }
+        addBtn('Undang peer', 'primary', invite);
+        return;
+      }
+      for (let i = 0; i < 9; i++) {
+        const v = s.board[i];
+        cells[i].textContent = v || '';
+        cells[i].className = 'ttt-cell' + (v ? ' ' + v.toLowerCase() : '');
+        if (s.winLine && s.winLine.indexOf(i) >= 0) cells[i].classList.add('win');
+        cells[i].disabled = true;
+      }
+      const mySym = symOf(me);
+      if (s.status === 'pending') {
+        if (me === s.inviter) {
+          statusEl.innerHTML = 'Menunggu <b>' + escapeText(s.opponent) + '</b> menerima undangan…';
+          addBtn('Batalkan', 'secondary', decline);
+        } else if (me === s.opponent) {
+          statusEl.innerHTML = '<b>' + escapeText(s.inviter) + '</b> mengajakmu main. Terima?';
+          addBtn('Terima', 'primary', accept);
+          addBtn('Tolak', 'secondary', decline);
+        } else {
+          statusEl.textContent = 'Sesi sedang berlangsung.';
+        }
+      } else if (s.status === 'active') {
+        const isMyTurn = mySym && s.turn === mySym;
+        statusEl.innerHTML = isMyTurn
+          ? 'Giliranmu ' + symChip(mySym)
+          : 'Giliran peer ' + symChip(s.turn);
+        if (isMyTurn) {
+          for (let i = 0; i < 9; i++) if (!s.board[i]) cells[i].disabled = false;
+        }
+        addBtn('Menyerah', 'secondary', leave);
+      } else if (s.status === 'done') {
+        if (s.winner === 'draw') {
+          statusEl.textContent = 'Seri! ✋';
+        } else if (s.winner === me) {
+          statusEl.innerHTML = 'Kamu menang ' + symChip(s.winnerSymbol) + ' 🎉';
+        } else {
+          statusEl.innerHTML = 'Kamu kalah dari <b>' + escapeText(s.winner || 'peer') + '</b>';
+        }
+        addBtn('Main lagi', 'primary', rematch);
+        addBtn('Tutup', 'secondary', () => { leave(); });
+      }
+    }
+
+    function addBtn(label, variant, handler) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ttt-btn' + (variant === 'secondary' ? ' secondary' : '');
+      b.textContent = label;
+      b.addEventListener('click', handler);
+      actions.appendChild(b);
+    }
+    function symChip(sym) {
+      if (!sym) return '';
+      return '<span class="ttt-sym ' + sym.toLowerCase() + '">' + sym + '</span>';
+    }
+    function escapeText(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function onCellClick(i) {
+      const s = currentSession;
+      if (!s || s.status !== 'active') return;
+      const mySym = symOf(me);
+      if (!mySym || s.turn !== mySym) return;
+      if (s.board[i]) return;
+      sharedSocket.emit('tictactoe:move', { peer, index: i }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function invite() {
+      sharedSocket.emit('tictactoe:invite', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function accept() {
+      sharedSocket.emit('tictactoe:accept', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function decline() {
+      sharedSocket.emit('tictactoe:decline', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function rematch() {
+      sharedSocket.emit('tictactoe:rematch', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function leave() {
+      sharedSocket.emit('tictactoe:leave', { peer }, () => {});
+    }
+
+    let hintTimer = null;
+    function flashHint(msg) {
+      hintEl.textContent = msg;
+      if (hintTimer) clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => { hintEl.textContent = 'Sinkron dengan peer via realtime chat.'; }, 2500);
+    }
+
+    function onState(payload) {
+      if (!payload || payload.peer !== peer) return;
+      currentSession = payload.session || null;
+      render();
+    }
+    sharedSocket.on('tictactoe:state', onState);
+    sharedSocket.emit('tictactoe:sync', { peer }, (resp) => {
+      if (resp && resp.ok) {
+        currentSession = resp.session || null;
+        render();
+      } else {
+        render();
+      }
+    });
+
+    return function cleanup() {
+      sharedSocket.off('tictactoe:state', onState);
+      if (hintTimer) clearTimeout(hintTimer);
+    };
+  }
+
+  window.MiniGames = { open: open, close: close, init: init };
 })();

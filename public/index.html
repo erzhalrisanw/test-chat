@@ -118,6 +118,11 @@
       <button id="call-accept" type="button" class="call-ok" title="Accept">Accept</button>
       <button id="call-decline" type="button" class="call-danger" title="Decline">Decline</button>
     </div>
+    <div id="ttt-incoming" class="hidden">
+      <span class="ttt-incoming-text"><b id="ttt-incoming-from"></b> mengajakmu main Tic-Tac-Toe</span>
+      <button id="ttt-incoming-accept" type="button" class="ttt-ok" title="Terima">Terima</button>
+      <button id="ttt-incoming-decline" type="button" class="ttt-danger" title="Tolak">Tolak</button>
+    </div>
     <div id="reply-preview" class="hidden">
       <div class="reply-preview-bar"></div>
       <div class="reply-preview-content">
@@ -168,6 +173,7 @@
       <img id="preview-img" alt="preview" />
       <video id="preview-video" class="hidden" controls controlslist="nodownload noplaybackrate" playsinline oncontextmenu="return false"></video>
       <button id="preview-view-once" type="button" class="view-once-toggle" title="Sekali lihat" aria-pressed="false">🕐 1x</button>
+      <button id="preview-edit" type="button" class="preview-edit-btn hidden" title="Edit foto">✏️</button>
       <button id="preview-cancel" type="button" title="Cancel">✕</button>
     </div>
   </div>
@@ -322,6 +328,11 @@
           <span class="game-card-title">Racing</span>
           <span class="game-card-sub">Hindari mobil lawan</span>
         </button>
+        <button type="button" class="game-card" data-game="tictactoe">
+          <span class="game-card-icon">⭕</span>
+          <span class="game-card-title">Tic-Tac-Toe</span>
+          <span class="game-card-sub">Main bareng peer</span>
+        </button>
       </div>
       <div id="game-leaderboard" class="game-leaderboard hidden">
         <div id="game-lb-header" class="game-lb-header"></div>
@@ -343,11 +354,71 @@
     </div>
   </div>
 
+  <div id="photo-editor" class="hidden" role="dialog" aria-modal="true" aria-label="Edit foto">
+    <div class="pe-topbar">
+      <button id="pe-cancel" type="button" class="pe-topbtn" title="Batal">✕</button>
+      <span class="pe-title">Edit foto</span>
+      <button id="pe-save" type="button" class="pe-topbtn pe-save" title="Simpan">Selesai</button>
+    </div>
+    <div id="pe-stage" class="pe-stage">
+      <canvas id="pe-canvas"></canvas>
+      <div id="pe-crop-overlay" class="hidden">
+        <div id="pe-crop-rect">
+          <span class="pe-crop-handle tl" data-h="tl"></span>
+          <span class="pe-crop-handle tr" data-h="tr"></span>
+          <span class="pe-crop-handle bl" data-h="bl"></span>
+          <span class="pe-crop-handle br" data-h="br"></span>
+        </div>
+      </div>
+      <div id="pe-sticker-layer"></div>
+    </div>
+    <div id="pe-tool-panel" class="pe-tool-panel hidden">
+      <div id="pe-pen-panel" class="hidden">
+        <div class="pe-swatches">
+          <button type="button" class="pe-swatch" data-color="#ff2d2d" style="background:#ff2d2d"></button>
+          <button type="button" class="pe-swatch" data-color="#ffb400" style="background:#ffb400"></button>
+          <button type="button" class="pe-swatch" data-color="#2ecc71" style="background:#2ecc71"></button>
+          <button type="button" class="pe-swatch" data-color="#3498db" style="background:#3498db"></button>
+          <button type="button" class="pe-swatch" data-color="#000000" style="background:#000000"></button>
+          <button type="button" class="pe-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+        </div>
+        <div class="pe-sizes">
+          <button type="button" class="pe-size" data-size="3">•</button>
+          <button type="button" class="pe-size" data-size="6">●</button>
+          <button type="button" class="pe-size" data-size="12">⬤</button>
+        </div>
+      </div>
+      <div id="pe-crop-panel" class="hidden">
+        <div class="pe-crop-ratios">
+          <button type="button" class="pe-ratio" data-ratio="free">Bebas</button>
+          <button type="button" class="pe-ratio" data-ratio="1:1">1:1</button>
+          <button type="button" class="pe-ratio" data-ratio="4:3">4:3</button>
+        </div>
+        <div class="pe-crop-actions">
+          <button type="button" id="pe-crop-apply" class="pe-panel-btn">Terapkan</button>
+          <button type="button" id="pe-crop-cancel" class="pe-panel-btn secondary">Batal</button>
+        </div>
+      </div>
+      <div id="pe-sticker-panel" class="hidden">
+        <div id="pe-sticker-grid" class="pe-sticker-grid"></div>
+      </div>
+    </div>
+    <div class="pe-toolbar">
+      <button type="button" id="pe-tool-crop" class="pe-tool" title="Crop"><span>✂️</span><span class="pe-tool-label">Crop</span></button>
+      <button type="button" id="pe-tool-rotate" class="pe-tool" title="Putar 90°"><span>🔄</span><span class="pe-tool-label">Putar</span></button>
+      <button type="button" id="pe-tool-pen" class="pe-tool" title="Coret"><span>✏️</span><span class="pe-tool-label">Coret</span></button>
+      <button type="button" id="pe-tool-sticker" class="pe-tool" title="Stiker"><span>😀</span><span class="pe-tool-label">Stiker</span></button>
+      <button type="button" id="pe-tool-undo" class="pe-tool" title="Undo"><span>↶</span><span class="pe-tool-label">Undo</span></button>
+      <button type="button" id="pe-tool-reset" class="pe-tool" title="Reset"><span>♻️</span><span class="pe-tool-label">Reset</span></button>
+    </div>
+  </div>
+
   <canvas id="weather-canvas" aria-hidden="true"></canvas>
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/call.js"></script>
   <script src="/games.js"></script>
+  <script src="/photo-editor.js"></script>
   <script src="/weather.js"></script>
   <script src="/app.js"></script>
 </body>

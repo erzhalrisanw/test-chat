@@ -16,6 +16,7 @@ const previewImg = document.getElementById('preview-img');
 const previewVideo = document.getElementById('preview-video');
 const previewCancel = document.getElementById('preview-cancel');
 const previewViewOnceBtn = document.getElementById('preview-view-once');
+const previewEditBtn = document.getElementById('preview-edit');
 const recViewOnceBtn = document.getElementById('rec-view-once');
 
 let pendingImage = null;
@@ -638,6 +639,7 @@ function switchPeer(peer) {
   renderPresence();
   applyReadStateForCurrentPeer();
   socket.emit('selectPeer', { peer });
+  if (typeof window.__tttBannerSync === 'function') window.__tttBannerSync();
 }
 
 function reloadCurrentPeer() {
@@ -1319,6 +1321,67 @@ function urlBase64ToUint8Array(base64String) {
   return arr;
 }
 
+function setupTicTacToeBanner() {
+  if (!socket) return;
+  const banner = document.getElementById('ttt-incoming');
+  const fromEl = document.getElementById('ttt-incoming-from');
+  const acceptBtn = document.getElementById('ttt-incoming-accept');
+  const declineBtn = document.getElementById('ttt-incoming-decline');
+  if (!banner || !fromEl || !acceptBtn || !declineBtn) return;
+
+  let pendingPeer = null;
+
+  function hide() {
+    pendingPeer = null;
+    banner.classList.add('hidden');
+    fromEl.textContent = '';
+  }
+  function show(inviter, peer) {
+    pendingPeer = peer;
+    fromEl.textContent = inviter;
+    banner.classList.remove('hidden');
+  }
+
+  acceptBtn.addEventListener('click', () => {
+    if (!pendingPeer) { hide(); return; }
+    const peer = pendingPeer;
+    hide();
+    if (isHub() && peer !== currentPeer) switchPeer(peer);
+    socket.emit('tictactoe:accept', { peer }, (resp) => {
+      if (resp && resp.error) return;
+      if (window.MiniGames && typeof window.MiniGames.open === 'function') {
+        window.MiniGames.open('tictactoe');
+      }
+    });
+  });
+  declineBtn.addEventListener('click', () => {
+    if (!pendingPeer) { hide(); return; }
+    const peer = pendingPeer;
+    hide();
+    socket.emit('tictactoe:decline', { peer }, () => {});
+  });
+
+  socket.on('tictactoe:state', (payload) => {
+    if (!payload) return;
+    const s = payload.session;
+    if (!s || s.status !== 'pending') { hide(); return; }
+    if (s.opponent !== me) { hide(); return; }
+    show(s.inviter, s.peer);
+  });
+
+  function syncForCurrent() {
+    if (!currentPeer) { hide(); return; }
+    socket.emit('tictactoe:sync', { peer: currentPeer }, (resp) => {
+      if (!resp || !resp.ok) return;
+      const s = resp.session;
+      if (s && s.status === 'pending' && s.opponent === me) show(s.inviter, s.peer);
+      else hide();
+    });
+  }
+  syncForCurrent();
+  window.__tttBannerSync = syncForCurrent;
+}
+
 function unlockAudio() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1988,6 +2051,16 @@ function startChat(token, username) {
       getMe: () => me,
     });
   }
+
+  if (window.MiniGames && typeof window.MiniGames.init === 'function') {
+    window.MiniGames.init({
+      socket,
+      getPartner,
+      getMe: () => me,
+    });
+  }
+
+  setupTicTacToeBanner();
 
   socket.on('history', (payload) => {
     const peer = payload && payload.peer;
@@ -3406,6 +3479,7 @@ fileInput.addEventListener('change', function() {
     previewVideo.removeAttribute('src');
     previewVideo.load();
     preview.classList.remove('hidden');
+    if (previewEditBtn) previewEditBtn.classList.remove('hidden');
     msgInput.placeholder = 'Add a caption (optional)...';
     msgInput.focus();
   };
@@ -3413,6 +3487,20 @@ fileInput.addEventListener('change', function() {
 });
 
 previewCancel.addEventListener('click', clearPreview);
+
+if (previewEditBtn) {
+  previewEditBtn.addEventListener('click', () => {
+    if (!pendingImage || !window.PhotoEditor || typeof window.PhotoEditor.open !== 'function') return;
+    window.PhotoEditor.open(pendingImage, {
+      me,
+      onSave: (dataUrl) => {
+        if (!dataUrl) return;
+        pendingImage = dataUrl;
+        previewImg.src = dataUrl;
+      },
+    });
+  });
+}
 
 if (previewViewOnceBtn) {
   previewViewOnceBtn.addEventListener('click', function(e) {
@@ -3439,6 +3527,7 @@ function setPendingVideo(blob) {
   previewVideo.src = previewUrl;
   previewVideo.classList.remove('hidden');
   preview.classList.remove('hidden');
+  if (previewEditBtn) previewEditBtn.classList.add('hidden');
   msgInput.placeholder = 'Add a caption (optional)...';
 }
 
@@ -3455,6 +3544,7 @@ function clearPreview() {
   previewVideo.load();
   previewVideo.classList.add('hidden');
   preview.classList.add('hidden');
+  if (previewEditBtn) previewEditBtn.classList.add('hidden');
   msgInput.placeholder = 'Type a message...';
   setPendingViewOnce(false);
 }
@@ -3497,7 +3587,10 @@ camSnap.addEventListener('click', function() {
     pendingImage = dataUrl;
   }
   previewImg.src = pendingImage;
+  previewImg.classList.remove('hidden');
+  previewVideo.classList.add('hidden');
   preview.classList.remove('hidden');
+  if (previewEditBtn) previewEditBtn.classList.remove('hidden');
   msgInput.placeholder = 'Tambahkan caption (opsional)...';
   closeCamera();
   msgInput.focus();
