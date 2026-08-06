@@ -282,7 +282,8 @@
   }
   cropRect.addEventListener('pointerdown', (e) => {
     if (currentTool !== 'crop') return;
-    if (e.target.classList.contains('pe-crop-handle')) {
+    const isHandle = e.target.classList.contains('pe-crop-handle') || e.target.classList.contains('pe-crop-edge');
+    if (isHandle) {
       cropDrag = { mode: 'resize', handle: e.target.dataset.h, startX: e.clientX, startY: e.clientY, rect: rectBounds() };
     } else {
       cropDrag = { mode: 'move', startX: e.clientX, startY: e.clientY, rect: rectBounds() };
