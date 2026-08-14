@@ -2490,8 +2490,7 @@ function buildMessageNodes(msg) {
     }
   }
   const unsentTag = (isUnsent && !hideContent) ? '<span class="unsent-tag" title="Pesan ditarik oleh pengirim">ditarik</span>' : '';
-  const botTag = msg.senderBot ? '<span class="ai-tag" title="Balasan otomatis dari AI stand-in">AI</span>' : '';
-  const meta = '<div class="meta">' + escapeHtml(username) + botTag + ' • ' + t + tick + unsentTag + '</div>';
+  const meta = '<div class="meta">' + escapeHtml(username) + ' • ' + t + tick + unsentTag + '</div>';
   let quote = '';
   if (replyTo && !hideContent) {
     const replyHide = !!(replyTo.unsent && !isHub());
@@ -2660,6 +2659,10 @@ let openMsgMenuBtn = null;
 function closeOpenMsgMenu() {
   if (!openMsgMenu) return;
   openMsgMenu.classList.add('hidden');
+  if (openMsgMenu.classList.contains('gallery-menu')) {
+    openMsgMenu.style.left = '';
+    openMsgMenu.style.top = '';
+  }
   if (openMsgMenuBtn) openMsgMenuBtn.setAttribute('aria-expanded', 'false');
   openMsgMenu = null;
   openMsgMenuBtn = null;
@@ -3921,6 +3924,25 @@ function renderGalleryPage() {
   updatePaginationControls();
 }
 
+function positionGalleryMenu(menuEl, btn) {
+  menuEl.style.left = '0px';
+  menuEl.style.top = '0px';
+  var btnRect = btn.getBoundingClientRect();
+  var mw = menuEl.offsetWidth;
+  var mh = menuEl.offsetHeight;
+  var vw = window.innerWidth;
+  var vh = window.innerHeight;
+  var margin = 8;
+  var top = btnRect.top - mh - 6;
+  if (top < margin) top = btnRect.bottom + 6;
+  if (top + mh > vh - margin) top = Math.max(margin, vh - margin - mh);
+  var left = btnRect.right - mw;
+  if (left < margin) left = margin;
+  if (left + mw > vw - margin) left = vw - margin - mw;
+  menuEl.style.left = left + 'px';
+  menuEl.style.top = top + 'px';
+}
+
 function attachGalleryMenu(cell, id) {
   var items = [
     '<button class="gallery-menu-item" type="button" role="menuitem" data-action="view"><span class="gallery-menu-icon">💬</span><span class="gallery-menu-label">Lihat di chat</span></button>'
@@ -3944,6 +3966,7 @@ function attachGalleryMenu(cell, id) {
       menuBtn.setAttribute('aria-expanded', 'true');
       openMsgMenu = menuEl;
       openMsgMenuBtn = menuBtn;
+      positionGalleryMenu(menuEl, menuBtn);
     }
   });
   menuEl.querySelectorAll('.gallery-menu-item').forEach(function(item) {
@@ -4080,6 +4103,12 @@ if (gameBtn) {
 galleryClose.addEventListener('click', closeGallery);
 document.getElementById('gallery-prev').addEventListener('click', goToPrevPage);
 document.getElementById('gallery-next').addEventListener('click', goToNextPage);
+galleryGrid.addEventListener('scroll', function() {
+  if (openMsgMenu && openMsgMenu.classList.contains('gallery-menu')) closeOpenMsgMenu();
+});
+window.addEventListener('resize', function() {
+  if (openMsgMenu && openMsgMenu.classList.contains('gallery-menu')) closeOpenMsgMenu();
+});
 
 function pickAudioMime() {
   if (typeof MediaRecorder === 'undefined') return null;

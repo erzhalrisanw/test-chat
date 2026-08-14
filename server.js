@@ -52,9 +52,6 @@ async function initDb() {
   try {
     await db.execute(`ALTER TABLE messages ADD COLUMN unsent INTEGER NOT NULL DEFAULT 0`);
   } catch (_) {}
-  try {
-    await db.execute(`ALTER TABLE messages ADD COLUMN sender_bot INTEGER NOT NULL DEFAULT 0`);
-  } catch (_) {}
   await db.execute({
     sql: `UPDATE messages SET peer = CASE WHEN username = ? THEN ? ELSE username END WHERE peer IS NULL`,
     args: [HUB_USER, LEGACY_PEER],
@@ -334,7 +331,6 @@ const r2Client = r2Enabled
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-const BOT_IDLE_MS = Number(process.env.BOT_IDLE_MS) || 60 * 60 * 1000;
 const botEnabled = !!GEMINI_API_KEY;
 
 const VIDEO_MAX_BYTES = 500 * 1024 * 1024;
@@ -470,8 +466,8 @@ function applyUserTextTransforms(username, text) {
 
 async function saveMessage(msg) {
   const result = await db.execute({
-    sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id, peer, sender_bot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.audio || null, msg.time, msg.replyToId || null, msg.peer, msg.senderBot ? 1 : 0],
+    sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id, peer) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.audio || null, msg.time, msg.replyToId || null, msg.peer],
   });
   return Number(result.lastInsertRowid);
 }
@@ -493,7 +489,6 @@ function mapRow(r) {
     time: r.time,
     peer: r.peer,
     unsent: !!Number(r.unsent || 0),
-    senderBot: !!Number(r.sender_bot || 0),
   };
   if (r.reply_to_id) {
     const replySticker = isStickerRef(r.reply_image);
@@ -539,7 +534,7 @@ async function attachReactions(messages) {
 
 async function getMessageById(id) {
   const result = await db.execute({
-    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.sender_bot,
+    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
                  p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
           FROM messages m
           LEFT JOIN messages p ON m.reply_to_id = p.id
@@ -554,13 +549,13 @@ async function getMessageById(id) {
 
 async function getHistory(peer, limit = 50, beforeId = null) {
   const sql = beforeId
-    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.sender_bot,
+    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
        WHERE m.peer = ? AND m.id < ?
        ORDER BY m.id DESC LIMIT ?`
-    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.sender_bot,
+    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
@@ -1180,56 +1175,6 @@ app.post('/push-unsubscribe', async (req, res) => {
   }
 });
 
-let hubOfflineSince = null;
-let hubOfflineTimer = null;
-
-function isHubOfflineAndIdle() {
-  if (onlineUsers.has(HUB_USER)) return false;
-  if (hubOfflineSince == null) return false;
-  return Date.now() - hubOfflineSince >= BOT_IDLE_MS;
-}
-
-function scheduleHubOfflineSweep() {
-  if (!botEnabled) return;
-  if (hubOfflineTimer) return;
-  if (hubOfflineSince == null) return;
-  const remaining = Math.max(0, BOT_IDLE_MS - (Date.now() - hubOfflineSince));
-  hubOfflineTimer = setTimeout(() => {
-    hubOfflineTimer = null;
-    sweepBotReplies().catch((e) => console.error('bot sweep failed:', e.message));
-  }, remaining);
-}
-
-function clearHubOfflineSweep() {
-  if (hubOfflineTimer) {
-    clearTimeout(hubOfflineTimer);
-    hubOfflineTimer = null;
-  }
-}
-
-function markHubOffline(sinceMs) {
-  hubOfflineSince = typeof sinceMs === 'number' ? sinceMs : Date.now();
-  clearHubOfflineSweep();
-  scheduleHubOfflineSweep();
-}
-
-function markHubOnline() {
-  hubOfflineSince = null;
-  clearHubOfflineSweep();
-}
-
-async function sweepBotReplies() {
-  if (!botEnabled) return;
-  for (const peer of peersList()) {
-    if (onlineUsers.has(HUB_USER)) return;
-    try {
-      await runBotReply(peer);
-    } catch (e) {
-      console.error(`bot reply for ${peer} failed:`, e.message);
-    }
-  }
-}
-
 async function fetchGeminiFortune(peer) {
   if (!botEnabled) return null;
   const history = await getHistory(peer, 40);
@@ -1285,61 +1230,6 @@ async function fetchGeminiFortune(peer) {
   if (!Array.isArray(parts)) return null;
   const text = parts.map((p) => p.text || '').join('').trim().replace(/^["']+|["']+$/g, '');
   return text ? text.slice(0, 280) : null;
-}
-
-async function fetchGeminiReply(history, peer) {
-  const contextLines = history
-    .filter((m) => !m.unsent && (m.text || m.image || m.video || m.audio))
-    .map((m) => {
-      const speaker = m.username === HUB_USER ? 'occupatus' : peer;
-      const td = parseTruthDarePayload(m.text);
-      if (td) {
-        if (td.state === 'answered') return `${speaker}: [main Truth or Dare — ${td.choice}: ${td.prompt}]`;
-        return `${speaker}: [ngajak main Truth or Dare]`;
-      }
-      if (m.text) return `${speaker}: ${m.text}`;
-      if (m.image) return `${speaker}: [mengirim foto]`;
-      if (m.video) return `${speaker}: [mengirim video]`;
-      if (m.audio) return `${speaker}: [mengirim voice note]`;
-      return null;
-    })
-    .filter(Boolean)
-    .join('\n');
-  if (!contextLines) return null;
-
-  const systemPrompt =
-    'Kamu adalah AI stand-in yang menemani ngobrol karena orang yang kamu sayang lagi belum sempat balas. ' +
-    'Balas singkat (1-2 kalimat) dalam Bahasa Indonesia informal, mengikuti konteks dan mood obrolan dengan lawan bicara. ' +
-    'Kalau ditanya, jujur bahwa kamu AI stand-in, tapi jangan menyebut soal orang yang kamu sayang atau menyuruh menunggu di setiap balasan — ngobrol saja senatural mungkin. ' +
-    'Jangan pernah menyebut nama "occupatus" — kalau perlu merujuk ke dia, sebut "orang yang kamu sayang". ' +
-    'Jangan berpura-pura jadi dia dan jangan berjanji atas namanya. ' +
-    'Selalu panggil lawan bicara dengan sebutan "sayang" (bukan username-nya). ' +
-    'Hanya arahkan untuk menunggu orang yang kamu sayang balas sendiri kalau memang ada pertanyaan pribadi atau permintaan keputusan yang cuma bisa dijawab dia.';
-  const userPrompt =
-    `Percakapan terakhir antara occupatus dan ${peer}:\n---\n${contextLines}\n---\n` +
-    `Balas pesan terakhir dari ${peer} sebagai AI stand-in.`;
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
-  const body = {
-    system_instruction: { parts: [{ text: systemPrompt }] },
-    contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 200 },
-  };
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const errBody = await resp.text().catch(() => '');
-    console.error('Gemini API error:', resp.status, errBody.slice(0, 200));
-    return null;
-  }
-  const data = await resp.json();
-  const parts = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts;
-  if (!Array.isArray(parts)) return null;
-  const text = parts.map((p) => p.text || '').join('').trim();
-  return text ? text.slice(0, 1000) : null;
 }
 
 const TRUTH_DARE_MARKER = '\u2063\u200C\u2063\u200C';
@@ -1457,32 +1347,6 @@ async function fetchGeminiTruthOrDare(choice) {
   return text ? text.slice(0, 280) : null;
 }
 
-async function runBotReply(peer) {
-  if (!botEnabled) return;
-  const history = await getHistory(peer, 20);
-  if (!history.length) return;
-  const last = history[history.length - 1];
-  if (last.username === HUB_USER) return;
-  const lastTd = parseTruthDarePayload(last.text);
-  if (lastTd && lastTd.state === 'pending') return;
-
-  const reply = await fetchGeminiReply(history, peer);
-  if (!reply) return;
-
-  const now = new Date().toISOString();
-  const msg = { username: HUB_USER, text: reply, time: now, peer, senderBot: true };
-  const id = await saveMessage(msg);
-  const full = await getMessageById(id);
-  const broadcast = full || { ...msg, id, senderBot: true };
-  emitToThread(peer, 'message', broadcast);
-  touchLastSeen(HUB_USER, now);
-  sendPushToRecipient(peer, {
-    title: 'Pembaruan tersedia',
-    body: 'Ada aktivitas baru untuk ditinjau',
-    url: '/',
-  }).catch(() => {});
-}
-
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   const username = token && verifyToken(token);
@@ -1558,7 +1422,6 @@ io.on('connection', async (socket) => {
   if (wasOffline) {
     onlineUsers.add(username);
     touchLastSeen(username, new Date().toISOString());
-    if (username === HUB_USER) markHubOnline();
   }
 
   const initialPeer = defaultPeerFor(username);
@@ -1623,9 +1486,6 @@ io.on('connection', async (socket) => {
         body: 'Simak update dan artikel pilihan hari ini',
         url: '/',
       }).catch(() => {});
-      if (username !== HUB_USER && isHubOfflineAndIdle()) {
-        runBotReply(peer).catch((e) => console.error('bot reply failed:', e.message));
-      }
       if (typeof ack === 'function') ack({ id, peer });
     } catch (e) {
       console.error('save error:', e.message);
@@ -2373,7 +2233,6 @@ io.on('connection', async (socket) => {
     if (activeCalls.has(username)) clearActiveCall('peer_disconnected');
     const iso = new Date().toISOString();
     touchLastSeen(username, iso);
-    if (username === HUB_USER) markHubOffline(Date.now());
     io.emit('presence:update', { username, online: false, lastSeen: iso });
   });
 });
@@ -2387,17 +2246,11 @@ initDb()
   .then(() => loadAllPresence())
   .then(() => loadAllAvatars())
   .then(() => {
-    if (botEnabled) {
-      const hubLastSeenIso = lastSeen.get(HUB_USER);
-      const hubLastSeenMs = hubLastSeenIso ? Date.parse(hubLastSeenIso) : NaN;
-      markHubOffline(Number.isFinite(hubLastSeenMs) ? hubLastSeenMs : Date.now());
-    }
     server.listen(PORT, () => {
       console.log(`Chat running at http://localhost:${PORT}`);
       console.log(`DB: ${process.env.TURSO_DATABASE_URL ? 'Turso (remote)' : 'local file (chat.db)'}`);
       console.log(`Push notifications: ${pushEnabled ? 'enabled' : 'disabled (set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY)'}`);
       console.log(`R2 video storage: ${r2Enabled ? `enabled (${R2_BUCKET})` : 'disabled (set R2_* env vars)'}`);
-      console.log(`AI stand-in: ${botEnabled ? `enabled (${GEMINI_MODEL}, idle ${Math.round(BOT_IDLE_MS / 60000)}m)` : 'disabled (set GEMINI_API_KEY)'}`);
       console.log('Available users:', [...users].join(', '));
     });
   })
