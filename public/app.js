@@ -3871,7 +3871,7 @@ function applyClearHistoryToView(peer) {
   if (typeof renderPeerSwitcherButton === 'function') renderPeerSwitcherButton();
 }
 
-var GALLERY_PAGE_SIZE = 8;
+var GALLERY_PAGE_SIZE = 12;
 var galleryCurrentPage = 1;
 var galleryTotalPages = 0;
 var galleryTotalItems = 0;

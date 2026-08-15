@@ -867,7 +867,7 @@ app.post('/r2-presign-video', async (req, res) => {
   }
 });
 
-const GALLERY_PAGE_DEFAULT = 8;
+const GALLERY_PAGE_DEFAULT = 12;
 const GALLERY_PAGE_MAX = 1000;
 
 app.get('/gallery', async (req, res) => {
