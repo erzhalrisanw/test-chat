@@ -17,11 +17,31 @@
   <link rel="stylesheet" href="/style.css" />
   <script>
     (function () {
+      function isAugustJakarta() {
+        try {
+          return new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Jakarta',
+            month: 'numeric',
+          }).format(new Date()) === '8';
+        } catch (_) {
+          return new Date().getMonth() === 7;
+        }
+      }
       try {
+        if (isAugustJakarta()) {
+          document.documentElement.setAttribute('data-theme', 'merdeka');
+          return;
+        }
         var t = localStorage.getItem('theme');
-        var known = { dark: 1, ocean: 1, forest: 1, sunset: 1 };
-        if (known[t]) document.documentElement.setAttribute('data-theme', t);
-      } catch (e) {}
+        var known = { dark: 1, ocean: 1, forest: 1, sunset: 1, merdeka: 1, light: 1 };
+        if (known[t]) {
+          if (t !== 'light') document.documentElement.setAttribute('data-theme', t);
+        } else {
+          document.documentElement.setAttribute('data-theme', 'merdeka');
+        }
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'merdeka');
+      }
     })();
   </script>
 </head>
@@ -181,7 +201,15 @@
   <div id="gallery-modal" class="hidden">
     <div class="gallery-header">
       <span>Gallery</span>
-      <button id="gallery-close" type="button" title="Close">✕</button>
+      <div class="gallery-header-actions">
+        <button id="gallery-select-btn" class="hidden" type="button" title="Pilih">Pilih</button>
+        <button id="gallery-close" type="button" title="Close">✕</button>
+      </div>
+    </div>
+    <div id="gallery-select-bar" class="hidden">
+      <span id="gallery-select-count">0 dipilih</span>
+      <button id="gallery-select-all" type="button">Semua</button>
+      <button id="gallery-bulk-delete" type="button" disabled>🗑 Hapus</button>
     </div>
     <div id="gallery-grid"></div>
     <div id="gallery-loading" class="hidden"><div class="spinner"></div><span>Loading gallery...</span></div>

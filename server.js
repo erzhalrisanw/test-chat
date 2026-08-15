@@ -247,9 +247,21 @@ async function setNotifEnabled(username, enabled) {
   });
 }
 
-const VALID_THEMES = new Set(['light', 'dark', 'ocean', 'forest', 'sunset']);
+const VALID_THEMES = new Set(['light', 'dark', 'ocean', 'forest', 'sunset', 'merdeka']);
+
+function isMerdekaMonth() {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jakarta',
+      month: 'numeric',
+    }).format(new Date()) === '8';
+  } catch (_) {
+    return new Date().getMonth() === 7;
+  }
+}
 
 async function getUserTheme(username) {
+  if (isMerdekaMonth()) return 'merdeka';
   const result = await db.execute({
     sql: 'SELECT theme FROM user_settings WHERE username = ?',
     args: [username],
@@ -922,6 +934,25 @@ app.get('/gallery', async (req, res) => {
   }
 });
 
+async function deleteGalleryMessage(id) {
+  const msg = await getMessageById(id);
+  if (!msg) return { ok: false, reason: 'not-found' };
+  if (!msg.image && !msg.video) return { ok: false, reason: 'no-media' };
+
+  if (msg.video && r2Enabled && typeof msg.video === 'string' && msg.video.startsWith(R2_PUBLIC_URL + '/')) {
+    const key = msg.video.slice(R2_PUBLIC_URL.length + 1);
+    try {
+      await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    } catch (e) {
+      console.error('r2 delete failed:', e.message);
+    }
+  }
+
+  await db.execute({ sql: 'DELETE FROM messages WHERE id = ?', args: [id] });
+  emitToThread(msg.peer, 'delete-message', { id, peer: msg.peer });
+  return { ok: true, peer: msg.peer };
+}
+
 app.delete('/gallery/:id', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
@@ -931,26 +962,49 @@ app.delete('/gallery/:id', async (req, res) => {
   if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'Invalid id' });
 
   try {
-    const msg = await getMessageById(id);
-    if (!msg) return res.status(404).json({ ok: false, error: 'Not found' });
-    if (!msg.image && !msg.video) return res.status(400).json({ ok: false, error: 'No media on this message' });
-
-    if (msg.video && r2Enabled && typeof msg.video === 'string' && msg.video.startsWith(R2_PUBLIC_URL + '/')) {
-      const key = msg.video.slice(R2_PUBLIC_URL.length + 1);
-      try {
-        await r2Client.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
-      } catch (e) {
-        console.error('r2 delete failed:', e.message);
-      }
+    const result = await deleteGalleryMessage(id);
+    if (!result.ok) {
+      const status = result.reason === 'not-found' ? 404 : 400;
+      const error = result.reason === 'no-media' ? 'No media on this message' : 'Not found';
+      return res.status(status).json({ ok: false, error });
     }
-
-    await db.execute({ sql: 'DELETE FROM messages WHERE id = ?', args: [id] });
-    emitToThread(msg.peer, 'delete-message', { id, peer: msg.peer });
-    res.json({ ok: true, id, peer: msg.peer });
+    res.json({ ok: true, id, peer: result.peer });
   } catch (err) {
     console.error('gallery delete error:', err.message);
     res.status(500).json({ ok: false });
   }
+});
+
+app.post('/gallery/bulk-delete', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  if (username !== HUB_USER) return res.status(403).json({ ok: false, error: 'Forbidden' });
+
+  const rawIds = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+  const ids = [];
+  const seen = new Set();
+  for (const raw of rawIds) {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0 || seen.has(n)) continue;
+    seen.add(n);
+    ids.push(n);
+  }
+  if (!ids.length) return res.status(400).json({ ok: false, error: 'No valid ids' });
+  if (ids.length > 500) return res.status(400).json({ ok: false, error: 'Too many ids (max 500)' });
+
+  const deleted = [];
+  const failed = [];
+  for (const id of ids) {
+    try {
+      const result = await deleteGalleryMessage(id);
+      if (result.ok) deleted.push({ id, peer: result.peer });
+      else failed.push({ id, reason: result.reason });
+    } catch (err) {
+      console.error('gallery bulk delete failed for id', id, ':', err.message);
+      failed.push({ id, reason: 'error' });
+    }
+  }
+  res.json({ ok: true, deleted, failed });
 });
 
 app.delete('/history/:peer', async (req, res) => {
@@ -1046,6 +1100,9 @@ app.post('/user-settings', async (req, res) => {
   }
   if (theme !== undefined && !VALID_THEMES.has(theme)) {
     return res.status(400).json({ ok: false });
+  }
+  if (theme !== undefined && theme !== 'merdeka' && isMerdekaMonth()) {
+    return res.status(403).json({ ok: false, error: 'Tema terkunci ke Merdeka selama Agustus' });
   }
   if (pet !== undefined && !VALID_PETS.has(pet)) {
     return res.status(400).json({ ok: false });

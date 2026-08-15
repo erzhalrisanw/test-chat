@@ -1211,7 +1211,7 @@ async function loadNotifEnabled() {
       }
     }
     if (data && typeof data.theme === 'string' && data.theme !== currentTheme()) {
-      applyTheme(data.theme);
+      applyTheme(isMerdekaMonth() ? 'merdeka' : data.theme);
     }
     if (data && petPrefs) {
       const serverPet = PETS.find((p) => p.id === data.pet) ? data.pet : null;
@@ -3877,6 +3877,8 @@ var galleryTotalPages = 0;
 var galleryTotalItems = 0;
 var galleryLoading = false;
 var galleryItems = [];
+var gallerySelectMode = false;
+var gallerySelectedIds = new Set();
 
 function renderGalleryPage() {
   galleryGrid.innerHTML = '';
@@ -3911,9 +3913,23 @@ function renderGalleryPage() {
     }
     // Menu titik tiga (view in chat / delete)
     if (it.id) {
+      cell.dataset.id = String(it.id);
+      if (gallerySelectedIds.has(it.id)) cell.classList.add('selected');
       attachGalleryMenu(cell, it.id);
     }
     cell.addEventListener('click', function() {
+      if (gallerySelectMode) {
+        if (!it.id) return;
+        if (gallerySelectedIds.has(it.id)) {
+          gallerySelectedIds.delete(it.id);
+          cell.classList.remove('selected');
+        } else {
+          gallerySelectedIds.add(it.id);
+          cell.classList.add('selected');
+        }
+        updateBulkDeleteBar();
+        return;
+      }
       viewerItems = galleryItems.map(function(g) { return { type: g.type, src: g.src }; });
       viewerIndex = i;
       renderViewerItem();
@@ -3922,6 +3938,81 @@ function renderGalleryPage() {
     galleryGrid.appendChild(cell);
   });
   updatePaginationControls();
+}
+
+function updateBulkDeleteBar() {
+  var countEl = document.getElementById('gallery-select-count');
+  var delBtn = document.getElementById('gallery-bulk-delete');
+  var count = gallerySelectedIds.size;
+  if (countEl) countEl.textContent = count + ' dipilih';
+  if (delBtn) delBtn.disabled = count === 0;
+}
+
+function setGallerySelectMode(next) {
+  gallerySelectMode = !!next;
+  if (!gallerySelectMode) gallerySelectedIds.clear();
+  galleryModal.classList.toggle('select-mode', gallerySelectMode);
+  var selBar = document.getElementById('gallery-select-bar');
+  var selBtn = document.getElementById('gallery-select-btn');
+  if (selBar) selBar.classList.toggle('hidden', !gallerySelectMode);
+  if (selBtn) {
+    selBtn.textContent = gallerySelectMode ? 'Batal' : 'Pilih';
+    selBtn.classList.toggle('active', gallerySelectMode);
+  }
+  closeOpenMsgMenu();
+  if (!gallerySelectMode) {
+    galleryGrid.querySelectorAll('.gallery-item.selected').forEach(function(el) {
+      el.classList.remove('selected');
+    });
+  }
+  updateBulkDeleteBar();
+}
+
+function selectAllGalleryItems() {
+  galleryItems.forEach(function(it) {
+    if (!it.id) return;
+    gallerySelectedIds.add(it.id);
+  });
+  galleryGrid.querySelectorAll('.gallery-item').forEach(function(cell) {
+    var id = Number(cell.dataset.id);
+    if (id && gallerySelectedIds.has(id)) cell.classList.add('selected');
+  });
+  updateBulkDeleteBar();
+}
+
+async function requestGalleryBulkDelete() {
+  var ids = Array.from(gallerySelectedIds);
+  if (!ids.length) return;
+  if (!confirm('Hapus permanen ' + ids.length + ' item? File akan dihapus dari database dan Cloudflare R2.')) return;
+  var token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    var res = await fetch('/gallery/bulk-delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify({ ids: ids }),
+    });
+    var data = await res.json().catch(function() { return {}; });
+    if (!res.ok || !data.ok) {
+      alert('Gagal hapus: ' + ((data && data.error) || res.status));
+      return;
+    }
+    var deletedCount = (data.deleted && data.deleted.length) || 0;
+    var failCount = (data.failed && data.failed.length) || 0;
+    if (failCount > 0) alert(failCount + ' item gagal dihapus.');
+    var pageToReload = galleryCurrentPage;
+    if (deletedCount >= galleryItems.length && galleryCurrentPage > 1) {
+      pageToReload = galleryCurrentPage - 1;
+    }
+    setGallerySelectMode(false);
+    galleryGrid.innerHTML = '';
+    await loadGalleryPage(pageToReload);
+  } catch (err) {
+    alert('Gagal hapus: ' + (err.message || err));
+  }
 }
 
 function positionGalleryMenu(menuEl, btn) {
@@ -4066,6 +4157,9 @@ async function openGallery() {
   galleryTotalItems = 0;
   galleryLoading = false;
   galleryItems = [];
+  var selBtn = document.getElementById('gallery-select-btn');
+  if (selBtn) selBtn.classList.toggle('hidden', !isHub());
+  setGallerySelectMode(false);
   await loadGalleryPage(1);
 }
 
@@ -4091,6 +4185,7 @@ function closeGallery() {
   galleryTotalPages = 0;
   galleryTotalItems = 0;
   galleryLoading = false;
+  setGallerySelectMode(false);
   if (imageViewer.classList.contains('hidden')) document.body.style.overflow = '';
 }
 
@@ -4103,6 +4198,11 @@ if (gameBtn) {
 galleryClose.addEventListener('click', closeGallery);
 document.getElementById('gallery-prev').addEventListener('click', goToPrevPage);
 document.getElementById('gallery-next').addEventListener('click', goToNextPage);
+document.getElementById('gallery-select-btn').addEventListener('click', function() {
+  setGallerySelectMode(!gallerySelectMode);
+});
+document.getElementById('gallery-select-all').addEventListener('click', selectAllGalleryItems);
+document.getElementById('gallery-bulk-delete').addEventListener('click', requestGalleryBulkDelete);
 galleryGrid.addEventListener('scroll', function() {
   if (openMsgMenu && openMsgMenu.classList.contains('gallery-menu')) closeOpenMsgMenu();
 });
@@ -4462,23 +4562,92 @@ document.addEventListener('keydown', (e) => {
 });
 
 const THEMES = [
+  { id: 'merdeka', label: 'Merdeka 🇮🇩', icon: '🇮🇩', swatch: 'linear-gradient(180deg,#ce1126 0 50%,#fff 50% 100%)', metaColor: '#ce1126' },
   { id: 'light', label: 'Cream', icon: '🌤', swatch: '#ffe7c4', metaColor: '#2563eb' },
   { id: 'dark', label: 'Dark', icon: '🌙', swatch: '#141414', metaColor: '#141414' },
   { id: 'ocean', label: 'Ocean', icon: '🌊', swatch: '#cfe7ed', metaColor: '#2a8fa0' },
   { id: 'forest', label: 'Forest', icon: '🌿', swatch: '#e3d9b0', metaColor: '#6ba368' },
   { id: 'sunset', label: 'Sunset', icon: '🌅', swatch: '#fbc7e0', metaColor: '#d84f9a' },
 ];
+const DEFAULT_THEME = 'merdeka';
+
+function isMerdekaMonth() {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Jakarta',
+      month: 'numeric',
+    }).format(new Date()) === '8';
+  } catch (_) {
+    return new Date().getMonth() === 7;
+  }
+}
+
+function updateMerdekaConfetti(themeId) {
+  var existing = document.getElementById('merdeka-confetti');
+  if (themeId !== 'merdeka') {
+    if (existing) existing.remove();
+    removeMerdekaFlags();
+    return;
+  }
+  ensureMerdekaFlags();
+  if (existing) return;
+  var container = document.createElement('div');
+  container.id = 'merdeka-confetti';
+  container.setAttribute('aria-hidden', 'true');
+  var COUNT = 32;
+  var frag = document.createDocumentFragment();
+  for (var i = 0; i < COUNT; i++) {
+    var piece = document.createElement('span');
+    piece.className = 'merdeka-piece ' + (i % 2 === 0 ? 'red' : 'white');
+    var size = 6 + Math.random() * 8;
+    piece.style.left = (Math.random() * 100) + 'vw';
+    piece.style.width = size + 'px';
+    piece.style.height = (size + 4 + Math.random() * 8) + 'px';
+    piece.style.animationDuration = (6 + Math.random() * 6) + 's';
+    piece.style.animationDelay = (-Math.random() * 10) + 's';
+    piece.style.setProperty('--drift', ((Math.random() - 0.5) * 160) + 'px');
+    piece.style.setProperty('--spin', (Math.random() > 0.5 ? 1 : -1) * (360 + Math.floor(Math.random() * 720)) + 'deg');
+    frag.appendChild(piece);
+  }
+  container.appendChild(frag);
+  document.body.appendChild(container);
+}
+
+function ensureMerdekaFlags() {
+  if (document.getElementById('merdeka-flags')) return;
+  var wrap = document.createElement('div');
+  wrap.id = 'merdeka-flags';
+  wrap.setAttribute('aria-hidden', 'true');
+  var svg =
+    "<svg viewBox='0 0 40 60' xmlns='http://www.w3.org/2000/svg'>" +
+      "<rect x='19' y='0' width='2' height='60' fill='#3a0a0a'/>" +
+      "<rect x='21' y='2' width='18' height='10' fill='#ce1126' stroke='#3a0a0a' stroke-width='1'/>" +
+      "<rect x='21' y='12' width='18' height='10' fill='#ffffff' stroke='#3a0a0a' stroke-width='1'/>" +
+    "</svg>";
+  wrap.innerHTML =
+    '<span class="merdeka-flag corner-tl">' + svg + '</span>' +
+    '<span class="merdeka-flag corner-tr">' + svg + '</span>';
+  document.body.appendChild(wrap);
+}
+
+function removeMerdekaFlags() {
+  var el = document.getElementById('merdeka-flags');
+  if (el) el.remove();
+}
 const themeMenuEl = document.getElementById('theme-menu');
 
 function currentTheme() {
   const attr = document.documentElement.getAttribute('data-theme');
-  return THEMES.find((t) => t.id === attr) ? attr : 'light';
+  if (THEMES.find((t) => t.id === attr)) return attr;
+  return attr ? 'light' : DEFAULT_THEME;
 }
 function applyTheme(themeId) {
-  const theme = THEMES.find((t) => t.id === themeId) || THEMES[0];
+  if (isMerdekaMonth()) themeId = 'merdeka';
+  const theme = THEMES.find((t) => t.id === themeId) || THEMES.find((t) => t.id === DEFAULT_THEME) || THEMES[0];
   if (theme.id === 'light') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme.id);
   try { localStorage.setItem('theme', theme.id); } catch (e) {}
+  updateMerdekaConfetti(theme.id);
   if (themeToggleBtn) {
     const iconEl = themeToggleBtn.querySelector('.theme-toggle-icon') || themeToggleBtn;
     iconEl.textContent = theme.icon;
@@ -4490,22 +4659,36 @@ function applyTheme(themeId) {
 function renderThemeMenu() {
   if (!themeMenuEl) return;
   const active = currentTheme();
+  const locked = isMerdekaMonth();
   themeMenuEl.innerHTML = '';
+  if (locked) {
+    const notice = document.createElement('div');
+    notice.className = 'theme-menu-notice';
+    notice.textContent = '🇮🇩 Tema Merdeka wajib selama Agustus';
+    themeMenuEl.appendChild(notice);
+  }
   THEMES.forEach((theme) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'theme-menu-item' + (theme.id === active ? ' active' : '');
+    const disabled = locked && theme.id !== 'merdeka';
+    btn.className = 'theme-menu-item' + (theme.id === active ? ' active' : '') + (disabled ? ' disabled' : '');
     btn.setAttribute('role', 'menuitem');
+    if (disabled) {
+      btn.disabled = true;
+      btn.title = 'Terkunci sampai September';
+    }
     const swatch = document.createElement('span');
     swatch.className = 'theme-menu-swatch';
     swatch.style.background = theme.swatch;
     btn.appendChild(swatch);
     btn.appendChild(document.createTextNode(theme.label));
-    btn.addEventListener('click', () => {
-      closeThemeMenu();
-      applyTheme(theme.id);
-      saveThemeToServer(theme.id);
-    });
+    if (!disabled) {
+      btn.addEventListener('click', () => {
+        closeThemeMenu();
+        applyTheme(theme.id);
+        saveThemeToServer(theme.id);
+      });
+    }
     themeMenuEl.appendChild(btn);
   });
 }
