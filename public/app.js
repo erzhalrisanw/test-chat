@@ -4394,15 +4394,71 @@ function applyBirthdayPanic(username) {
     panicBtn.setAttribute('title', 'Happy Birthday!');
     panicBtn.innerHTML =
       '<div class="birthday-marquee">' +
-        '<div class="birthday-track birthday-main"><span>HAPPY BIRTHDAY TO YOU <span class="birthday-heart">❤</span></span></div>' +
-        '<div class="birthday-track birthday-sub"><span>Semoga panjang umur dan sehat selalu, luv u <span class="birthday-heart">❤</span></span></div>' +
+        '<div class="birthday-track birthday-main"><span>HAPPY BIRTHDAY TO YOU CANTIK<span class="birthday-heart">❤</span></span></div>' +
+        '<div class="birthday-track birthday-sub"><span>Semoga panjang umur dan sehat selalu sayangku, luv u <span class="birthday-heart">❤</span></span></div>' +
       '</div>';
+    showGiftButton();
   } else {
     panicBtn.classList.remove('birthday-mode');
     panicBtn.setAttribute('aria-label', 'Panic');
     panicBtn.setAttribute('title', 'Panic: clear session & leave');
     panicBtn.textContent = '🚨';
+    hideGiftButton();
   }
+}
+
+const BIRTHDAY_GIFT_IMAGE = '/pajero.jpeg';
+let giftBtnEl = null;
+let giftModalEl = null;
+function ensureGiftElements() {
+  if (!giftBtnEl) {
+    giftBtnEl = document.createElement('button');
+    giftBtnEl.id = 'gift-btn';
+    giftBtnEl.type = 'button';
+    giftBtnEl.setAttribute('aria-label', 'Buka hadiah');
+    giftBtnEl.innerHTML = '<span class="gift-emoji">🎁</span><span class="gift-label">Buka Hadiah</span>';
+    giftBtnEl.addEventListener('click', openGiftModal);
+    document.body.appendChild(giftBtnEl);
+  }
+  if (!giftModalEl) {
+    giftModalEl = document.createElement('div');
+    giftModalEl.id = 'gift-modal';
+    giftModalEl.className = 'hidden';
+    giftModalEl.innerHTML =
+      '<div class="gift-backdrop"></div>' +
+      '<div class="gift-content" role="dialog" aria-modal="true" aria-label="Hadiah">' +
+        '<button type="button" class="gift-close" aria-label="Tutup">×</button>' +
+        '<img class="gift-image" alt="Hadiah" />' +
+        '<div class="gift-caption">otw nichhh</div>' +
+      '</div>';
+    document.body.appendChild(giftModalEl);
+    giftModalEl.querySelector('.gift-backdrop').addEventListener('click', closeGiftModal);
+    giftModalEl.querySelector('.gift-close').addEventListener('click', closeGiftModal);
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && giftModalEl && !giftModalEl.classList.contains('hidden')) {
+        closeGiftModal();
+      }
+    });
+  }
+}
+function showGiftButton() {
+  ensureGiftElements();
+  giftBtnEl.classList.remove('hidden');
+}
+function hideGiftButton() {
+  if (giftBtnEl) giftBtnEl.classList.add('hidden');
+  closeGiftModal();
+}
+function openGiftModal() {
+  ensureGiftElements();
+  const img = giftModalEl.querySelector('.gift-image');
+  if (img && img.getAttribute('src') !== BIRTHDAY_GIFT_IMAGE) {
+    img.setAttribute('src', BIRTHDAY_GIFT_IMAGE);
+  }
+  giftModalEl.classList.remove('hidden');
+}
+function closeGiftModal() {
+  if (giftModalEl) giftModalEl.classList.add('hidden');
 }
 
 panicBtn.addEventListener('click', function() {
