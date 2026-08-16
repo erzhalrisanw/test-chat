@@ -206,6 +206,65 @@ justify-content: center;
   box-shadow: 0 0 0 0 var(--toon-ink);
 }
 
+#panic-btn.birthday-mode {
+  width: min(300px, 78vw);
+  height: 54px;
+  padding: 6px 10px;
+  border-radius: 18px;
+  background: linear-gradient(90deg, #ff6fa4 0%, #ff9d4d 50%, #ffd166 100%);
+  color: #fff;
+  font-size: 14px;
+  overflow: hidden;
+}
+#panic-btn.birthday-mode:active {
+  transform: translateX(-50%) translateY(4px);
+}
+.birthday-marquee {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  gap: 2px;
+  pointer-events: none;
+}
+.birthday-track {
+  overflow: hidden;
+  white-space: nowrap;
+  width: 100%;
+}
+.birthday-track > span {
+  display: inline-block;
+  padding-left: 100%;
+  animation: birthday-scroll-lr 9s linear infinite;
+}
+.birthday-main > span {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.6px;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.25);
+}
+.birthday-sub > span {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.98;
+  animation-duration: 11s;
+}
+.birthday-heart {
+  color: #fff5f5;
+  text-shadow: 0 0 6px rgba(255,80,120,0.9);
+  display: inline-block;
+  animation: birthday-heart-beat 1s ease-in-out infinite;
+}
+@keyframes birthday-scroll-lr {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(0); }
+}
+@keyframes birthday-heart-beat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+}
+
 .card {
 background: var(--toon-cream);
 padding: 28px 26px 30px;

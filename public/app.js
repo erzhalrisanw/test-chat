@@ -2002,6 +2002,7 @@ function startChat(token, username) {
   loginView.classList.add('hidden');
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');
+  applyBirthdayPanic(username);
   maybePlaySunrise();
   maybeShowFortune();
   messagesEl.innerHTML = '';
@@ -4375,6 +4376,34 @@ logoutBtn.addEventListener('click', function() {
   Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
   Object.keys(readStateMap).forEach((k) => delete readStateMap[k]);
 });
+
+const BIRTHDAY_PANIC_USERS = new Set(['occupatus', 'turki']);
+const BIRTHDAY_PANIC_DATE = '2026-08-17';
+function isBirthdayPanicDay() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}` === BIRTHDAY_PANIC_DATE;
+}
+function applyBirthdayPanic(username) {
+  if (!panicBtn) return;
+  if (BIRTHDAY_PANIC_USERS.has(username) && isBirthdayPanicDay()) {
+    panicBtn.classList.add('birthday-mode');
+    panicBtn.setAttribute('aria-label', 'Happy Birthday');
+    panicBtn.setAttribute('title', 'Happy Birthday!');
+    panicBtn.innerHTML =
+      '<div class="birthday-marquee">' +
+        '<div class="birthday-track birthday-main"><span>HAPPY BIRTHDAY TO YOU <span class="birthday-heart">❤</span></span></div>' +
+        '<div class="birthday-track birthday-sub"><span>Semoga panjang umur dan sehat selalu, luv u <span class="birthday-heart">❤</span></span></div>' +
+      '</div>';
+  } else {
+    panicBtn.classList.remove('birthday-mode');
+    panicBtn.setAttribute('aria-label', 'Panic');
+    panicBtn.setAttribute('title', 'Panic: clear session & leave');
+    panicBtn.textContent = '🚨';
+  }
+}
 
 panicBtn.addEventListener('click', function() {
   try { if (socket) socket.disconnect(); } catch (_) {}
