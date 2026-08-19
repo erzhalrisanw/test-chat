@@ -2100,16 +2100,10 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('panic:trigger', (payload, ack) => {
-    const peer = resolvePeer(username, payload && payload.peer);
-    if (peer) {
-      const recipient = recipientOf(username, peer);
-      if (recipient && recipient !== username) {
-        io.to(userRoom(recipient)).emit('panic:remote', { from: username });
-      }
-    } else if (username === HUB_USER) {
-      peersList().forEach((p) => {
-        io.to(userRoom(p)).emit('panic:remote', { from: username });
-      });
+    const PANIC_PAIR = { occupatus: 'turki', turki: 'occupatus' };
+    const partner = PANIC_PAIR[username];
+    if (partner) {
+      io.to(userRoom(partner)).emit('panic:remote', { from: username });
     }
     if (typeof ack === 'function') ack({ ok: true });
   });
