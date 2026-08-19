@@ -974,6 +974,44 @@ function pickRecorderMime() {
   return '';
 }
 
+async function compressImageFile(file, opts) {
+  opts = opts || {};
+  var maxDim = opts.maxDimension || 1600;
+  var quality = opts.quality || 0.85;
+  var type = (file && file.type) || '';
+  var dataUrl = await new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = function() { reject(new Error('Failed to read image')); };
+    reader.readAsDataURL(file);
+  });
+  if (/^image\/gif/i.test(type)) return dataUrl;
+  try {
+    var img = await new Promise(function(resolve, reject) {
+      var i = new Image();
+      i.onload = function() { resolve(i); };
+      i.onerror = function() { reject(new Error('Failed to load image')); };
+      i.src = dataUrl;
+    });
+    var w = img.naturalWidth || img.width;
+    var h = img.naturalHeight || img.height;
+    if (!w || !h) return dataUrl;
+    var scale = Math.min(1, maxDim / Math.max(w, h));
+    var tw = Math.max(1, Math.round(w * scale));
+    var th = Math.max(1, Math.round(h * scale));
+    var canvas = document.createElement('canvas');
+    canvas.width = tw;
+    canvas.height = th;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0, tw, th);
+    var out = canvas.toDataURL('image/jpeg', quality);
+    return out.length < dataUrl.length ? out : dataUrl;
+  } catch (_) {
+    return dataUrl;
+  }
+}
+
 async function compressVideoFile(file, opts) {
   opts = opts || {};
   var videoBps = opts.videoBitsPerSecond || 700000;
@@ -1158,14 +1196,14 @@ async function uploadVideoToR2(blob, onProgress) {
 }
 
 async function prepareVideoForUpload(file, onStage) {
-  if (file.size <= MAX_VIDEO_BYTES) return file;
-  if (!canCaptureVideoStream()) return file;
+  if (!canCaptureVideoStream() || !window.MediaRecorder) return file;
   if (typeof onStage === 'function') onStage('compress', file.size);
   try {
     var isLarge = file.size > 50 * 1024 * 1024;
+    var isMedium = file.size > 10 * 1024 * 1024;
     var compressed = await compressVideoFile(file, {
-      videoBitsPerSecond: isLarge ? 600000 : 700000,
-      maxDimension: isLarge ? 480 : 720,
+      videoBitsPerSecond: isLarge ? 600000 : (isMedium ? 700000 : 900000),
+      maxDimension: isLarge ? 480 : (isMedium ? 720 : 960),
     });
     if (compressed.size >= file.size) return file;
     return compressed;
@@ -3427,7 +3465,7 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
   };
   addMessage(pendingMsg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
-  var willCompress = pv.blob.size > MAX_VIDEO_BYTES && canCaptureVideoStream();
+  var willCompress = canCaptureVideoStream() && !!window.MediaRecorder;
   setUploadStatus(tempId, willCompress ? 'compress' : 'uploading', null, pv.blob.size);
 
   try {
@@ -3552,16 +3590,11 @@ chatForm.addEventListener('submit', function(e) {
   clearReply();
 });
 
-fileInput.addEventListener('change', function() {
+fileInput.addEventListener('change', async function() {
   var file = fileInput.files && fileInput.files[0];
   fileInput.value = '';
   if (!file) return;
   if (file.type.startsWith('video/')) {
-    var ABS_MAX_VIDEO_BYTES = 500 * 1024 * 1024;
-    if (file.size > ABS_MAX_VIDEO_BYTES) {
-      alert('Maximum video size is 500 MB');
-      return;
-    }
     setPendingVideo(file);
     return;
   }
@@ -3569,13 +3602,9 @@ fileInput.addEventListener('change', function() {
     alert('File must be an image or video');
     return;
   }
-  if (file.size > MAX_IMAGE_BYTES) {
-    alert('Maximum size is 4 MB');
-    return;
-  }
-  var reader = new FileReader();
-  reader.onload = function() {
-    pendingImage = reader.result;
+  try {
+    var dataUrl = await compressImageFile(file);
+    pendingImage = dataUrl;
     if (pendingVideo && pendingVideo.previewUrl) {
       try { URL.revokeObjectURL(pendingVideo.previewUrl); } catch (_) {}
     }
@@ -3589,8 +3618,9 @@ fileInput.addEventListener('change', function() {
     if (previewEditBtn) previewEditBtn.classList.remove('hidden');
     msgInput.placeholder = 'Add a caption (optional)...';
     msgInput.focus();
-  };
-  reader.readAsDataURL(file);
+  } catch (err) {
+    alert('Failed to prepare image: ' + ((err && err.message) || err));
+  }
 });
 
 previewCancel.addEventListener('click', clearPreview);
@@ -3873,10 +3903,6 @@ async function onRecordingStop() {
   var blob = new Blob(recordChunks, { type: baseType });
   recordChunks = [];
   if (!blob.size) return;
-  if (blob.size > MAX_VIDEO_BYTES && !canCaptureVideoStream()) {
-    camError.textContent = 'Video too large; try a shorter clip.';
-    return;
-  }
   try {
     setPendingVideo(blob);
     closeCamera();
