@@ -2397,7 +2397,8 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
 #call-incoming .call-danger { background: var(--toon-pink); color: #fff; }
 #chat-view header #call-btn { padding: 6px 10px; font-size: 15px; }
 
-#ttt-incoming {
+#ttt-incoming,
+#snl-incoming {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2410,8 +2411,10 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   font-weight: 600;
   color: var(--toon-ink);
 }
-#ttt-incoming .ttt-incoming-text { flex: 1; }
-#ttt-incoming button {
+#ttt-incoming .ttt-incoming-text,
+#snl-incoming .ttt-incoming-text { flex: 1; }
+#ttt-incoming button,
+#snl-incoming button {
   border: 3px solid var(--toon-ink);
   border-radius: 999px;
   padding: 6px 14px;
@@ -2420,8 +2423,10 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   cursor: pointer;
   box-shadow: var(--toon-shadow-sm);
 }
-#ttt-incoming .ttt-ok { background: var(--toon-teal); color: #fff; }
-#ttt-incoming .ttt-danger { background: var(--toon-pink); color: #fff; }
+#ttt-incoming .ttt-ok,
+#snl-incoming .ttt-ok { background: var(--toon-teal); color: #fff; }
+#ttt-incoming .ttt-danger,
+#snl-incoming .ttt-danger { background: var(--toon-pink); color: #fff; }
 
 /* Photo Editor */
 #photo-editor {
@@ -4504,6 +4509,152 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
 @media (max-width: 480px) {
   .ttt-grid { grid-template-columns: repeat(3, 76px); grid-template-rows: repeat(3, 76px); }
   .ttt-cell { font-size: 36px; }
+}
+
+.snl-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0 12px;
+}
+.snl-status {
+  font-weight: 700;
+  color: var(--toon-ink);
+  min-height: 20px;
+  text-align: center;
+}
+.snl-status small { font-weight: 500; opacity: 0.7; }
+.snl-board-wrap {
+  position: relative;
+  width: min(360px, 92vw);
+  aspect-ratio: 1 / 1;
+  border: 2px solid var(--toon-ink);
+  border-radius: 10px;
+  box-shadow: var(--toon-shadow-sm);
+  overflow: hidden;
+  background: #fff9e6;
+}
+.snl-board {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(10, 1fr);
+  width: 100%;
+  height: 100%;
+}
+.snl-cell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 2px 3px;
+  font-size: 9px;
+  color: rgba(var(--ink-rgb), 0.55);
+  font-weight: 600;
+  border: 1px solid rgba(var(--ink-rgb), 0.12);
+  background: #fff9e6;
+}
+.snl-cell:nth-child(odd) { background: #fff3cc; }
+.snl-cell.ladder-foot { background: #d4f4d4; }
+.snl-cell.snake-head { background: #f8d4d4; }
+.snl-cell.recent { outline: 2px solid var(--toon-orange); outline-offset: -3px; }
+.snl-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.snl-ladder-line {
+  stroke: #2f9e44;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  opacity: 0.75;
+}
+.snl-snake-line {
+  stroke: #d64545;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  stroke-dasharray: 2 1.2;
+  opacity: 0.75;
+}
+.snl-pawns {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.snl-pawn, .snl-pawn-start {
+  position: absolute;
+  font-size: 16px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  transition: left 0.35s ease, top 0.35s ease;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
+}
+.snl-pawn.pawn-offset { transform: translate(-20%, -80%); }
+.snl-pawn-start { transform: none; font-size: 14px; }
+.snl-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.snl-dice {
+  font-size: 28px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 2px solid var(--toon-ink);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--toon-shadow-sm);
+  transition: transform 0.1s ease;
+}
+.snl-dice.rolling {
+  animation: snl-dice-roll 0.35s ease-in-out infinite;
+  background: #fff3cc;
+}
+@keyframes snl-dice-roll {
+  0%   { transform: rotate(0deg)   translateY(0) scale(1); }
+  25%  { transform: rotate(-18deg) translateY(-6px) scale(1.08); }
+  50%  { transform: rotate(12deg)  translateY(-2px) scale(1.04); }
+  75%  { transform: rotate(-10deg) translateY(-8px) scale(1.1); }
+  100% { transform: rotate(0deg)   translateY(0) scale(1); }
+}
+.snl-log {
+  font-size: 13px;
+  color: var(--toon-ink);
+  opacity: 0.85;
+  max-width: 220px;
+  text-align: left;
+}
+.snl-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.snl-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 2px solid var(--toon-ink);
+  background: var(--toon-orange);
+  color: var(--toon-ink);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--toon-shadow-sm);
+  font-family: inherit;
+}
+.snl-btn:hover { background: var(--toon-orange-dark); color: #fff; }
+.snl-btn.secondary { background: transparent; }
+.snl-btn.secondary:hover { background: rgba(var(--ink-rgb), 0.08); color: var(--toon-ink); }
+.snl-chip {
+  display: inline-block;
+  font-size: 14px;
+  margin: 0 2px;
+  vertical-align: middle;
 }
 
 .copy-toast {

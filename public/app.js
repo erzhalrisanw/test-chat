@@ -642,6 +642,7 @@ function switchPeer(peer) {
   applyDraftForCurrentPeer();
   socket.emit('selectPeer', { peer });
   if (typeof window.__tttBannerSync === 'function') window.__tttBannerSync();
+  if (typeof window.__snlBannerSync === 'function') window.__snlBannerSync();
 }
 
 function reloadCurrentPeer() {
@@ -1422,6 +1423,67 @@ function setupTicTacToeBanner() {
   window.__tttBannerSync = syncForCurrent;
 }
 
+function setupSnakeLadderBanner() {
+  if (!socket) return;
+  const banner = document.getElementById('snl-incoming');
+  const fromEl = document.getElementById('snl-incoming-from');
+  const acceptBtn = document.getElementById('snl-incoming-accept');
+  const declineBtn = document.getElementById('snl-incoming-decline');
+  if (!banner || !fromEl || !acceptBtn || !declineBtn) return;
+
+  let pendingPeer = null;
+
+  function hide() {
+    pendingPeer = null;
+    banner.classList.add('hidden');
+    fromEl.textContent = '';
+  }
+  function show(inviter, peer) {
+    pendingPeer = peer;
+    fromEl.textContent = inviter;
+    banner.classList.remove('hidden');
+  }
+
+  acceptBtn.addEventListener('click', () => {
+    if (!pendingPeer) { hide(); return; }
+    const peer = pendingPeer;
+    hide();
+    if (isHub() && peer !== currentPeer) switchPeer(peer);
+    socket.emit('snakeladder:accept', { peer }, (resp) => {
+      if (resp && resp.error) return;
+      if (window.MiniGames && typeof window.MiniGames.open === 'function') {
+        window.MiniGames.open('snakeladder');
+      }
+    });
+  });
+  declineBtn.addEventListener('click', () => {
+    if (!pendingPeer) { hide(); return; }
+    const peer = pendingPeer;
+    hide();
+    socket.emit('snakeladder:decline', { peer }, () => {});
+  });
+
+  socket.on('snakeladder:state', (payload) => {
+    if (!payload) return;
+    const s = payload.session;
+    if (!s || s.status !== 'pending') { hide(); return; }
+    if (s.opponent !== me) { hide(); return; }
+    show(s.inviter, s.peer);
+  });
+
+  function syncForCurrent() {
+    if (!currentPeer) { hide(); return; }
+    socket.emit('snakeladder:sync', { peer: currentPeer }, (resp) => {
+      if (!resp || !resp.ok) return;
+      const s = resp.session;
+      if (s && s.status === 'pending' && s.opponent === me) show(s.inviter, s.peer);
+      else hide();
+    });
+  }
+  syncForCurrent();
+  window.__snlBannerSync = syncForCurrent;
+}
+
 function unlockAudio() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2103,6 +2165,7 @@ function startChat(token, username) {
   }
 
   setupTicTacToeBanner();
+  setupSnakeLadderBanner();
 
   socket.on('history', (payload) => {
     const peer = payload && payload.peer;
@@ -4801,17 +4864,6 @@ const THEMES = [
   { id: 'sunset', label: 'Sunset', icon: '🌅', swatch: '#fbc7e0', metaColor: '#d84f9a' },
 ];
 const DEFAULT_THEME = 'light';
-
-function isMerdekaMonth() {
-  try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Jakarta',
-      month: 'numeric',
-    }).format(new Date()) === '8';
-  } catch (_) {
-    return new Date().getMonth() === 7;
-  }
-}
 
 function updateMerdekaConfetti(themeId) {
   var existing = document.getElementById('merdeka-confetti');

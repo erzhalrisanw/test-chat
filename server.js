@@ -249,19 +249,7 @@ async function setNotifEnabled(username, enabled) {
 
 const VALID_THEMES = new Set(['light', 'dark', 'ocean', 'forest', 'sunset', 'merdeka']);
 
-function isMerdekaMonth() {
-  try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Jakarta',
-      month: 'numeric',
-    }).format(new Date()) === '8';
-  } catch (_) {
-    return new Date().getMonth() === 7;
-  }
-}
-
 async function getUserTheme(username) {
-  if (isMerdekaMonth()) return 'merdeka';
   const result = await db.execute({
     sql: 'SELECT theme FROM user_settings WHERE username = ?',
     args: [username],
@@ -1101,9 +1089,6 @@ app.post('/user-settings', async (req, res) => {
   if (theme !== undefined && !VALID_THEMES.has(theme)) {
     return res.status(400).json({ ok: false });
   }
-  if (theme !== undefined && theme !== 'merdeka' && isMerdekaMonth()) {
-    return res.status(403).json({ ok: false, error: 'Tema terkunci ke Merdeka selama Agustus' });
-  }
   if (pet !== undefined && !VALID_PETS.has(pet)) {
     return res.status(400).json({ ok: false });
   }
@@ -1419,6 +1404,43 @@ const lastSeen = new Map();
 const activeCalls = new Map();
 const lastPingAt = new Map();
 const tttSessions = new Map();
+const snlSessions = new Map();
+
+const SNL_LADDERS = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
+const SNL_SNAKES = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
+
+function snlNewSession(peer, inviter, opponent) {
+  return {
+    peer,
+    status: 'pending',
+    inviter,
+    opponent,
+    positions: { [inviter]: 0, [opponent]: 0 },
+    turn: inviter,
+    lastRoll: null,
+    winner: null,
+    startedAt: new Date().toISOString(),
+    resigned: null,
+  };
+}
+
+function snlPublicState(session) {
+  if (!session) return null;
+  return {
+    peer: session.peer,
+    status: session.status,
+    inviter: session.inviter,
+    opponent: session.opponent,
+    positions: Object.assign({}, session.positions),
+    turn: session.turn,
+    lastRoll: session.lastRoll ? Object.assign({}, session.lastRoll) : null,
+    winner: session.winner,
+    startedAt: session.startedAt,
+    resigned: session.resigned || null,
+    ladders: SNL_LADDERS,
+    snakes: SNL_SNAKES,
+  };
+}
 
 const TTT_WIN_LINES = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -2077,6 +2099,176 @@ io.on('connection', async (socket) => {
     } else {
       tttSessions.delete(peer);
       emitToThread(peer, 'tictactoe:state', { peer, session: null, reason: 'left', by: username });
+    }
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('snakeladder:sync', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = snlSessions.get(peer) || null;
+    if (typeof ack === 'function') ack({ ok: true, session: snlPublicState(session) });
+  });
+
+  socket.on('snakeladder:invite', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const existing = snlSessions.get(peer);
+    if (existing && existing.status !== 'done') {
+      if (typeof ack === 'function') ack({ error: 'Sesi masih aktif' });
+      return;
+    }
+    const opponent = recipientOf(username, peer);
+    const session = snlNewSession(peer, username, opponent);
+    snlSessions.set(peer, session);
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true, session: snlPublicState(session) });
+  });
+
+  socket.on('snakeladder:accept', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = snlSessions.get(peer);
+    if (!session || session.status !== 'pending') {
+      if (typeof ack === 'function') ack({ error: 'Tidak ada undangan' });
+      return;
+    }
+    if (username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan penerima undangan' });
+      return;
+    }
+    session.status = 'active';
+    session.startedAt = new Date().toISOString();
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true, session: snlPublicState(session) });
+  });
+
+  socket.on('snakeladder:decline', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = snlSessions.get(peer);
+    if (!session || session.status !== 'pending') {
+      if (typeof ack === 'function') ack({ error: 'Tidak ada undangan' });
+      return;
+    }
+    if (username !== session.opponent && username !== session.inviter) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    snlSessions.delete(peer);
+    emitToThread(peer, 'snakeladder:state', { peer, session: null, reason: 'declined', by: username });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('snakeladder:roll', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = snlSessions.get(peer);
+    if (!session || session.status !== 'active') {
+      if (typeof ack === 'function') ack({ error: 'Game belum dimulai' });
+      return;
+    }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    if (session.turn !== username) {
+      if (typeof ack === 'function') ack({ error: 'Belum giliran kamu' });
+      return;
+    }
+    const dice = 1 + Math.floor(Math.random() * 6);
+    const from = session.positions[username] || 0;
+    let landed = from + dice;
+    let jumped = null;
+    if (landed > 100) {
+      landed = from;
+    } else if (landed === 100) {
+      session.positions[username] = 100;
+      session.status = 'done';
+      session.winner = username;
+    } else {
+      if (SNL_LADDERS[landed] !== undefined) {
+        jumped = { kind: 'ladder', from: landed, to: SNL_LADDERS[landed] };
+        landed = SNL_LADDERS[landed];
+      } else if (SNL_SNAKES[landed] !== undefined) {
+        jumped = { kind: 'snake', from: landed, to: SNL_SNAKES[landed] };
+        landed = SNL_SNAKES[landed];
+      }
+      session.positions[username] = landed;
+    }
+    session.lastRoll = { by: username, dice, from, to: landed, jumped };
+    if (session.status !== 'done') {
+      if (dice !== 6) {
+        const other = username === session.inviter ? session.opponent : session.inviter;
+        session.turn = other;
+      }
+    }
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true, session: snlPublicState(session) });
+  });
+
+  socket.on('snakeladder:rematch', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = snlSessions.get(peer);
+    if (!session || session.status !== 'done') {
+      if (typeof ack === 'function') ack({ error: 'Belum ada sesi selesai' });
+      return;
+    }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    const newInviter = username;
+    const newOpponent = newInviter === session.inviter ? session.opponent : session.inviter;
+    const next = snlNewSession(peer, newInviter, newOpponent);
+    next.status = 'active';
+    snlSessions.set(peer, next);
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(next) });
+    if (typeof ack === 'function') ack({ ok: true, session: snlPublicState(next) });
+  });
+
+  socket.on('snakeladder:leave', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = snlSessions.get(peer);
+    if (!session) {
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    if (session.status === 'active') {
+      session.status = 'done';
+      session.winner = username === session.inviter ? session.opponent : session.inviter;
+      session.resigned = username;
+      emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session), reason: 'resigned', by: username });
+    } else {
+      snlSessions.delete(peer);
+      emitToThread(peer, 'snakeladder:state', { peer, session: null, reason: 'left', by: username });
     }
     if (typeof ack === 'function') ack({ ok: true });
   });

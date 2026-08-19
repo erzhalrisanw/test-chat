@@ -42,6 +42,7 @@
     'dino':      { title: 'Dino Run',    mount: mountDino },
     'racing':    { title: 'Racing',      mount: mountRacing },
     'tictactoe': { title: 'Tic-Tac-Toe', mount: mountTicTacToe },
+    'snakeladder': { title: 'Ular Tangga', mount: mountSnakeLadder },
   };
 
   function styleVar(name, fallback) {
@@ -1189,6 +1190,373 @@
     return function cleanup() {
       sharedSocket.off('tictactoe:state', onState);
       if (hintTimer) clearTimeout(hintTimer);
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Snakes & Ladders (multiplayer)
+  // ------------------------------------------------------------------
+  function mountSnakeLadder(rootEl) {
+    if (!sharedSocket) {
+      rootEl.innerHTML = '<div class="snl-wrap"><div class="snl-status">Koneksi belum siap. Coba lagi sebentar.</div></div>';
+      hintEl.textContent = '';
+      return function () {};
+    }
+    const me = (getMeFn && getMeFn()) || localStorage.getItem('username') || '';
+    const meIsHub = me === HUB_USER;
+    const peer = meIsHub
+      ? (getPartnerFn ? getPartnerFn() : localStorage.getItem('activePeer'))
+      : me;
+    if (!peer) {
+      rootEl.innerHTML = '<div class="snl-wrap"><div class="snl-status">Pilih peer aktif dulu di daftar chat.</div></div>';
+      hintEl.textContent = '';
+      return function () {};
+    }
+
+    scoreEl.textContent = '0';
+    bestWrap.classList.add('hidden');
+    movesWrap.classList.add('hidden');
+    hintEl.textContent = 'Dapat angka 6 = lempar lagi.';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'snl-wrap';
+    const statusEl = document.createElement('div');
+    statusEl.className = 'snl-status';
+    const boardWrap = document.createElement('div');
+    boardWrap.className = 'snl-board-wrap';
+    const boardEl = document.createElement('div');
+    boardEl.className = 'snl-board';
+    const overlaySvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    overlaySvg.setAttribute('class', 'snl-overlay');
+    overlaySvg.setAttribute('viewBox', '0 0 100 100');
+    overlaySvg.setAttribute('preserveAspectRatio', 'none');
+    const pawnLayer = document.createElement('div');
+    pawnLayer.className = 'snl-pawns';
+    boardWrap.appendChild(boardEl);
+    boardWrap.appendChild(overlaySvg);
+    boardWrap.appendChild(pawnLayer);
+    const infoRow = document.createElement('div');
+    infoRow.className = 'snl-info';
+    const diceEl = document.createElement('div');
+    diceEl.className = 'snl-dice';
+    diceEl.textContent = '🎲';
+    const rollLog = document.createElement('div');
+    rollLog.className = 'snl-log';
+    infoRow.appendChild(diceEl);
+    infoRow.appendChild(rollLog);
+    const actions = document.createElement('div');
+    actions.className = 'snl-actions';
+    wrap.appendChild(statusEl);
+    wrap.appendChild(boardWrap);
+    wrap.appendChild(infoRow);
+    wrap.appendChild(actions);
+    rootEl.innerHTML = '';
+    rootEl.appendChild(wrap);
+
+    const cells = [];
+    for (let row = 0; row < 10; row++) {
+      const rowFromBottom = 9 - row;
+      for (let col = 0; col < 10; col++) {
+        const posInRow = rowFromBottom % 2 === 0 ? col : 9 - col;
+        const n = rowFromBottom * 10 + posInRow + 1;
+        const cell = document.createElement('div');
+        cell.className = 'snl-cell';
+        cell.textContent = String(n);
+        cell.dataset.n = String(n);
+        boardEl.appendChild(cell);
+        cells[n] = cell;
+      }
+    }
+
+    function cellCenter(n) {
+      const rowFromBottom = Math.floor((n - 1) / 10);
+      const posInRow = (n - 1) % 10;
+      const col = rowFromBottom % 2 === 0 ? posInRow : 9 - posInRow;
+      const rowFromTop = 9 - rowFromBottom;
+      return { x: col * 10 + 5, y: rowFromTop * 10 + 5 };
+    }
+
+    let currentSession = null;
+
+    function render() {
+      actions.innerHTML = '';
+      const s = currentSession;
+      renderCells(s);
+      renderOverlay(s);
+      renderPawns(s);
+      renderRoll(s);
+      if (!s) {
+        statusEl.textContent = 'Ajak peer main Ular Tangga.';
+        addBtn('Undang peer', 'primary', invite);
+        return;
+      }
+      if (s.status === 'pending') {
+        if (me === s.inviter) {
+          statusEl.innerHTML = 'Menunggu <b>' + escapeText(s.opponent) + '</b> menerima undangan…';
+          addBtn('Batalkan', 'secondary', decline);
+        } else if (me === s.opponent) {
+          statusEl.innerHTML = '<b>' + escapeText(s.inviter) + '</b> mengajakmu main. Terima?';
+          addBtn('Terima', 'primary', accept);
+          addBtn('Tolak', 'secondary', decline);
+        }
+      } else if (s.status === 'active') {
+        const isMyTurn = s.turn === me;
+        const bonus = s.lastRoll && s.lastRoll.by === s.turn && s.lastRoll.dice === 6;
+        statusEl.innerHTML = isMyTurn
+          ? 'Giliranmu ' + pawnChip(me) + (bonus ? ' <small>(bonus, kena 6)</small>' : '')
+          : 'Giliran ' + pawnChip(s.turn) + ' <b>' + escapeText(s.turn) + '</b>' + (bonus ? ' <small>(bonus)</small>' : '');
+        if (isMyTurn) addBtn('Lempar dadu 🎲', 'primary', roll);
+        addBtn('Menyerah', 'secondary', leave);
+      } else if (s.status === 'done') {
+        if (s.winner === me) statusEl.innerHTML = 'Kamu menang! 🎉';
+        else statusEl.innerHTML = '<b>' + escapeText(s.winner || 'peer') + '</b> menang. Coba lagi?';
+        addBtn('Main lagi', 'primary', rematch);
+        addBtn('Tutup', 'secondary', () => { leave(); });
+      }
+    }
+
+    function renderCells(s) {
+      for (let n = 1; n <= 100; n++) {
+        const cell = cells[n];
+        cell.className = 'snl-cell';
+        if (s && s.ladders && s.ladders[n] !== undefined) cell.classList.add('ladder-foot');
+        if (s && s.snakes && s.snakes[n] !== undefined) cell.classList.add('snake-head');
+        if (s && s.lastRoll && s.lastRoll.to === n) cell.classList.add('recent');
+      }
+    }
+
+    function renderOverlay(s) {
+      overlaySvg.innerHTML = '';
+      if (!s) return;
+      const drawLine = (from, to, cls) => {
+        const a = cellCenter(from);
+        const b = cellCenter(to);
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', String(a.x));
+        line.setAttribute('y1', String(a.y));
+        line.setAttribute('x2', String(b.x));
+        line.setAttribute('y2', String(b.y));
+        line.setAttribute('class', cls);
+        overlaySvg.appendChild(line);
+      };
+      if (s.ladders) for (const k in s.ladders) drawLine(Number(k), s.ladders[k], 'snl-ladder-line');
+      if (s.snakes) for (const k in s.snakes) drawLine(Number(k), s.snakes[k], 'snl-snake-line');
+    }
+
+    function renderPawns(s) {
+      pawnLayer.innerHTML = '';
+      if (!s) return;
+      const players = [s.inviter, s.opponent];
+      players.forEach((u, idx) => {
+        const pos = s.positions[u] || 0;
+        if (pos < 1) {
+          const badge = document.createElement('div');
+          badge.className = 'snl-pawn-start pawn-' + (idx === 0 ? 'a' : 'b');
+          badge.textContent = idx === 0 ? '🔴' : '🔵';
+          badge.title = u + ' (mulai)';
+          badge.dataset.user = u;
+          badge.style.left = (idx === 0 ? 6 : 60) + '%';
+          badge.style.top = '-14%';
+          pawnLayer.appendChild(badge);
+          return;
+        }
+        const c = cellCenter(pos);
+        const p = document.createElement('div');
+        p.className = 'snl-pawn pawn-' + (idx === 0 ? 'a' : 'b');
+        p.textContent = idx === 0 ? '🔴' : '🔵';
+        p.title = u + ' @ ' + pos;
+        p.dataset.user = u;
+        p.style.left = c.x + '%';
+        p.style.top = c.y + '%';
+        if (idx === 1) p.classList.add('pawn-offset');
+        pawnLayer.appendChild(p);
+      });
+    }
+
+    function moveToCell(pawnEl, n) {
+      const c = cellCenter(n);
+      pawnEl.style.left = c.x + '%';
+      pawnEl.style.top = c.y + '%';
+    }
+    function setPawnTransition(pawnEl, ms) {
+      pawnEl.style.transition = 'left ' + ms + 'ms linear, top ' + ms + 'ms linear';
+    }
+
+    let walkTimer = null;
+    function walkPawn(next, lr, done) {
+      const u = lr.by;
+      const idx = u === next.inviter ? 0 : 1;
+      const from = lr.from;
+      const jumped = lr.jumped;
+      const intermediate = jumped ? jumped.from : lr.to;
+      if (from === lr.to && !jumped) { done(); return; }
+      let pawnEl = pawnLayer.querySelector('.snl-pawn[data-user="' + cssEscape(u) + '"]');
+      if (!pawnEl) {
+        const startEl = pawnLayer.querySelector('.snl-pawn-start[data-user="' + cssEscape(u) + '"]');
+        if (startEl) startEl.remove();
+        pawnEl = document.createElement('div');
+        pawnEl.className = 'snl-pawn pawn-' + (idx === 0 ? 'a' : 'b');
+        pawnEl.textContent = idx === 0 ? '🔴' : '🔵';
+        pawnEl.dataset.user = u;
+        pawnEl.style.transition = 'none';
+        if (idx === 1) pawnEl.classList.add('pawn-offset');
+        moveToCell(pawnEl, Math.max(1, from));
+        pawnLayer.appendChild(pawnEl);
+        void pawnEl.offsetWidth;
+      }
+      let cur = Math.max(from, 1);
+      const stepMs = 200;
+      const loop = () => {
+        if (cur >= intermediate) {
+          if (jumped) {
+            setPawnTransition(pawnEl, 500);
+            moveToCell(pawnEl, jumped.to);
+            walkTimer = setTimeout(() => { walkTimer = null; done(); }, 550);
+          } else {
+            done();
+          }
+          return;
+        }
+        cur += 1;
+        setPawnTransition(pawnEl, stepMs);
+        moveToCell(pawnEl, cur);
+        walkTimer = setTimeout(loop, stepMs + 30);
+      };
+      loop();
+    }
+
+    function cssEscape(s) {
+      if (window.CSS && CSS.escape) return CSS.escape(s);
+      return String(s).replace(/[^\w-]/g, '\\$&');
+    }
+
+    function renderRoll(s) {
+      if (!s || !s.lastRoll) {
+        diceEl.textContent = '🎲';
+        rollLog.textContent = 'Belum ada lemparan.';
+        return;
+      }
+      const lr = s.lastRoll;
+      diceEl.textContent = diceFace(lr.dice);
+      let msg = escapeText(lr.by) + ' lempar ' + lr.dice + ' → ' + lr.from + ' ke ' + lr.to;
+      if (lr.jumped) {
+        msg += lr.jumped.kind === 'ladder' ? ' 🪜 naik' : ' 🐍 turun';
+      }
+      rollLog.textContent = msg;
+    }
+
+    function diceFace(n) {
+      return ['⚀','⚁','⚂','⚃','⚄','⚅'][Math.max(0, Math.min(5, n - 1))];
+    }
+
+    function addBtn(label, variant, handler) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'snl-btn' + (variant === 'secondary' ? ' secondary' : '');
+      b.innerHTML = label;
+      b.addEventListener('click', handler);
+      actions.appendChild(b);
+    }
+    function pawnChip(u) {
+      if (!currentSession) return '';
+      const idx = u === currentSession.inviter ? 0 : 1;
+      return '<span class="snl-chip pawn-' + (idx === 0 ? 'a' : 'b') + '">' + (idx === 0 ? '🔴' : '🔵') + '</span>';
+    }
+    function escapeText(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function invite() {
+      sharedSocket.emit('snakeladder:invite', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function accept() {
+      sharedSocket.emit('snakeladder:accept', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function decline() {
+      sharedSocket.emit('snakeladder:decline', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function roll() {
+      if (animating) return;
+      sharedSocket.emit('snakeladder:roll', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function rematch() {
+      sharedSocket.emit('snakeladder:rematch', { peer }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function leave() {
+      sharedSocket.emit('snakeladder:leave', { peer }, () => {});
+    }
+
+    let hintTimer = null;
+    function flashHint(msg) {
+      hintEl.textContent = msg;
+      if (hintTimer) clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => { hintEl.textContent = 'Dapat angka 6 = lempar lagi.'; }, 2500);
+    }
+
+    let animating = false;
+    let animTimer = null;
+    function rollKey(lr) {
+      if (!lr) return '';
+      return lr.by + '|' + lr.dice + '|' + lr.from + '|' + lr.to;
+    }
+    function playDiceAnim(finalFace, onDone) {
+      if (animTimer) { clearInterval(animTimer); animTimer = null; }
+      animating = true;
+      diceEl.classList.add('rolling');
+      const totalMs = 750;
+      const stepMs = 90;
+      const started = Date.now();
+      animTimer = setInterval(() => {
+        const r = 1 + Math.floor(Math.random() * 6);
+        diceEl.textContent = diceFace(r);
+        if (Date.now() - started >= totalMs) {
+          clearInterval(animTimer);
+          animTimer = null;
+          diceEl.classList.remove('rolling');
+          diceEl.textContent = diceFace(finalFace);
+          animating = false;
+          onDone();
+        }
+      }, stepMs);
+    }
+
+    function onState(payload) {
+      if (!payload || payload.peer !== peer) return;
+      const next = payload.session || null;
+      const prevKey = rollKey(currentSession && currentSession.lastRoll);
+      const nextKey = rollKey(next && next.lastRoll);
+      if (next && next.lastRoll && nextKey && nextKey !== prevKey) {
+        const lr = next.lastRoll;
+        playDiceAnim(lr.dice, () => {
+          animating = true;
+          walkPawn(next, lr, () => { animating = false; currentSession = next; render(); });
+        });
+        return;
+      }
+      currentSession = next;
+      render();
+    }
+    sharedSocket.on('snakeladder:state', onState);
+    sharedSocket.emit('snakeladder:sync', { peer }, (resp) => {
+      if (resp && resp.ok) currentSession = resp.session || null;
+      render();
+    });
+
+    return function cleanup() {
+      sharedSocket.off('snakeladder:state', onState);
+      if (hintTimer) clearTimeout(hintTimer);
+      if (animTimer) { clearInterval(animTimer); animTimer = null; }
+      if (walkTimer) { clearTimeout(walkTimer); walkTimer = null; }
     };
   }
 
