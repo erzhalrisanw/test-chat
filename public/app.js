@@ -631,6 +631,7 @@ function resetThreadView() {
 
 function switchPeer(peer) {
   if (!socket || !peer || peer === currentPeer) return;
+  if (currentPeer) saveDraft(currentPeer, msgInput.value);
   currentPeer = peer;
   if (isHub()) localStorage.setItem('activePeer', peer);
   unreadByPeer[peer] = 0;
@@ -638,6 +639,7 @@ function switchPeer(peer) {
   renderPeerSwitcherButton();
   renderPresence();
   applyReadStateForCurrentPeer();
+  applyDraftForCurrentPeer();
   socket.emit('selectPeer', { peer });
   if (typeof window.__tttBannerSync === 'function') window.__tttBannerSync();
 }
@@ -2015,6 +2017,7 @@ function startChat(token, username) {
   } else {
     currentPeer = me;
   }
+  applyDraftForCurrentPeer();
   renderPeerSwitcherButton();
   updateNotifBtn();
   updateGalleryBtn();
@@ -3466,8 +3469,36 @@ function autoResizeMsgInput() {
   msgInput.style.height = 'auto';
   msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
 }
+
+const drafts = {};
+function draftKey(peer) { return 'draft:' + me + ':' + peer; }
+function loadDraft(peer) {
+  if (!peer) return '';
+  if (peer in drafts) return drafts[peer];
+  try {
+    const v = localStorage.getItem(draftKey(peer));
+    drafts[peer] = v || '';
+    return drafts[peer];
+  } catch (_) { return ''; }
+}
+function saveDraft(peer, text) {
+  if (!peer) return;
+  const value = text || '';
+  drafts[peer] = value;
+  try {
+    if (value) localStorage.setItem(draftKey(peer), value);
+    else localStorage.removeItem(draftKey(peer));
+  } catch (_) {}
+}
+function applyDraftForCurrentPeer() {
+  const value = loadDraft(currentPeer);
+  msgInput.value = value;
+  autoResizeMsgInput();
+}
+
 msgInput.addEventListener('input', function() {
   autoResizeMsgInput();
+  if (currentPeer) saveDraft(currentPeer, msgInput.value);
   if (msgInput.value.length === 0) {
     sendTypingStop();
   } else {
@@ -3499,6 +3530,7 @@ chatForm.addEventListener('submit', function(e) {
     clearPreview();
     clearReply();
     msgInput.value = '';
+    saveDraft(currentPeer, '');
     autoResizeMsgInput();
     return;
   }
@@ -3508,12 +3540,14 @@ chatForm.addEventListener('submit', function(e) {
     clearPreview();
     clearReply();
     msgInput.value = '';
+    saveDraft(currentPeer, '');
     autoResizeMsgInput();
     return;
   }
   if (!text) return;
   queueMessage('message', { text: text, replyToId: replyToId, replyTo: replyToSnap });
   msgInput.value = '';
+  saveDraft(currentPeer, '');
   autoResizeMsgInput();
   clearReply();
 });
@@ -4444,6 +4478,9 @@ logoutBtn.addEventListener('click', function() {
   availablePeers = [];
   Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
   Object.keys(readStateMap).forEach((k) => delete readStateMap[k]);
+  Object.keys(drafts).forEach((k) => delete drafts[k]);
+  msgInput.value = '';
+  autoResizeMsgInput();
 });
 
 const BIRTHDAY_PANIC_USERS = new Set(['occupatus', 'turki']);
