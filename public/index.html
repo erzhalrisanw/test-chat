@@ -17,31 +17,13 @@
   <link rel="stylesheet" href="/style.css" />
   <script>
     (function () {
-      function isAugustJakarta() {
-        try {
-          return new Intl.DateTimeFormat('en-US', {
-            timeZone: 'Asia/Jakarta',
-            month: 'numeric',
-          }).format(new Date()) === '8';
-        } catch (_) {
-          return new Date().getMonth() === 7;
-        }
-      }
       try {
-        if (isAugustJakarta()) {
-          document.documentElement.setAttribute('data-theme', 'merdeka');
-          return;
-        }
         var t = localStorage.getItem('theme');
         var known = { dark: 1, ocean: 1, forest: 1, sunset: 1, merdeka: 1, light: 1 };
-        if (known[t]) {
-          if (t !== 'light') document.documentElement.setAttribute('data-theme', t);
-        } else {
-          document.documentElement.setAttribute('data-theme', 'merdeka');
+        if (known[t] && t !== 'light') {
+          document.documentElement.setAttribute('data-theme', t);
         }
-      } catch (e) {
-        document.documentElement.setAttribute('data-theme', 'merdeka');
-      }
+      } catch (e) {}
     })();
   </script>
 </head>
@@ -170,7 +152,7 @@
           </button>
         </div>
       </div>
-      <input id="msg" type="text" placeholder="Type a message..." autocomplete="off" maxlength="1000" />
+      <textarea id="msg" rows="1" placeholder="Type a message..." autocomplete="off" maxlength="1000"></textarea>
       <div class="emoji-wrap">
         <button type="button" id="emoji-btn" class="emoji-btn" title="Emoji" aria-haspopup="true" aria-expanded="false">😊</button>
         <div id="emoji-panel" class="emoji-panel hidden" role="menu"></div>

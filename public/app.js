@@ -1211,7 +1211,7 @@ async function loadNotifEnabled() {
       }
     }
     if (data && typeof data.theme === 'string' && data.theme !== currentTheme()) {
-      applyTheme(isMerdekaMonth() ? 'merdeka' : data.theme);
+      applyTheme(data.theme);
     }
     if (data && petPrefs) {
       const serverPet = PETS.find((p) => p.id === data.pet) ? data.pet : null;
@@ -2600,15 +2600,61 @@ function buildMessageNodes(msg) {
   return [div];
 }
 
+let copyToastTimer = null;
+function showCopyToast(msg) {
+  let el = document.getElementById('copy-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'copy-toast';
+    el.className = 'copy-toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('visible');
+  if (copyToastTimer) clearTimeout(copyToastTimer);
+  copyToastTimer = setTimeout(() => { el.classList.remove('visible'); }, 1400);
+}
+function copyTextToClipboard(text) {
+  const value = String(text || '');
+  if (!value) return;
+  const done = () => showCopyToast('Disalin');
+  const fail = () => showCopyToast('Gagal menyalin');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(value).then(done).catch(() => {
+      if (fallbackCopy(value)) done(); else fail();
+    });
+    return;
+  }
+  if (fallbackCopy(value)) done(); else fail();
+}
+function fallbackCopy(value) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_) { return false; }
+}
+
 function attachMsgMenu(div, opts) {
   if (div.querySelector('.msg-menu-btn')) return;
   const { id, username, isUnsent, hideContent } = opts;
   const canReply = id && !hideContent && !isUnsent;
   const canUnsend = id && username === me && !isUnsent;
   const canForward = id && isHub() && !hideContent && !isUnsent;
-  if (!canReply && !canUnsend && !canForward) return;
+  const textEl = div.querySelector('.msg-text');
+  const canCopy = !!(textEl && !hideContent && !isUnsent && textEl.textContent.trim());
+  if (!canReply && !canUnsend && !canForward && !canCopy) return;
   const items = [];
   if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
+  if (canCopy) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="copy"><span class="msg-menu-icon">📋</span><span class="msg-menu-label">Salin</span></button>');
   if (canForward) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="forward"><span class="msg-menu-icon">➤</span><span class="msg-menu-label">Teruskan</span></button>');
   if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
   const menuMarkup =
@@ -2650,6 +2696,9 @@ function attachMsgMenu(div, opts) {
         openForwardPicker(currentId);
       } else if (action === 'unsend' && currentId) {
         requestUnsend(currentId);
+      } else if (action === 'copy') {
+        const t = div.querySelector('.msg-text');
+        if (t) copyTextToClipboard(t.textContent);
       }
     });
   });
@@ -3408,11 +3457,24 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
   }
 }
 
+function autoResizeMsgInput() {
+  if (msgInput.tagName !== 'TEXTAREA') return;
+  msgInput.style.height = 'auto';
+  msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
+}
 msgInput.addEventListener('input', function() {
+  autoResizeMsgInput();
   if (msgInput.value.length === 0) {
     sendTypingStop();
   } else {
     sendTypingStart();
+  }
+});
+msgInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    if (typeof chatForm.requestSubmit === 'function') chatForm.requestSubmit();
+    else chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
   }
 });
 msgInput.addEventListener('blur', function() { sendTypingStop(); });
@@ -3433,6 +3495,7 @@ chatForm.addEventListener('submit', function(e) {
     clearPreview();
     clearReply();
     msgInput.value = '';
+    autoResizeMsgInput();
     return;
   }
   if (pendingImage) {
@@ -3441,11 +3504,13 @@ chatForm.addEventListener('submit', function(e) {
     clearPreview();
     clearReply();
     msgInput.value = '';
+    autoResizeMsgInput();
     return;
   }
   if (!text) return;
   queueMessage('message', { text: text, replyToId: replyToId, replyTo: replyToSnap });
   msgInput.value = '';
+  autoResizeMsgInput();
   clearReply();
 });
 
@@ -4654,7 +4719,7 @@ const THEMES = [
   { id: 'forest', label: 'Forest', icon: '🌿', swatch: '#e3d9b0', metaColor: '#6ba368' },
   { id: 'sunset', label: 'Sunset', icon: '🌅', swatch: '#fbc7e0', metaColor: '#d84f9a' },
 ];
-const DEFAULT_THEME = 'merdeka';
+const DEFAULT_THEME = 'light';
 
 function isMerdekaMonth() {
   try {
@@ -4727,7 +4792,6 @@ function currentTheme() {
   return attr ? 'light' : DEFAULT_THEME;
 }
 function applyTheme(themeId) {
-  if (isMerdekaMonth()) themeId = 'merdeka';
   const theme = THEMES.find((t) => t.id === themeId) || THEMES.find((t) => t.id === DEFAULT_THEME) || THEMES[0];
   if (theme.id === 'light') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', theme.id);
@@ -4744,36 +4808,22 @@ function applyTheme(themeId) {
 function renderThemeMenu() {
   if (!themeMenuEl) return;
   const active = currentTheme();
-  const locked = isMerdekaMonth();
   themeMenuEl.innerHTML = '';
-  if (locked) {
-    const notice = document.createElement('div');
-    notice.className = 'theme-menu-notice';
-    notice.textContent = '🇮🇩 Tema Merdeka wajib selama Agustus';
-    themeMenuEl.appendChild(notice);
-  }
   THEMES.forEach((theme) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    const disabled = locked && theme.id !== 'merdeka';
-    btn.className = 'theme-menu-item' + (theme.id === active ? ' active' : '') + (disabled ? ' disabled' : '');
+    btn.className = 'theme-menu-item' + (theme.id === active ? ' active' : '');
     btn.setAttribute('role', 'menuitem');
-    if (disabled) {
-      btn.disabled = true;
-      btn.title = 'Terkunci sampai September';
-    }
     const swatch = document.createElement('span');
     swatch.className = 'theme-menu-swatch';
     swatch.style.background = theme.swatch;
     btn.appendChild(swatch);
     btn.appendChild(document.createTextNode(theme.label));
-    if (!disabled) {
-      btn.addEventListener('click', () => {
-        closeThemeMenu();
-        applyTheme(theme.id);
-        saveThemeToServer(theme.id);
-      });
-    }
+    btn.addEventListener('click', () => {
+      closeThemeMenu();
+      applyTheme(theme.id);
+      saveThemeToServer(theme.id);
+    });
     themeMenuEl.appendChild(btn);
   });
 }
