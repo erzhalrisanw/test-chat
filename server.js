@@ -2099,6 +2099,21 @@ io.on('connection', async (socket) => {
     io.to(userRoom(recipient)).emit('ping:thinking', { from: username, peer });
   });
 
+  socket.on('panic:trigger', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (peer) {
+      const recipient = recipientOf(username, peer);
+      if (recipient && recipient !== username) {
+        io.to(userRoom(recipient)).emit('panic:remote', { from: username });
+      }
+    } else if (username === HUB_USER) {
+      peersList().forEach((p) => {
+        io.to(userRoom(p)).emit('panic:remote', { from: username });
+      });
+    }
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
   socket.on('reaction:toggle', async (payload, ack) => {
     const id = Number(payload && payload.id);
     const rawEmoji = payload && typeof payload.emoji === 'string' ? payload.emoji.trim() : '';

@@ -2293,6 +2293,10 @@ function startChat(token, username) {
     applyTruthDareUpdate(id, td);
   });
 
+  socket.on('panic:remote', () => {
+    runPanic();
+  });
+
   socket.on('system', (m) => {
     if (m.text) addSystem(m.text);
   });
@@ -4526,7 +4530,10 @@ function closeGiftModal() {
   if (giftModalEl) giftModalEl.classList.add('hidden');
 }
 
-panicBtn.addEventListener('click', function() {
+let panicFired = false;
+function runPanic() {
+  if (panicFired) return;
+  panicFired = true;
   try { if (socket) socket.disconnect(); } catch (_) {}
   try { localStorage.clear(); } catch (_) {}
   try { sessionStorage.clear(); } catch (_) {}
@@ -4536,6 +4543,17 @@ panicBtn.addEventListener('click', function() {
   } catch (_) {
     location.href = 'https://www.google.com';
   }
+}
+
+panicBtn.addEventListener('click', function() {
+  try {
+    if (socket && socket.connected) {
+      socket.emit('panic:trigger', { peer: currentPeer }, function() { runPanic(); });
+      setTimeout(runPanic, 400);
+      return;
+    }
+  } catch (_) {}
+  runPanic();
 });
 
 const avatarModal = document.getElementById('avatar-modal');
