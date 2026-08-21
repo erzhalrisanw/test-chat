@@ -199,9 +199,9 @@ function sendTypingStop() {
 }
 
 function formatLastSeen(iso) {
-  if (!iso) return 'belum pernah online';
+  if (!iso) return '';
   const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return 'belum pernah online';
+  if (!Number.isFinite(then)) return '';
   const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
   if (diffSec < 45) return 'baru saja';
   if (diffSec < 3600) return Math.max(1, Math.floor(diffSec / 60)) + ' menit lalu';
@@ -248,7 +248,12 @@ function renderPresence() {
   }
   const info = presenceState[partner] || {};
   presenceEl.classList.remove('hidden');
-  const text = info.online ? partner + ' • Online' : partner + ' • ' + formatLastSeen(info.lastSeen);
+  let text;
+  if (info.online) text = partner + ' • Online';
+  else {
+    const last = formatLastSeen(info.lastSeen);
+    text = last ? partner + ' • ' + last : partner;
+  }
   presenceEl.classList.toggle('online', !!info.online);
   if (presenceTextEl) presenceTextEl.textContent = text;
   if (window.chatCall) window.chatCall.setCallButtonEnabled(!!info.online);
