@@ -8,6 +8,7 @@ const msgInput = document.getElementById('msg');
 const meNameEl = document.getElementById('me-name');
 const logoutBtn = document.getElementById('logout');
 const notifBtn = document.getElementById('notif-toggle');
+const presenceBtn = document.getElementById('presence-toggle');
 const themeToggleBtn = document.getElementById('theme-toggle');
 const panicBtn = document.getElementById('panic-btn');
 const fileInput = document.getElementById('file-input');
@@ -949,6 +950,7 @@ let oldestLoadedId = null;
 let hasMoreHistory = false;
 let loadingMore = false;
 let notifEnabled = localStorage.getItem('notifEnabled') === '1';
+let presenceVisible = true;
 let audioCtx = null;
 
 function canCaptureVideoStream() {
@@ -1222,6 +1224,28 @@ function updateNotifBtn() {
   notifBtn.classList.toggle('off', !notifEnabled);
 }
 
+function updatePresenceBtn() {
+  if (!presenceBtn) return;
+  const icon = presenceBtn.querySelector('.header-menu-icon');
+  const state = presenceBtn.querySelector('.header-menu-state');
+  if (icon) icon.textContent = presenceVisible ? '👁️' : '🙈';
+  if (state) state.textContent = presenceVisible ? 'On' : 'Off';
+  presenceBtn.classList.toggle('off', !presenceVisible);
+  presenceBtn.classList.toggle('hidden', me !== HUB_USER);
+}
+
+async function savePresenceVisible(visible) {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    await fetch('/user-settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ presenceVisible: visible }),
+    });
+  } catch (_) {}
+}
+
 async function saveNotifEnabled(enabled) {
   const token = localStorage.getItem('token');
   if (!token) return;
@@ -1254,6 +1278,10 @@ async function loadNotifEnabled() {
     if (data && typeof data.theme === 'string' && data.theme !== currentTheme()) {
       applyTheme(data.theme);
     }
+    if (data && typeof data.presenceVisible === 'boolean') {
+      presenceVisible = data.presenceVisible;
+      updatePresenceBtn();
+    }
     if (data && petPrefs) {
       const serverPet = PETS.find((p) => p.id === data.pet) ? data.pet : null;
       const serverActive = PET_ANIMS.find((a) => a.id === data.petActiveAnim) ? data.petActiveAnim : null;
@@ -1279,6 +1307,15 @@ async function saveThemeToServer(themeId) {
       body: JSON.stringify({ theme: themeId }),
     });
   } catch (_) {}
+}
+
+if (presenceBtn) {
+  presenceBtn.addEventListener('click', () => {
+    if (me !== HUB_USER) return;
+    presenceVisible = !presenceVisible;
+    updatePresenceBtn();
+    savePresenceVisible(presenceVisible);
+  });
 }
 
 notifBtn.addEventListener('click', async () => {
@@ -2120,6 +2157,7 @@ function startChat(token, username) {
   applyDraftForCurrentPeer();
   renderPeerSwitcherButton();
   updateNotifBtn();
+  updatePresenceBtn();
   updateGalleryBtn();
   updateClearHistoryBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
@@ -4547,6 +4585,7 @@ logoutBtn.addEventListener('click', function() {
   panicBtn.classList.add('hidden');
   loginView.classList.remove('hidden');
   if (presenceTimerId) { clearInterval(presenceTimerId); presenceTimerId = null; }
+  if (presenceBtn) presenceBtn.classList.add('hidden');
   sendTypingStop();
   Object.keys(typingExpireTimers).forEach((k) => { clearTimeout(typingExpireTimers[k]); delete typingExpireTimers[k]; });
   Object.keys(typingState).forEach((k) => delete typingState[k]);

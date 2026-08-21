@@ -82,6 +82,9 @@ async function initDb() {
   if (!usColNames.has('pet_active_anim')) {
     await db.execute(`ALTER TABLE user_settings ADD COLUMN pet_active_anim TEXT`);
   }
+  if (!usColNames.has('presence_visible')) {
+    await db.execute(`ALTER TABLE user_settings ADD COLUMN presence_visible INTEGER NOT NULL DEFAULT 1`);
+  }
   await db.execute(`
     CREATE TABLE IF NOT EXISTS read_state (
       username TEXT NOT NULL,
@@ -178,6 +181,32 @@ async function loadAllPresence() {
   for (const row of result.rows) {
     lastSeen.set(String(row.username), String(row.last_seen));
   }
+}
+
+const presenceHidden = new Set();
+
+async function loadAllPresenceVisibility() {
+  const result = await db.execute('SELECT username, presence_visible FROM user_settings');
+  for (const row of result.rows) {
+    const v = row.presence_visible;
+    if (v !== null && v !== undefined && Number(v) === 0) {
+      presenceHidden.add(String(row.username));
+    }
+  }
+}
+
+function isPresenceHidden(username) {
+  return presenceHidden.has(username);
+}
+
+async function setPresenceVisible(username, visible) {
+  await db.execute({
+    sql: `INSERT INTO user_settings (username, presence_visible) VALUES (?, ?)
+          ON CONFLICT(username) DO UPDATE SET presence_visible = excluded.presence_visible`,
+    args: [username, visible ? 1 : 0],
+  });
+  if (visible) presenceHidden.delete(username);
+  else presenceHidden.add(username);
 }
 
 const avatars = new Map();
@@ -1072,7 +1101,8 @@ app.get('/user-settings', async (req, res) => {
     const notifEnabled = await getNotifEnabled(username);
     const theme = await getUserTheme(username);
     const petData = await getUserPet(username);
-    res.json({ ok: true, notifEnabled, theme, pet: petData.pet, petActiveAnim: petData.active });
+    const presenceVisible = !isPresenceHidden(username);
+    res.json({ ok: true, notifEnabled, theme, pet: petData.pet, petActiveAnim: petData.active, presenceVisible });
   } catch (err) {
     console.error('settings get error:', err.message);
     res.status(500).json({ ok: false });
@@ -1082,7 +1112,7 @@ app.get('/user-settings', async (req, res) => {
 app.post('/user-settings', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
-  const { notifEnabled, theme, pet, petActiveAnim } = req.body || {};
+  const { notifEnabled, theme, pet, petActiveAnim, presenceVisible } = req.body || {};
   if (notifEnabled !== undefined && typeof notifEnabled !== 'boolean') {
     return res.status(400).json({ ok: false });
   }
@@ -1095,7 +1125,13 @@ app.post('/user-settings', async (req, res) => {
   if (petActiveAnim !== undefined && !VALID_PET_ANIMS.has(petActiveAnim)) {
     return res.status(400).json({ ok: false });
   }
-  if (notifEnabled === undefined && theme === undefined && pet === undefined && petActiveAnim === undefined) {
+  if (presenceVisible !== undefined && typeof presenceVisible !== 'boolean') {
+    return res.status(400).json({ ok: false });
+  }
+  if (
+    notifEnabled === undefined && theme === undefined && pet === undefined &&
+    petActiveAnim === undefined && presenceVisible === undefined
+  ) {
     return res.status(400).json({ ok: false });
   }
   try {
@@ -1103,6 +1139,17 @@ app.post('/user-settings', async (req, res) => {
     if (theme !== undefined) await setUserTheme(username, theme);
     if (pet !== undefined || petActiveAnim !== undefined) {
       await setUserPet(username, { pet, active: petActiveAnim });
+    }
+    if (typeof presenceVisible === 'boolean') {
+      const wasHidden = isPresenceHidden(username);
+      await setPresenceVisible(username, presenceVisible);
+      const nowHidden = !presenceVisible;
+      if (wasHidden !== nowHidden) {
+        const payload = nowHidden
+          ? { username, online: false, lastSeen: null }
+          : { username, online: onlineUsers.has(username), lastSeen: lastSeen.get(username) || null };
+        io.except(userRoom(username)).emit('presence:update', payload);
+      }
     }
     res.json({ ok: true });
   } catch (err) {
@@ -1475,12 +1522,13 @@ function tttPublicState(session) {
   };
 }
 
-function presenceSnapshot() {
+function presenceSnapshot(viewer) {
   const snap = {};
   for (const u of users) {
+    const hidden = u !== viewer && isPresenceHidden(u);
     snap[u] = {
-      online: onlineUsers.has(u),
-      lastSeen: lastSeen.get(u) || null,
+      online: hidden ? false : onlineUsers.has(u),
+      lastSeen: hidden ? null : (lastSeen.get(u) || null),
       avatar: avatars.get(u) || null,
     };
   }
@@ -1518,9 +1566,9 @@ io.on('connection', async (socket) => {
 
   socket.emit('readState', readStateSnapshot(username));
   await emitHistoryFor(initialPeer);
-  socket.emit('presence:init', presenceSnapshot());
+  socket.emit('presence:init', presenceSnapshot(username));
   if (username === HUB_USER) socket.emit('peers', peersList());
-  if (wasOffline) {
+  if (wasOffline && !isPresenceHidden(username)) {
     socket.broadcast.emit('presence:update', { username, online: true, lastSeen: lastSeen.get(username) || null });
   }
 
@@ -2491,7 +2539,11 @@ io.on('connection', async (socket) => {
     if (activeCalls.has(username)) clearActiveCall('peer_disconnected');
     const iso = new Date().toISOString();
     touchLastSeen(username, iso);
-    io.emit('presence:update', { username, online: false, lastSeen: iso });
+    if (isPresenceHidden(username)) {
+      io.to(userRoom(username)).emit('presence:update', { username, online: false, lastSeen: iso });
+    } else {
+      io.emit('presence:update', { username, online: false, lastSeen: iso });
+    }
   });
 });
 
@@ -2502,6 +2554,7 @@ initDb()
   .then(() => seedPasswords())
   .then(() => loadAllReadState())
   .then(() => loadAllPresence())
+  .then(() => loadAllPresenceVisibility())
   .then(() => loadAllAvatars())
   .then(() => {
     server.listen(PORT, () => {
