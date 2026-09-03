@@ -3614,6 +3614,14 @@ function autoResizeMsgInput() {
   msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
 }
 
+function addSayangBeforeQuestion(text) {
+  const m = text.match(/^(.*?)(\s*\?+\s*)$/s);
+  if (!m) return text;
+  const body = m[1].replace(/\s+$/, '');
+  if (!body || /sayang$/i.test(body)) return text;
+  return body + ' sayang' + m[2].replace(/^\s+/, '');
+}
+
 const drafts = {};
 function draftKey(peer) { return 'draft:' + me + ':' + peer; }
 function loadDraft(peer) {
@@ -3689,6 +3697,7 @@ chatForm.addEventListener('submit', function(e) {
     return;
   }
   if (!text) return;
+  if (me === 'turki') text = addSayangBeforeQuestion(text);
   queueMessage('message', { text: text, replyToId: replyToId, replyTo: replyToSnap });
   msgInput.value = '';
   saveDraft(currentPeer, '');
@@ -5033,6 +5042,12 @@ document.addEventListener('click', (e) => {
 document.addEventListener('header:submenu:open', (e) => {
   if (e.detail !== 'theme') closeThemeMenu();
 });
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 document.addEventListener('header:menu:close', () => closeThemeMenu());
 
 var savedToken = localStorage.getItem('token');

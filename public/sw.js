@@ -1,5 +1,85 @@
-self.addEventListener('install', (e) => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+const CACHE_STATIC = 'chat-static-v1';
+const CACHE_STICKERS = 'chat-stickers-v1';
+
+const STATIC_ASSETS = [
+  '/app.js',
+  '/style.css',
+  '/games.js',
+  '/photo-editor.js',
+  '/call.js',
+  '/weather.js',
+  '/icon.svg',
+  '/doraemon.svg',
+  '/sun.png',
+  '/pajero.jpeg',
+  '/manifest.json',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(CACHE_STATIC);
+      await cache.addAll(STATIC_ASSETS);
+    } catch (_) {}
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((k) => k !== CACHE_STATIC && k !== CACHE_STICKERS)
+        .map((k) => caches.delete(k))
+    );
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  let url;
+  try { url = new URL(req.url); } catch (_) { return; }
+  if (url.origin !== self.location.origin) return;
+  if (url.search) return;
+
+  if (url.pathname.startsWith('/stickers/')) {
+    if (url.pathname === '/stickers/manifest' || url.pathname === '/stickers/index.json') return;
+    event.respondWith(cacheFirst(req, CACHE_STICKERS));
+    return;
+  }
+
+  if (STATIC_ASSETS.indexOf(url.pathname) !== -1) {
+    event.respondWith(staleWhileRevalidate(req, CACHE_STATIC));
+  }
+});
+
+async function cacheFirst(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  try {
+    const resp = await fetch(req);
+    if (resp && resp.ok) cache.put(req, resp.clone());
+    return resp;
+  } catch (_) {
+    return hit || Response.error();
+  }
+}
+
+async function staleWhileRevalidate(req, cacheName) {
+  const cache = await caches.open(cacheName);
+  const hit = await cache.match(req);
+  const fetching = fetch(req)
+    .then((resp) => {
+      if (resp && resp.ok) cache.put(req, resp.clone());
+      return resp;
+    })
+    .catch(() => hit);
+  return hit || fetching;
+}
 
 self.addEventListener('push', (event) => {
   let data = {};

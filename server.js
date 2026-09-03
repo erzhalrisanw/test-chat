@@ -1,4 +1,5 @@
 const express = require('express');
+const compression = require('compression');
 const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
@@ -10,10 +11,36 @@ const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 15 * 1024 * 1024 });
+const io = new Server(server, {
+  maxHttpBufferSize: 15 * 1024 * 1024,
+  perMessageDeflate: { threshold: 4096 },
+});
 
+app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '15mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath) {
+    if (filePath.includes(path.sep + 'stickers' + path.sep)) {
+      const base = path.basename(filePath).toLowerCase();
+      if (base === 'index.json' || base === 'manifest.json') {
+        res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return;
+    }
+    const base = path.basename(filePath).toLowerCase();
+    if (base === 'sw.js' || base === 'index.html' || base === 'manifest.json') {
+      res.setHeader('Cache-Control', 'no-cache');
+      return;
+    }
+    if (/\.(js|css|svg|png|jpe?g|webp|gif|ico|woff2?|mp4|webm)$/i.test(base)) {
+      res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
+    }
+  },
+}));
 
 const db = createClient({
   url: process.env.TURSO_DATABASE_URL || 'file:chat.db',

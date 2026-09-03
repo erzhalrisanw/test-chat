@@ -888,6 +888,7 @@ text-transform: uppercase;
 vertical-align: middle;
 }
 .msg.unsent-hidden { opacity: .85; }
+.msg-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.unsent-hidden .msg-text.unsent-placeholder {
 font-style: italic;
 opacity: .9;
