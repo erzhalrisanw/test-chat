@@ -3846,7 +3846,9 @@ if (camZoom) {
     if (!track) return;
     try {
       await track.applyConstraints({ advanced: [{ zoom: Number(camZoom.value) }] });
-    } catch (_) {}
+    } catch (err) {
+      camError.textContent = 'Zoom not supported: ' + (err.message || err.name);
+    }
   });
 }
 camRecord.addEventListener('click', function() {
@@ -3921,6 +3923,28 @@ function getCamVideoTrack() {
   return tracks && tracks[0] ? tracks[0] : null;
 }
 
+function readCameraCapabilities() {
+  var track = getCamVideoTrack();
+  if (!track || typeof track.getCapabilities !== 'function') return;
+  var caps = {};
+  try { caps = track.getCapabilities() || {}; } catch (_) {}
+  if (caps.torch && camTorch) camTorch.classList.remove('hidden');
+  if (caps.zoom && camZoom) {
+    var zmin = typeof caps.zoom.min === 'number' ? caps.zoom.min : Number(caps.zoom.min);
+    var zmax = typeof caps.zoom.max === 'number' ? caps.zoom.max : Number(caps.zoom.max);
+    var zstep = typeof caps.zoom.step === 'number' ? caps.zoom.step : Number(caps.zoom.step);
+    if (isFinite(zmin) && isFinite(zmax) && zmax > zmin) {
+      var settings = {};
+      try { settings = track.getSettings() || {}; } catch (_) {}
+      camZoom.min = String(zmin);
+      camZoom.max = String(zmax);
+      camZoom.step = String(isFinite(zstep) && zstep > 0 ? zstep : 0.1);
+      camZoom.value = String(settings.zoom || zmin);
+      camZoom.classList.remove('hidden');
+    }
+  }
+}
+
 function applyCameraCapabilities() {
   camTorchOn = false;
   if (camTorch) {
@@ -3928,20 +3952,15 @@ function applyCameraCapabilities() {
     camTorch.classList.add('hidden');
   }
   if (camZoom) camZoom.classList.add('hidden');
-  var track = getCamVideoTrack();
-  if (!track || typeof track.getCapabilities !== 'function') return;
-  var caps = {};
-  try { caps = track.getCapabilities() || {}; } catch (_) {}
-  if (caps.torch && camTorch) camTorch.classList.remove('hidden');
-  if (caps.zoom && camZoom && typeof caps.zoom.min === 'number' && typeof caps.zoom.max === 'number' && caps.zoom.max > caps.zoom.min) {
-    var settings = {};
-    try { settings = track.getSettings() || {}; } catch (_) {}
-    camZoom.min = String(caps.zoom.min);
-    camZoom.max = String(caps.zoom.max);
-    camZoom.step = String(caps.zoom.step || 0.1);
-    camZoom.value = String(settings.zoom || caps.zoom.min);
-    camZoom.classList.remove('hidden');
-  }
+  readCameraCapabilities();
+  // Some browsers only populate zoom/torch caps after the track is fully live —
+  // re-check on loadedmetadata and after a short delay as a fallback.
+  var onMeta = function() {
+    camVideo.removeEventListener('loadedmetadata', onMeta);
+    readCameraCapabilities();
+  };
+  camVideo.addEventListener('loadedmetadata', onMeta);
+  setTimeout(readCameraCapabilities, 400);
 }
 
 function closeCamera() {
