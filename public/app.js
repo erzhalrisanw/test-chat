@@ -3614,12 +3614,27 @@ function autoResizeMsgInput() {
   msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
 }
 
-function addSayangBeforeQuestion(text) {
-  const m = text.match(/^(.*?)(\s*\?+\s*)$/s);
-  if (!m) return text;
-  const body = m[1].replace(/\s+$/, '');
-  if (!body || /sayang$/i.test(body)) return text;
-  return body + ' sayang' + m[2].replace(/^\s+/, '');
+function applyTurkiSayangQuirk(text) {
+  if (!text) return text;
+  if (/\bsayang\b/i.test(text)) return text;
+  const body = text.trim();
+  if (!body) return text;
+  const words = body.split(/\s+/);
+  // Focus on short single-clause messages.
+  if (words.length > 8) return text;
+  // Single-word only allowed for a few affirmations.
+  if (words.length < 2 && !/^(?:iya+|oke+|yaa*)[.!?…]*$/i.test(body)) return text;
+  // Multi-clause (multiple ./!/?/… groups) — skip so we don't land mid-sentence.
+  if ((body.match(/[.!?…]+/g) || []).length > 1) return text;
+  if (Math.random() >= 0.3) return text;
+
+  const m = text.match(/^(.*?)(\s*[.!?…]+\s*)$/s);
+  if (m) {
+    const head = m[1].replace(/\s+$/, '');
+    if (!head) return text;
+    return head + ' sayang' + m[2].replace(/^\s+/, '');
+  }
+  return text.replace(/\s+$/, '') + ' sayang..';
 }
 
 const drafts = {};
@@ -3697,7 +3712,7 @@ chatForm.addEventListener('submit', function(e) {
     return;
   }
   if (!text) return;
-  if (me === 'turki') text = addSayangBeforeQuestion(text);
+  if (me === 'turki') text = applyTurkiSayangQuirk(text);
   queueMessage('message', { text: text, replyToId: replyToId, replyTo: replyToSnap });
   msgInput.value = '';
   saveDraft(currentPeer, '');
