@@ -937,8 +937,11 @@ const camSwitch = document.getElementById('cam-switch');
 const camRecord = document.getElementById('cam-record');
 const camTimer = document.getElementById('cam-timer');
 const camError = document.getElementById('cam-error');
+const camTorch = document.getElementById('cam-torch');
+const camZoom = document.getElementById('cam-zoom');
 let camStream = null;
 let camFacing = 'user';
+let camTorchOn = false;
 let mediaRecorder = null;
 let recordChunks = [];
 let recordTimerId = null;
@@ -3823,6 +3826,29 @@ camSwitch.addEventListener('click', function() {
   camFacing = camFacing === 'user' ? 'environment' : 'user';
   openCamera();
 });
+if (camTorch) {
+  camTorch.addEventListener('click', async function() {
+    var track = getCamVideoTrack();
+    if (!track) return;
+    var next = !camTorchOn;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: next }] });
+      camTorchOn = next;
+      camTorch.dataset.on = next ? 'true' : 'false';
+    } catch (err) {
+      camError.textContent = 'Flashlight not supported: ' + (err.message || err.name);
+    }
+  });
+}
+if (camZoom) {
+  camZoom.addEventListener('input', async function() {
+    var track = getCamVideoTrack();
+    if (!track) return;
+    try {
+      await track.applyConstraints({ advanced: [{ zoom: Number(camZoom.value) }] });
+    } catch (_) {}
+  });
+}
 camRecord.addEventListener('click', function() {
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     stopRecording();
@@ -3874,13 +3900,47 @@ async function openCamera() {
   camModal.classList.remove('hidden');
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: camFacing },
+      video: {
+        facingMode: camFacing,
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
       audio: false,
     });
     camVideo.srcObject = camStream;
     camVideo.classList.toggle('mirrored', camFacing === 'user');
+    applyCameraCapabilities();
   } catch (err) {
     camError.textContent = 'Cannot access camera: ' + (err.message || err.name);
+  }
+}
+
+function getCamVideoTrack() {
+  if (!camStream) return null;
+  var tracks = camStream.getVideoTracks();
+  return tracks && tracks[0] ? tracks[0] : null;
+}
+
+function applyCameraCapabilities() {
+  camTorchOn = false;
+  if (camTorch) {
+    camTorch.dataset.on = 'false';
+    camTorch.classList.add('hidden');
+  }
+  if (camZoom) camZoom.classList.add('hidden');
+  var track = getCamVideoTrack();
+  if (!track || typeof track.getCapabilities !== 'function') return;
+  var caps = {};
+  try { caps = track.getCapabilities() || {}; } catch (_) {}
+  if (caps.torch && camTorch) camTorch.classList.remove('hidden');
+  if (caps.zoom && camZoom && typeof caps.zoom.min === 'number' && typeof caps.zoom.max === 'number' && caps.zoom.max > caps.zoom.min) {
+    var settings = {};
+    try { settings = track.getSettings() || {}; } catch (_) {}
+    camZoom.min = String(caps.zoom.min);
+    camZoom.max = String(caps.zoom.max);
+    camZoom.step = String(caps.zoom.step || 0.1);
+    camZoom.value = String(settings.zoom || caps.zoom.min);
+    camZoom.classList.remove('hidden');
   }
 }
 
@@ -3972,11 +4032,16 @@ async function startRecording() {
     try {
       stopCamStream();
       camStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: camFacing },
+        video: {
+          facingMode: camFacing,
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: true,
       });
       camVideo.srcObject = camStream;
       camVideo.classList.toggle('mirrored', camFacing === 'user');
+      applyCameraCapabilities();
     } catch (err) {
       camError.textContent = 'Cannot access camera/mic: ' + (err.message || err.name);
       return;
