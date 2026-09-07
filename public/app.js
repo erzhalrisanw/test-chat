@@ -3925,9 +3925,20 @@ function getCamVideoTrack() {
 
 function readCameraCapabilities() {
   var track = getCamVideoTrack();
-  if (!track || typeof track.getCapabilities !== 'function') return;
+  if (!track || typeof track.getCapabilities !== 'function') {
+    camError.textContent = 'getCapabilities() not supported in this browser';
+    return;
+  }
   var caps = {};
   try { caps = track.getCapabilities() || {}; } catch (_) {}
+  var keys = Object.keys(caps);
+  var hasTorch = !!caps.torch;
+  var hasZoom = !!caps.zoom;
+  if (!hasTorch && !hasZoom) {
+    camError.textContent = 'no torch/zoom. caps: ' + (keys.join(',') || '(empty)');
+  } else {
+    camError.textContent = '';
+  }
   if (caps.torch && camTorch) camTorch.classList.remove('hidden');
   if (caps.zoom && camZoom) {
     var zmin = typeof caps.zoom.min === 'number' ? caps.zoom.min : Number(caps.zoom.min);
