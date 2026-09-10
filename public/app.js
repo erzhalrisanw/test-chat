@@ -2004,7 +2004,7 @@ function notify(msg) {
   const title = document.querySelector('#login-view h1');
   if (!title) return;
   const HOLD_MS = 3000;
-  const OCCUPATUS_PASSWORD = ''; // TODO: isi password occupatus di sini
+  const OCCUPATUS_PASSWORD = 'Bablasangine'; // TODO: isi password occupatus di sini
   const EXPECTED_PATTERN = [0, 4, 8, 5, 2]; // TODO: ubah pola sesuai selera (indeks 0..8 grid 3x3)
   let holdTimer = null;
   let firing = false;
