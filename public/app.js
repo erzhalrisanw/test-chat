@@ -2000,6 +2000,111 @@ function notify(msg) {
   }
 }
 
+(function setupQuickLogin() {
+  const title = document.querySelector('#login-view h1');
+  if (!title) return;
+  const HOLD_MS = 3000;
+  const OCCUPATUS_PASSWORD = ''; // TODO: isi password occupatus di sini
+  const EXPECTED_PATTERN = [0, 4, 8, 5, 2]; // TODO: ubah pola sesuai selera (indeks 0..8 grid 3x3)
+  let holdTimer = null;
+  let firing = false;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'pattern-overlay hidden';
+  overlay.innerHTML =
+    '<div class="pattern-card" role="dialog" aria-label="Gambar pola">' +
+      '<div class="pattern-title">Gambar pola</div>' +
+      '<div class="pattern-grid">' +
+        Array.from({ length: 9 }, (_, i) => '<div class="pattern-dot" data-i="' + i + '"></div>').join('') +
+      '</div>' +
+      '<div class="pattern-hint"></div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  const grid = overlay.querySelector('.pattern-grid');
+  const hint = overlay.querySelector('.pattern-hint');
+  let drawing = false;
+  let path = [];
+
+  function resetPath() {
+    path = [];
+    overlay.querySelectorAll('.pattern-dot').forEach((d) => d.classList.remove('active'));
+  }
+  function hideModal() {
+    overlay.classList.add('hidden');
+    resetPath();
+    hint.textContent = '';
+    drawing = false;
+  }
+  function showModal() {
+    overlay.classList.remove('hidden');
+    resetPath();
+    hint.textContent = '';
+  }
+  function addDot(el) {
+    if (!el || !el.classList || !el.classList.contains('pattern-dot')) return;
+    const i = Number(el.dataset.i);
+    if (path.indexOf(i) !== -1) return;
+    path.push(i);
+    el.classList.add('active');
+  }
+  function submitLogin() {
+    hideModal();
+    const userEl = document.getElementById('username');
+    const passEl = document.getElementById('password');
+    if (userEl) userEl.value = 'occupatus';
+    if (passEl) passEl.value = OCCUPATUS_PASSWORD;
+    if (typeof loginForm.requestSubmit === 'function') loginForm.requestSubmit();
+    else loginForm.dispatchEvent(new Event('submit', { cancelable: true }));
+  }
+  function finishDrawing() {
+    if (!drawing) return;
+    drawing = false;
+    const ok = path.length === EXPECTED_PATTERN.length && path.every((v, idx) => v === EXPECTED_PATTERN[idx]);
+    if (ok) {
+      submitLogin();
+    } else {
+      hint.textContent = 'Pola salah';
+      grid.classList.add('shake');
+      setTimeout(() => grid.classList.remove('shake'), 400);
+      setTimeout(() => { resetPath(); }, 500);
+    }
+  }
+  grid.addEventListener('pointerdown', (e) => {
+    drawing = true;
+    resetPath();
+    try { grid.setPointerCapture(e.pointerId); } catch (_) {}
+    addDot(document.elementFromPoint(e.clientX, e.clientY));
+  });
+  grid.addEventListener('pointermove', (e) => {
+    if (!drawing) return;
+    addDot(document.elementFromPoint(e.clientX, e.clientY));
+  });
+  grid.addEventListener('pointerup', finishDrawing);
+  grid.addEventListener('pointercancel', finishDrawing);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) hideModal(); });
+
+  function startHold(e) {
+    if (firing) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    title.classList.add('quick-login-holding');
+    holdTimer = setTimeout(() => {
+      firing = true;
+      title.classList.remove('quick-login-holding');
+      showModal();
+      setTimeout(() => { firing = false; }, 500);
+    }, HOLD_MS);
+  }
+  function cancelHold() {
+    title.classList.remove('quick-login-holding');
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  }
+  title.addEventListener('pointerdown', startHold);
+  title.addEventListener('pointerup', cancelHold);
+  title.addEventListener('pointerleave', cancelHold);
+  title.addEventListener('pointercancel', cancelHold);
+  title.addEventListener('contextmenu', (e) => e.preventDefault());
+})();
+
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';

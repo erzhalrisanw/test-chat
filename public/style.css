@@ -4723,3 +4723,40 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
   opacity: 1;
   transform: translate(-50%, 0);
 }
+
+#login-view h1 { user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+#login-view h1.quick-login-holding { opacity: .55; transition: opacity .2s ease; }
+.pattern-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.pattern-overlay.hidden { display: none; }
+.pattern-card {
+  background: #fff; padding: 22px 24px 18px;
+  border-radius: 18px;
+  border: 3px solid var(--toon-ink, #000);
+  box-shadow: 0 4px 0 0 var(--toon-ink, #000);
+  min-width: 260px;
+}
+.pattern-title { font-weight: 700; text-align: center; margin-bottom: 14px; }
+.pattern-grid {
+  display: grid; grid-template-columns: repeat(3, 56px);
+  gap: 18px; justify-content: center;
+  touch-action: none; user-select: none;
+}
+.pattern-dot {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: #eee; border: 2px solid var(--toon-ink, #000);
+  transition: background .12s ease, transform .12s ease;
+}
+.pattern-dot.active { background: var(--toon-pink, #ff6fa1); transform: scale(.9); }
+.pattern-hint { margin-top: 12px; text-align: center; color: #c00; min-height: 18px; font-size: 13px; }
+.pattern-grid.shake { animation: pattern-shake .4s; }
+@keyframes pattern-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
