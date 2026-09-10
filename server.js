@@ -2,6 +2,7 @@ const express = require('express');
 const compression = require('compression');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const webPush = require('web-push');
 const { createClient } = require('@libsql/client');
@@ -18,6 +19,19 @@ const io = new Server(server, {
 
 app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '15mb' }));
+
+const INDEX_HTML_PATH = path.join(__dirname, 'public', 'index.html');
+const INDEX_HTML_RAW = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+function renderIndexHtml() {
+  const cfg = { occupatusPassword: process.env.OCCUPATUS_PASSWORD || '' };
+  return INDEX_HTML_RAW.replace('/*__APP_CFG__*/{}', JSON.stringify(cfg));
+}
+app.get(['/', '/index.html'], (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(renderIndexHtml());
+});
+
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: true,
   lastModified: true,

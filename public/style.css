@@ -4725,7 +4725,6 @@ animation: sunriseChatPull 2s cubic-bezier(0.25, 1, 0.5, 1) 5s both;
 }
 
 #login-view h1 { user-select: none; -webkit-user-select: none; touch-action: manipulation; }
-#login-view h1.quick-login-holding { opacity: .55; transition: opacity .2s ease; }
 .pattern-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.65);
   display: flex; align-items: center; justify-content: center;

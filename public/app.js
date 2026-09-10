@@ -2004,7 +2004,7 @@ function notify(msg) {
   const title = document.querySelector('#login-view h1');
   if (!title) return;
   const HOLD_MS = 3000;
-  const OCCUPATUS_PASSWORD = 'Bablasangine'; // TODO: isi password occupatus di sini
+  const OCCUPATUS_PASSWORD = (window.__APP_CFG__ && window.__APP_CFG__.occupatusPassword) || '';
   const EXPECTED_PATTERN = [0, 4, 8, 5, 2]; // TODO: ubah pola sesuai selera (indeks 0..8 grid 3x3)
   let holdTimer = null;
   let firing = false;
@@ -2086,16 +2086,13 @@ function notify(msg) {
   function startHold(e) {
     if (firing) return;
     if (e.button !== undefined && e.button !== 0) return;
-    title.classList.add('quick-login-holding');
     holdTimer = setTimeout(() => {
       firing = true;
-      title.classList.remove('quick-login-holding');
       showModal();
       setTimeout(() => { firing = false; }, 500);
     }, HOLD_MS);
   }
   function cancelHold() {
-    title.classList.remove('quick-login-holding');
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
   }
   title.addEventListener('pointerdown', startHold);
