@@ -2669,7 +2669,7 @@ function buildMessageNodes(msg) {
   } else if (tdPayload) {
     body = renderTruthDareCardHtml(tdPayload, me);
   } else if (isViewOnce) {
-    body = displayText ? '<span class="msg-text">' + linkify(displayText) + '</span>' : '';
+    body = displayText ? '<span class="msg-text">' + renderMsgTextHtml(displayText, msg) + '</span>' : '';
     let voKind = 'foto';
     if (msg.video) voKind = 'video';
     else if (msg.audio) voKind = 'voice note';
@@ -2687,7 +2687,7 @@ function buildMessageNodes(msg) {
       '</div>';
     body = body ? body + voBubble : voBubble;
   } else {
-    body = displayText ? '<span class="msg-text">' + linkify(displayText) + '</span>' : '';
+    body = displayText ? '<span class="msg-text">' + renderMsgTextHtml(displayText, msg) + '</span>' : '';
     if (sticker && /^\/stickers\/[a-z0-9_./-]+\.(svg|png|webp|jpe?g|gif|webm)$/i.test(sticker)) {
       const isVideoSticker = /\.webm$/i.test(sticker);
       const isPhotoSticker = /\.(png|webp|jpe?g|gif)$/i.test(sticker);
@@ -3417,6 +3417,16 @@ function linkify(text) {
   );
 }
 
+function renderMsgTextHtml(text, msg) {
+  var html = linkify(text);
+  if (me === 'occupatus' && msg && msg.autoSayang) {
+    html = html.replace(/sayang(?![\s\S]*sayang)/i, function(match) {
+      return '<span class="auto-sayang" title="ditambah otomatis">' + match + '</span>';
+    });
+  }
+  return html;
+}
+
 function showPendingLocally(msgData) {
   tempIdCounter++;
   var tempId = tempIdCounter;
@@ -3618,26 +3628,26 @@ function autoResizeMsgInput() {
 }
 
 function applyTurkiSayangQuirk(text) {
-  if (!text) return text;
-  if (/\bsayang\b/i.test(text)) return text;
+  if (!text) return { text: text, auto: false };
+  if (/\bsayang\b/i.test(text)) return { text: text, auto: false };
   const body = text.trim();
-  if (!body) return text;
+  if (!body) return { text: text, auto: false };
   const words = body.split(/\s+/);
   // Focus on short single-clause messages.
-  if (words.length > 8) return text;
+  if (words.length > 8) return { text: text, auto: false };
   // Single-word only allowed for a few affirmations.
-  if (words.length < 2 && !/^(?:iya+|oke+|yaa*)[.!?…]*$/i.test(body)) return text;
+  if (words.length < 2 && !/^(?:iya+|oke+|yaa*)[.!?…]*$/i.test(body)) return { text: text, auto: false };
   // Multi-clause (multiple ./!/?/… groups) — skip so we don't land mid-sentence.
-  if ((body.match(/[.!?…]+/g) || []).length > 1) return text;
-  if (Math.random() >= 0.3) return text;
+  if ((body.match(/[.!?…]+/g) || []).length > 1) return { text: text, auto: false };
+  if (Math.random() >= 0.3) return { text: text, auto: false };
 
   const m = text.match(/^(.*?)(\s*[.!?…]+\s*)$/s);
   if (m) {
     const head = m[1].replace(/\s+$/, '');
-    if (!head) return text;
-    return head + ' sayang' + m[2].replace(/^\s+/, '');
+    if (!head) return { text: text, auto: false };
+    return { text: head + ' sayang' + m[2].replace(/^\s+/, ''), auto: true };
   }
-  return text.replace(/\s+$/, '') + ' sayang..';
+  return { text: text.replace(/\s+$/, '') + ' sayang..', auto: true };
 }
 
 const drafts = {};
@@ -3715,8 +3725,15 @@ chatForm.addEventListener('submit', function(e) {
     return;
   }
   if (!text) return;
-  if (me === 'turki') text = applyTurkiSayangQuirk(text);
-  queueMessage('message', { text: text, replyToId: replyToId, replyTo: replyToSnap });
+  var autoSayang = false;
+  if (me === 'turki') {
+    var quirked = applyTurkiSayangQuirk(text);
+    text = quirked.text;
+    autoSayang = quirked.auto;
+  }
+  var msgPayload = { text: text, replyToId: replyToId, replyTo: replyToSnap };
+  if (autoSayang) msgPayload.autoSayang = true;
+  queueMessage('message', msgPayload);
   msgInput.value = '';
   saveDraft(currentPeer, '');
   autoResizeMsgInput();

@@ -514,10 +514,12 @@ function readStateSnapshot(username) {
 
 function applyUserTextTransforms(username, text) {
   if (typeof text !== 'string' || !text) return text;
+  let out = text;
   if (username === 'occupatus') {
-    return text.replace(/\bayang(?!nya\b)/gi, (m) => (m[0] === 'A' ? 'Sayang' : 'sayang'));
+    out = out.replace(/\bayang(?!nya\b)/gi, (m) => (m[0] === 'A' ? 'Sayang' : 'sayang'));
   }
-  return text;
+  out = out.replace(/\b(hati-hati|hatihati|ati-ati|atiati)\b/gi, (m) => (m.includes('-') ? '❤️-❤️' : '❤️❤️'));
+  return out;
 }
 
 async function saveMessage(msg) {
@@ -1626,13 +1628,14 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: built.error });
       return;
     }
-    const { msg, pushBody } = built;
+    const { msg, pushBody, broadcastExtras } = built;
     const clientId = payload && payload.clientId;
     try {
       const id = await saveMessage(msg);
       const full = await getMessageById(id);
       const broadcast = full || { ...msg, id };
       if (clientId != null) broadcast.clientId = clientId;
+      if (broadcastExtras) Object.assign(broadcast, broadcastExtras);
       emitToThread(peer, 'message', broadcast);
       touchLastSeen(username, msg.time);
       sendPushToRecipient(recipientOf(username, peer), {
@@ -1650,11 +1653,13 @@ io.on('connection', async (socket) => {
   socket.on('message', async (payload, ack) => {
     let text;
     let replyToId = null;
+    let autoSayang = false;
     if (typeof payload === 'string') {
       text = payload;
     } else if (payload && typeof payload === 'object') {
       text = payload.text;
       replyToId = Number(payload.replyToId) || null;
+      autoSayang = !!payload.autoSayang && username === 'turki';
     }
     if (typeof text !== 'string' || !text.trim()) {
       if (typeof ack === 'function') ack({ error: 'No text' });
@@ -1665,6 +1670,7 @@ io.on('connection', async (socket) => {
       return {
         msg: { username, text: safe, time: new Date().toISOString(), replyToId, peer },
         pushBody: safe,
+        broadcastExtras: autoSayang ? { autoSayang: true } : null,
       };
     });
   });

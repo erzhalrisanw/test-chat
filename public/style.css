@@ -778,6 +778,7 @@ gap: 10px;
 }
 .msg { max-width: 72%; padding: 10px 14px; border-radius: 18px; line-height: 1.4; word-wrap: break-word; position: relative; border: 3px solid var(--toon-ink); box-shadow: 0 3px 0 0 var(--toon-ink); font-weight: 500; }
 .msg .meta { font-size: 11px; opacity: .7; margin-bottom: 2px; }
+.msg .msg-text .auto-sayang { font-style: italic; opacity: .55; }
 .msg .reply-quote {
 display: flex;
 gap: 8px;
