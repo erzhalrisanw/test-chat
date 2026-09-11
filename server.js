@@ -93,6 +93,9 @@ async function initDb() {
   try {
     await db.execute(`ALTER TABLE messages ADD COLUMN unsent INTEGER NOT NULL DEFAULT 0`);
   } catch (_) {}
+  try {
+    await db.execute(`ALTER TABLE messages ADD COLUMN auto_sayang INTEGER NOT NULL DEFAULT 0`);
+  } catch (_) {}
   await db.execute({
     sql: `UPDATE messages SET peer = CASE WHEN username = ? THEN ? ELSE username END WHERE peer IS NULL`,
     args: [HUB_USER, LEGACY_PEER],
@@ -538,8 +541,8 @@ function applyUserTextTransforms(username, text) {
 
 async function saveMessage(msg) {
   const result = await db.execute({
-    sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id, peer) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.audio || null, msg.time, msg.replyToId || null, msg.peer],
+    sql: 'INSERT INTO messages (username, text, image, video, audio, time, reply_to_id, peer, auto_sayang) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    args: [msg.username, msg.text || null, msg.image || null, msg.video || null, msg.audio || null, msg.time, msg.replyToId || null, msg.peer, msg.autoSayang ? 1 : 0],
   });
   return Number(result.lastInsertRowid);
 }
@@ -562,6 +565,7 @@ function mapRow(r) {
     peer: r.peer,
     unsent: !!Number(r.unsent || 0),
   };
+  if (Number(r.auto_sayang || 0)) out.autoSayang = true;
   if (r.reply_to_id) {
     const replySticker = isStickerRef(r.reply_image);
     out.replyTo = {
@@ -606,7 +610,7 @@ async function attachReactions(messages) {
 
 async function getMessageById(id) {
   const result = await db.execute({
-    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
+    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
                  p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
           FROM messages m
           LEFT JOIN messages p ON m.reply_to_id = p.id
@@ -621,13 +625,13 @@ async function getMessageById(id) {
 
 async function getHistory(peer, limit = 50, beforeId = null) {
   const sql = beforeId
-    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
+    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
        WHERE m.peer = ? AND m.id < ?
        ORDER BY m.id DESC LIMIT ?`
-    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent,
+    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
@@ -1682,9 +1686,8 @@ io.on('connection', async (socket) => {
     await handleOutgoing(payload && typeof payload === 'object' ? payload : {}, ack, (peer) => {
       const safe = applyUserTextTransforms(username, text.slice(0, 1000));
       return {
-        msg: { username, text: safe, time: new Date().toISOString(), replyToId, peer },
+        msg: { username, text: safe, time: new Date().toISOString(), replyToId, peer, autoSayang },
         pushBody: safe,
-        broadcastExtras: autoSayang ? { autoSayang: true } : null,
       };
     });
   });

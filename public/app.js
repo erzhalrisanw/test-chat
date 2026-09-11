@@ -3592,6 +3592,7 @@ function emitWithAck(msgData) {
     if (msgData.name) payload.name = msgData.name;
     if (msgData.replyToId) payload.replyToId = msgData.replyToId;
     if (msgData.peer) payload.peer = msgData.peer;
+    if (msgData.autoSayang) payload.autoSayang = true;
     if (tempId != null) payload.clientId = tempId;
     socket.emit(event, payload, function(ack) {
       if (ack && ack.id) {
@@ -3621,6 +3622,7 @@ function queueMessage(eventName, msgData) {
   if (msgData.caption) data.caption = msgData.caption;
   if (msgData.replyToId) data.replyToId = msgData.replyToId;
   if (msgData.replyTo) data.replyTo = msgData.replyTo;
+  if (msgData.autoSayang) data.autoSayang = true;
   data.peer = currentPeer;
   data._tempId = null;
   data._pending = true;
