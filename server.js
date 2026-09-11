@@ -532,7 +532,7 @@ function applyUserTextTransforms(username, text) {
   if (username === 'occupatus') {
     out = out.replace(/\bayang(?!nya\b)/gi, (m) => (m[0] === 'A' ? 'Sayang' : 'sayang'));
   }
-  out = out.replace(/\b(hati-hati|hatihati|ati-ati|atiati)\b/gi, (m) => (m.includes('-') ? '❤️-❤️' : '❤️❤️'));
+  out = out.replace(/\b(hati-hati|hatihati|ati-ati|atiati|heart-heart|heartheart)\b/gi, (m) => (m.includes('-') ? '❤️-❤️' : '❤️❤️'));
   return out;
 }
 
