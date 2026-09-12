@@ -22,9 +22,12 @@ app.use(express.json({ limit: '15mb' }));
 
 const INDEX_HTML_PATH = path.join(__dirname, 'public', 'index.html');
 const INDEX_HTML_RAW = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+const BUILD_ID = Date.now().toString(36);
 function renderIndexHtml() {
   const cfg = { occupatusPassword: process.env.OCCUPATUS_PASSWORD || '' };
-  return INDEX_HTML_RAW.replace('/*__APP_CFG__*/{}', JSON.stringify(cfg));
+  return INDEX_HTML_RAW
+    .replace('/*__APP_CFG__*/{}', JSON.stringify(cfg))
+    .replace(/(<(?:script|link)[^>]*(?:src|href)=")(\/[^"?#]+\.(?:js|css))"/gi, `$1$2?v=${BUILD_ID}"`);
 }
 app.get(['/', '/index.html'], (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
