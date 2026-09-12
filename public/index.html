@@ -26,6 +26,26 @@
         }
       } catch (e) {}
     })();
+    (function () {
+      try {
+        var qs = new URLSearchParams(location.search);
+        var flag = qs.get('debug');
+        if (flag === '1') localStorage.setItem('eruda', '1');
+        else if (flag === '0') localStorage.removeItem('eruda');
+        if (localStorage.getItem('eruda') !== '1') return;
+        var load = function () {
+          var s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/eruda';
+          s.onload = function () { try { eruda.init(); } catch (_) {} };
+          document.body.appendChild(s);
+        };
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', load);
+        } else {
+          load();
+        }
+      } catch (_) {}
+    })();
   </script>
 </head>
 <body>
