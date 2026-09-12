@@ -2511,6 +2511,15 @@ function startChat(token, username) {
     triggerCrackFx();
   });
 
+  socket.on('resend', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = Number(payload.id);
+    const peer = payload.peer;
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (peer && peer !== currentPeer) return;
+    applyResendToView(payload.message || { id });
+  });
+
   socket.on('delete-message', (payload) => {
     if (!payload || typeof payload !== 'object') return;
     const id = Number(payload.id);
@@ -2904,15 +2913,17 @@ function attachMsgMenu(div, opts) {
   const { id, username, isUnsent, hideContent } = opts;
   const canReply = id && !hideContent && !isUnsent;
   const canUnsend = id && username === me && !isUnsent;
+  const canResend = id && username === me && isUnsent;
   const canForward = id && isHub() && !hideContent && !isUnsent;
   const textEl = div.querySelector('.msg-text');
   const canCopy = !!(textEl && !hideContent && !isUnsent && textEl.textContent.trim());
-  if (!canReply && !canUnsend && !canForward && !canCopy) return;
+  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend) return;
   const items = [];
   if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
   if (canCopy) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="copy"><span class="msg-menu-icon">📋</span><span class="msg-menu-label">Salin</span></button>');
   if (canForward) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="forward"><span class="msg-menu-icon">➤</span><span class="msg-menu-label">Teruskan</span></button>');
   if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
+  if (canResend) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="resend"><span class="msg-menu-icon">↻</span><span class="msg-menu-label">Kirim ulang</span></button>');
   const menuMarkup =
     '<button class="msg-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Aksi pesan" title="Aksi pesan">⋯</button>' +
     '<div class="msg-menu hidden" role="menu">' + items.join('') + '</div>';
@@ -2952,6 +2963,8 @@ function attachMsgMenu(div, opts) {
         openForwardPicker(currentId);
       } else if (action === 'unsend' && currentId) {
         requestUnsend(currentId);
+      } else if (action === 'resend' && currentId) {
+        requestResend(currentId);
       } else if (action === 'copy') {
         const t = div.querySelector('.msg-text');
         if (t) copyTextToClipboard(t.textContent);
@@ -3050,6 +3063,16 @@ function requestUnsend(id) {
   });
 }
 
+function requestResend(id) {
+  if (!socket || !id) return;
+  socket.emit('resend', { id }, (resp) => {
+    if (resp && resp.error) {
+      console.error('resend failed:', resp.error);
+      addSystem('Gagal mengirim ulang pesan: ' + resp.error);
+    }
+  });
+}
+
 function applyDeleteToView(id) {
   const targetId = String(id);
   const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
@@ -3098,6 +3121,9 @@ function applyUnsendToView(id) {
       placeholder.textContent = UNSENT_PLACEHOLDER_TEXT;
       el.appendChild(placeholder);
     }
+    if (el.classList.contains('mine')) {
+      attachMsgMenu(el, { id: Number(id), username: me, isUnsent: true, hideContent: !isHub() });
+    }
   }
   if (!isHub()) {
     messagesEl.querySelectorAll('.reply-quote[data-target="' + targetId + '"]').forEach((quoteEl) => {
@@ -3108,6 +3134,24 @@ function applyUnsendToView(id) {
       if (textEl) textEl.textContent = UNSENT_PLACEHOLDER_TEXT;
     });
   }
+}
+
+function applyResendToView(msg) {
+  if (!msg || !msg.id) return;
+  const targetId = String(msg.id);
+  const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+  if (el) {
+    if (openMsgMenu && el.contains(openMsgMenu)) closeOpenMsgMenu();
+    const nodes = buildMessageNodes(Object.assign({}, msg, { _history: true }));
+    if (nodes.length) el.replaceWith(nodes[0]);
+  }
+  messagesEl.querySelectorAll('.reply-quote[data-target="' + targetId + '"]').forEach((quoteEl) => {
+    quoteEl.classList.remove('reply-quote-unsent');
+    const userEl = quoteEl.querySelector('.reply-quote-user');
+    const textEl = quoteEl.querySelector('.reply-quote-text');
+    if (userEl) userEl.textContent = msg.username || '';
+    if (textEl) textEl.textContent = replySnippet(msg);
+  });
 }
 
 function dayKey(time) {

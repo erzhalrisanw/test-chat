@@ -1934,6 +1934,37 @@ io.on('connection', async (socket) => {
     }
   });
 
+  socket.on('resend', async (payload, ack) => {
+    const id = Number(payload && payload.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      if (typeof ack === 'function') ack({ error: 'Invalid id' });
+      return;
+    }
+    try {
+      const msg = await getMessageById(id);
+      if (!msg) {
+        if (typeof ack === 'function') ack({ error: 'Not found' });
+        return;
+      }
+      if (msg.username !== username) {
+        if (typeof ack === 'function') ack({ error: 'Forbidden' });
+        return;
+      }
+      if (msg.unsent) {
+        await db.execute({
+          sql: 'UPDATE messages SET unsent = 0 WHERE id = ?',
+          args: [id],
+        });
+        msg.unsent = false;
+      }
+      emitToThread(msg.peer, 'resend', { id, peer: msg.peer, message: msg });
+      if (typeof ack === 'function') ack({ ok: true, id, peer: msg.peer });
+    } catch (e) {
+      console.error('resend error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
+    }
+  });
+
   socket.on('truth-dare:challenge', async (payload, ack) => {
     if (!botEnabled) {
       if (typeof ack === 'function') ack({ error: 'AI belum aktif' });
