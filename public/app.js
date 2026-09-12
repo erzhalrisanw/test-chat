@@ -29,6 +29,107 @@ const MAX_VIDEO_DURATION_MS = 15000;
 let pendingQueue = [];
 let tempIdCounter = 0;
 
+const OUTBOX_DB_NAME = 'chat-outbox';
+const OUTBOX_STORE = 'pending';
+let outboxDbPromise = null;
+function openOutboxDb() {
+  if (outboxDbPromise) return outboxDbPromise;
+  outboxDbPromise = new Promise(function(resolve, reject) {
+    try {
+      var req = indexedDB.open(OUTBOX_DB_NAME, 1);
+      req.onupgradeneeded = function() {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(OUTBOX_STORE)) {
+          db.createObjectStore(OUTBOX_STORE, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { reject(req.error); };
+    } catch (err) { reject(err); }
+  });
+  outboxDbPromise.catch(function() { outboxDbPromise = null; });
+  return outboxDbPromise;
+}
+function newOutboxId() {
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+function outboxAdd(record) {
+  return openOutboxDb().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction(OUTBOX_STORE, 'readwrite');
+      tx.oncomplete = function() { resolve(); };
+      tx.onerror = function() { resolve(); };
+      try { tx.objectStore(OUTBOX_STORE).put(record); } catch (_) { resolve(); }
+    });
+  }).catch(function() {});
+}
+function outboxDelete(id) {
+  if (!id) return Promise.resolve();
+  return openOutboxDb().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction(OUTBOX_STORE, 'readwrite');
+      tx.oncomplete = function() { resolve(); };
+      tx.onerror = function() { resolve(); };
+      try { tx.objectStore(OUTBOX_STORE).delete(id); } catch (_) { resolve(); }
+    });
+  }).catch(function() {});
+}
+function outboxListForPeer(user, peer) {
+  return openOutboxDb().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction(OUTBOX_STORE, 'readonly');
+      var req = tx.objectStore(OUTBOX_STORE).getAll();
+      req.onsuccess = function() {
+        var all = req.result || [];
+        resolve(all.filter(function(r) { return r.user === user && r.peer === peer; }));
+      };
+      req.onerror = function() { resolve([]); };
+    });
+  }).catch(function() { return []; });
+}
+function restoreOutboxForCurrentPeer() {
+  var peer = currentPeer;
+  if (!peer || !me) return;
+  outboxListForPeer(me, peer).then(function(records) {
+    if (peer !== currentPeer) return;
+    records.sort(function(a, b) {
+      return new Date(a.time).getTime() - new Date(b.time).getTime();
+    });
+    records.forEach(function(rec) {
+      tempIdCounter++;
+      var tempId = tempIdCounter;
+      var msg = {
+        text: rec.caption || '',
+        replyToId: rec.replyToId,
+        replyTo: rec.replyTo,
+        _pending: true,
+        _tempId: tempId,
+        _outboxId: rec.id,
+        id: null,
+        username: me,
+        time: rec.time,
+        peer: peer,
+      };
+      if (rec.kind === 'image') msg.image = rec.dataUrl;
+      else if (rec.kind === 'video' && rec.blob) {
+        try { msg.video = URL.createObjectURL(rec.blob); } catch (_) {}
+      }
+      addMessage(msg);
+    });
+    if (records.length) messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+}
+function cancelPendingBubble(div) {
+  if (!div) return;
+  var outboxId = div.dataset.outboxId;
+  if (outboxId) outboxDelete(outboxId);
+  var vid = div.querySelector('video.chat-vid');
+  if (vid && vid.src && vid.src.indexOf('blob:') === 0) {
+    try { URL.revokeObjectURL(vid.src); } catch (_) {}
+  }
+  if (div.parentNode) div.parentNode.removeChild(div);
+}
+
 const VIEW_ONCE_MARKER = '\u2063\u200B\u2063\u200B';
 function hasViewOnceMarker(s) {
   return typeof s === 'string' && s.indexOf(VIEW_ONCE_MARKER) !== -1;
@@ -2342,6 +2443,7 @@ function startChat(token, username) {
     });
     applyReadStateForCurrentPeer();
     maybeMarkRead();
+    restoreOutboxForCurrentPeer();
   });
 
   socket.on('peers', (list) => {
@@ -2745,6 +2847,7 @@ function buildMessageNodes(msg) {
   div.className = cls.join(' ');
   if (id) div.dataset.id = String(id);
   if (tempId) div.dataset.tempId = String(tempId);
+  if (msg._outboxId) div.dataset.outboxId = msg._outboxId;
   const t = new Date(time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
   div.dataset.day = dayKey(time);
   let tick = '';
@@ -2853,7 +2956,7 @@ function buildMessageNodes(msg) {
   if (tdPayload && tdPayload.state === 'pending' && id) {
     wireTruthDareButtons(div, id);
   }
-  attachMsgMenu(div, { id, username, isUnsent, hideContent });
+  attachMsgMenu(div, { id, username, isUnsent, hideContent, isPending });
   const reactionsContainer = document.createElement('div');
   reactionsContainer.className = 'msg-reactions hidden';
   div.appendChild(reactionsContainer);
@@ -2910,20 +3013,22 @@ function fallbackCopy(value) {
 
 function attachMsgMenu(div, opts) {
   if (div.querySelector('.msg-menu-btn')) return;
-  const { id, username, isUnsent, hideContent } = opts;
+  const { id, username, isUnsent, hideContent, isPending } = opts;
   const canReply = id && !hideContent && !isUnsent;
   const canUnsend = id && username === me && !isUnsent;
   const canResend = id && username === me && isUnsent;
   const canForward = id && isHub() && !hideContent && !isUnsent;
   const textEl = div.querySelector('.msg-text');
   const canCopy = !!(textEl && !hideContent && !isUnsent && textEl.textContent.trim());
-  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend) return;
+  const canCancel = !!(isPending && username === me);
+  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend && !canCancel) return;
   const items = [];
   if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
   if (canCopy) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="copy"><span class="msg-menu-icon">📋</span><span class="msg-menu-label">Salin</span></button>');
   if (canForward) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="forward"><span class="msg-menu-icon">➤</span><span class="msg-menu-label">Teruskan</span></button>');
   if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
   if (canResend) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="resend"><span class="msg-menu-icon">↻</span><span class="msg-menu-label">Kirim ulang</span></button>');
+  if (canCancel) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="cancel"><span class="msg-menu-icon">🗑</span><span class="msg-menu-label">Batalkan</span></button>');
   const menuMarkup =
     '<button class="msg-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Aksi pesan" title="Aksi pesan">⋯</button>' +
     '<div class="msg-menu hidden" role="menu">' + items.join('') + '</div>';
@@ -2968,6 +3073,8 @@ function attachMsgMenu(div, opts) {
       } else if (action === 'copy') {
         const t = div.querySelector('.msg-text');
         if (t) copyTextToClipboard(t.textContent);
+      } else if (action === 'cancel') {
+        cancelPendingBubble(div);
       }
     });
   });
@@ -3582,6 +3689,7 @@ function showPendingLocally(msgData) {
     replyTo: msgData.replyTo || null,
     _pending: true,
     _tempId: tempId,
+    _outboxId: msgData._outboxId || null,
     id: null,
     username: me,
     time: new Date().toISOString()
@@ -3642,9 +3750,11 @@ function emitWithAck(msgData) {
       if (ack && ack.id) {
         updatePendingToSent(tempId, ack.id);
         lastIncomingId = Math.max(lastIncomingId, ack.id);
+        if (msgData._outboxId) outboxDelete(msgData._outboxId);
       } else if (ack && ack.error) {
         // Server menolak (validasi/ukuran): tandai gagal, jangan re-queue
         markPendingFailed(tempId, ack.error);
+        if (msgData._outboxId) outboxDelete(msgData._outboxId);
       } else {
         // Tidak ada ack info: anggap perlu retry saat reconnect
         if (!pendingQueue.some(function(p) { return p._tempId === tempId; })) {
@@ -3671,6 +3781,20 @@ function queueMessage(eventName, msgData) {
   data._tempId = null;
   data._pending = true;
   data._type = eventName;
+  if (eventName === 'image' && data.dataUrl) {
+    data._outboxId = newOutboxId();
+    outboxAdd({
+      id: data._outboxId,
+      user: me,
+      peer: currentPeer,
+      kind: 'image',
+      dataUrl: data.dataUrl,
+      caption: data.caption || '',
+      replyToId: data.replyToId || null,
+      replyTo: data.replyTo || null,
+      time: new Date().toISOString(),
+    });
+  }
   var tempId = showPendingLocally(data);
   data._tempId = tempId;
   emitWithAck(data);
@@ -3718,12 +3842,14 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
   tempIdCounter++;
   var tempId = tempIdCounter;
   var capturedPeer = currentPeer;
+  var outboxId = newOutboxId();
   var pendingMsg = {
     text: caption || '',
     replyToId: replyToId || null,
     replyTo: replyTo || null,
     _pending: true,
     _tempId: tempId,
+    _outboxId: outboxId,
     id: null,
     username: me,
     time: new Date().toISOString(),
@@ -3731,6 +3857,17 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
     peer: capturedPeer,
   };
   addMessage(pendingMsg);
+  outboxAdd({
+    id: outboxId,
+    user: me,
+    peer: capturedPeer,
+    kind: 'video',
+    blob: pv.blob,
+    caption: caption || '',
+    replyToId: replyToId || null,
+    replyTo: replyTo || null,
+    time: pendingMsg.time,
+  });
   messagesEl.scrollTop = messagesEl.scrollHeight;
   var willCompress = canCaptureVideoStream() && !!window.MediaRecorder;
   setUploadStatus(tempId, willCompress ? 'compress' : 'uploading', null, pv.blob.size);
@@ -3747,6 +3884,7 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
 
     if (!socket || !socket.connected) {
       markPendingFailed(tempId, 'Disconnected');
+      outboxDelete(outboxId);
       return;
     }
     var payload = { url: publicUrl, clientId: tempId };
@@ -3758,14 +3896,18 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
         updatePendingToSent(tempId, ack.id);
         lastIncomingId = Math.max(lastIncomingId, ack.id);
         clearUploadStatus(tempId);
+        outboxDelete(outboxId);
       } else if (ack && ack.error) {
         markPendingFailed(tempId, ack.error);
+        outboxDelete(outboxId);
       } else {
         markPendingFailed(tempId, 'No response from server');
+        outboxDelete(outboxId);
       }
     });
   } catch (err) {
     markPendingFailed(tempId, (err && err.message) || 'Upload failed');
+    outboxDelete(outboxId);
   }
 }
 
