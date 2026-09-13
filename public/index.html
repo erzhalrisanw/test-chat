@@ -49,16 +49,6 @@
   </script>
 </head>
 <body>
-  <div id="sunrise-overlay" class="hidden" aria-hidden="true">
-    <div class="sunrise-rise">
-      <div class="sunrise-sun"></div>
-      <div class="sunrise-greeting">
-        <span class="sunrise-greet-main">Good Morning</span>
-        <span class="sunrise-greet-sub">Have a nice day :)</span>
-      </div>
-    </div>
-  </div>
-
   <div id="login-view" class="card">
     <h1>Login</h1>
     <form id="login-form">
@@ -99,6 +89,7 @@
             <button id="gallery-btn" class="hidden header-menu-item" title="Gallery"><span class="header-menu-icon">🖼️</span><span class="header-menu-label">Gallery</span></button>
             <button id="ping-btn" class="hidden header-menu-item" title="Thinking of you"><span class="header-menu-icon">💗</span><span class="header-menu-label">Thinking of You</span></button>
             <button id="clear-history-btn" class="hidden header-menu-item" title="Hapus history chat"><span class="header-menu-icon">🧹</span><span class="header-menu-label">Hapus History</span></button>
+            <button id="sayang-stats-btn" class="hidden header-menu-item" title="Statistik ‘sayang’ manual"><span class="header-menu-icon">💖</span><span class="header-menu-label">Sayang Stats</span></button>
             <div class="header-menu-sep"></div>
             <div id="theme-switcher" class="header-menu-sub">
               <button id="theme-toggle" type="button" title="Ganti tema" aria-label="Ganti tema" aria-haspopup="true" aria-expanded="false"><span class="header-menu-icon theme-toggle-icon">🌙</span><span class="header-menu-label">Tema</span><span class="header-menu-caret">▸</span></button>
@@ -237,6 +228,52 @@
         <button id="forward-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
       </div>
       <div id="forward-list"></div>
+    </div>
+  </div>
+
+  <div id="sayang-stats-modal" class="hidden">
+    <div class="sayang-stats-dialog">
+      <div class="sayang-stats-header">
+        <span>💖 Sayang Stats — turki</span>
+        <button id="sayang-stats-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div class="sayang-stats-body">
+        <div id="sayang-stats-state" class="sayang-stats-state">Memuat…</div>
+        <div id="sayang-stats-content" class="hidden">
+          <div class="sayang-stats-grid">
+            <div class="sayang-stats-card sayang-stats-card--primary">
+              <div class="sayang-stats-label">Manual (pesan)</div>
+              <div class="sayang-stats-value" id="ss-manual">0</div>
+              <div class="sayang-stats-sub" id="ss-manual-occ">0 kata</div>
+            </div>
+            <div class="sayang-stats-card">
+              <div class="sayang-stats-label">Auto-appended</div>
+              <div class="sayang-stats-value" id="ss-auto">0</div>
+              <div class="sayang-stats-sub">quirk 30%</div>
+            </div>
+            <div class="sayang-stats-card">
+              <div class="sayang-stats-label">Total pesan teks</div>
+              <div class="sayang-stats-value" id="ss-total">0</div>
+              <div class="sayang-stats-sub" id="ss-ratio">— % manual sayang</div>
+            </div>
+          </div>
+          <div class="sayang-stats-section">
+            <div class="sayang-stats-section-title">30 hari terakhir</div>
+            <div id="ss-daily" class="sayang-stats-daily"></div>
+          </div>
+          <div class="sayang-stats-section">
+            <div class="sayang-stats-section-title">Terakhir dikirim</div>
+            <div class="sayang-stats-meta">
+              <div><strong>Pertama:</strong> <span id="ss-first">—</span></div>
+              <div><strong>Terakhir:</strong> <span id="ss-last">—</span></div>
+            </div>
+          </div>
+          <div class="sayang-stats-section">
+            <div class="sayang-stats-section-title">20 pesan manual terbaru</div>
+            <ul id="ss-recent" class="sayang-stats-recent"></ul>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

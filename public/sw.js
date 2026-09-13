@@ -1,4 +1,4 @@
-const CACHE_STATIC = 'chat-static-v4';
+const CACHE_STATIC = 'chat-static-v5';
 const CACHE_STICKERS = 'chat-stickers-v1';
 
 const STATIC_ASSETS = [
@@ -10,7 +10,6 @@ const STATIC_ASSETS = [
   '/weather.js',
   '/icon.svg',
   '/doraemon.svg',
-  '/sun.png',
   '/pajero.jpeg',
   '/manifest.json',
 ];

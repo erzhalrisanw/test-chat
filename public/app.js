@@ -2228,122 +2228,6 @@ loginForm.addEventListener('submit', async (e) => {
   }
 });
 
-const FORTUNES_FALLBACK = [
-  "Hari ini seseorang tersenyum karena mengingat kamu.",
-  "Pelan-pelan aja, hati kamu tahu jalan pulangnya.",
-  "Kata yang belum kamu ucapkan hari ini akan ada waktunya.",
-  "Cahaya kecil hari ini cukup untuk menerangi langkah kamu.",
-  "Percayalah, cinta selalu menemukan cara untuk sampai.",
-  "Kamu lebih kuat dari kekhawatiran yang lagi kamu rasa.",
-  "Yang tulus, sekecil apapun, akan kembali berlipat.",
-];
-
-function fortuneDayKey() {
-  const d = new Date();
-  if (d.getHours() < 4) d.setDate(d.getDate() - 1);
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-function pickFallbackFortune(seed) {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = (h * 16777619) >>> 0;
-  }
-  return FORTUNES_FALLBACK[h % FORTUNES_FALLBACK.length];
-}
-
-async function fetchServerFortune() {
-  try {
-    const token = localStorage.getItem('token');
-    if (!token) return null;
-    const params = isHub() && currentPeer ? '?peer=' + encodeURIComponent(currentPeer) : '';
-    const res = await fetch('/fortune' + params, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data && typeof data.text === 'string' && data.text.trim() ? data.text.trim() : null;
-  } catch (_) { return null; }
-}
-
-function showFortuneModal(text) {
-  const backdrop = document.createElement('div');
-  backdrop.className = 'fortune-modal';
-  backdrop.innerHTML = ''
-    + '<div class="fortune-stage">'
-    +   '<button type="button" class="fortune-cookie" aria-label="Buka cookie">'
-    +     '<span class="cookie-half left">🥠</span>'
-    +     '<span class="cookie-half right">🥠</span>'
-    +   '</button>'
-    +   '<div class="fortune-hint">Klik cookie untuk membuka</div>'
-    +   '<div class="fortune-paper">'
-    +     '<div class="fortune-strip">'
-    +       '<div class="fortune-brand">Fortune Untukmu Hari Ini</div>'
-    +       '<div class="fortune-text"></div>'
-    +     '</div>'
-    +   '</div>'
-    +   '<button type="button" class="fortune-close">Tutup</button>'
-    + '</div>';
-  backdrop.querySelector('.fortune-text').textContent = text;
-  const cookieBtn = backdrop.querySelector('.fortune-cookie');
-  cookieBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (backdrop.classList.contains('cracked')) return;
-    backdrop.classList.add('cracked');
-    if ('vibrate' in navigator) { try { navigator.vibrate([40, 30, 60]); } catch (_) {} }
-  });
-  const dismiss = () => {
-    backdrop.classList.add('closing');
-    setTimeout(() => backdrop.remove(), 320);
-  };
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop || e.target.classList.contains('fortune-close')) dismiss();
-  });
-  document.body.appendChild(backdrop);
-  requestAnimationFrame(() => backdrop.classList.add('open'));
-  if ('vibrate' in navigator) { try { navigator.vibrate(20); } catch (_) {} }
-}
-
-async function maybeShowFortune() {
-  if (new Date().getHours() < 4) return;
-  const key = fortuneDayKey();
-  const cacheKey = 'fortuneShown:' + key + ':' + (me || '');
-  if (localStorage.getItem(cacheKey)) return;
-  const delay = document.body.classList.contains('sunrise-playing') ? 7500 : 1500;
-  setTimeout(async () => {
-    let text = await fetchServerFortune();
-    if (!text) text = pickFallbackFortune(key + '|' + (me || ''));
-    localStorage.setItem(cacheKey, text);
-    showFortuneModal(text);
-  }, delay);
-}
-
-function maybePlaySunrise() {
-  const now = new Date();
-  const hour = now.getHours();
-  if (hour < 4 || hour >= 12) return;
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  if (localStorage.getItem('sunriseShown') === today) return;
-  const overlay = document.getElementById('sunrise-overlay');
-  if (!overlay) return;
-  localStorage.setItem('sunriseShown', today);
-  document.body.classList.add('sunrise-playing');
-  overlay.classList.remove('hidden', 'fade-out');
-  void overlay.offsetWidth;
-  // 0-5s sun rises, 4.5-5.5s overlay fades, 5-7s chat slides up (CSS delay 5s)
-  setTimeout(() => {
-    overlay.classList.add('fade-out');
-    setTimeout(() => {
-      overlay.classList.add('hidden');
-      overlay.classList.remove('fade-out');
-    }, 1000);
-  }, 4500);
-  setTimeout(() => {
-    document.body.classList.remove('sunrise-playing');
-  }, 7000);
-}
-
 function startChat(token, username) {
   me = username;
   if (meNameEl) meNameEl.textContent = username;
@@ -2353,8 +2237,6 @@ function startChat(token, username) {
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');
   applyBirthdayPanic(username);
-  maybePlaySunrise();
-  maybeShowFortune();
   messagesEl.innerHTML = '';
   showMessagesLoading();
   Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
@@ -2371,6 +2253,7 @@ function startChat(token, username) {
   updatePresenceBtn();
   updateGalleryBtn();
   updateClearHistoryBtn();
+  updateSayangStatsBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
   if (pingBtn) pingBtn.classList.remove('hidden');
   renderMeAvatar();
@@ -4448,6 +4331,151 @@ function updateGalleryBtn() {
   if (GALLERY_ALLOWED.has(me)) galleryBtn.classList.remove('hidden');
   else galleryBtn.classList.add('hidden');
 }
+
+const sayangStatsBtn = document.getElementById('sayang-stats-btn');
+const sayangStatsModal = document.getElementById('sayang-stats-modal');
+const sayangStatsCloseBtn = document.getElementById('sayang-stats-close');
+const sayangStatsStateEl = document.getElementById('sayang-stats-state');
+const sayangStatsContentEl = document.getElementById('sayang-stats-content');
+
+function updateSayangStatsBtn() {
+  if (!sayangStatsBtn) return;
+  if (isHub()) sayangStatsBtn.classList.remove('hidden');
+  else sayangStatsBtn.classList.add('hidden');
+}
+
+function closeSayangStatsModal() {
+  if (!sayangStatsModal) return;
+  sayangStatsModal.classList.add('hidden');
+}
+
+function escapeHtmlSS(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatSayangTime(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) {
+    return '—';
+  }
+}
+
+function highlightSayang(text) {
+  const safe = escapeHtmlSS(text || '');
+  return safe.replace(/sayang/gi, (m) => '<mark>' + m + '</mark>');
+}
+
+function renderSayangDaily(daily) {
+  const el = document.getElementById('ss-daily');
+  if (!el) return;
+  el.innerHTML = '';
+  const map = new Map((daily || []).map((d) => [d.day, d.count]));
+  const today = new Date();
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    days.push({ day: key, count: map.get(key) || 0 });
+  }
+  const max = Math.max(1, ...days.map((d) => d.count));
+  if (days.every((d) => d.count === 0)) {
+    const empty = document.createElement('div');
+    empty.className = 'sayang-stats-daily-empty';
+    empty.textContent = 'Belum ada pesan manual 30 hari terakhir.';
+    el.appendChild(empty);
+    return;
+  }
+  for (const d of days) {
+    const bar = document.createElement('div');
+    bar.className = 'ss-bar';
+    const h = d.count === 0 ? 3 : Math.max(6, Math.round((d.count / max) * 70));
+    bar.style.height = h + 'px';
+    if (d.count === 0) bar.style.opacity = '0.25';
+    bar.title = d.day + ' — ' + d.count + ' pesan';
+    el.appendChild(bar);
+  }
+}
+
+function renderSayangStats(data) {
+  const totals = data.totals || {};
+  document.getElementById('ss-manual').textContent = String(totals.manual || 0);
+  document.getElementById('ss-manual-occ').textContent = (totals.manualOccurrences || 0) + ' kata';
+  document.getElementById('ss-auto').textContent = String(totals.auto || 0);
+  document.getElementById('ss-total').textContent = String(totals.totalTextMessages || 0);
+  const total = Number(totals.totalTextMessages || 0);
+  const manual = Number(totals.manual || 0);
+  const ratioEl = document.getElementById('ss-ratio');
+  ratioEl.textContent = total > 0
+    ? ((manual / total) * 100).toFixed(1) + '% manual sayang'
+    : '— % manual sayang';
+  document.getElementById('ss-first').textContent = formatSayangTime(totals.firstManualAt);
+  document.getElementById('ss-last').textContent = formatSayangTime(totals.lastManualAt);
+
+  renderSayangDaily(data.daily || []);
+
+  const recentEl = document.getElementById('ss-recent');
+  recentEl.innerHTML = '';
+  const recent = Array.isArray(data.recent) ? data.recent : [];
+  if (!recent.length) {
+    const empty = document.createElement('div');
+    empty.className = 'sayang-stats-recent-empty';
+    empty.textContent = 'Belum ada.';
+    recentEl.appendChild(empty);
+  } else {
+    for (const r of recent) {
+      const li = document.createElement('li');
+      const time = document.createElement('div');
+      time.className = 'ss-recent-time';
+      time.textContent = formatSayangTime(r.time) + (r.peer ? ' • ' + r.peer : '');
+      const body = document.createElement('div');
+      body.innerHTML = highlightSayang(r.text);
+      li.appendChild(time);
+      li.appendChild(body);
+      recentEl.appendChild(li);
+    }
+  }
+}
+
+async function openSayangStatsModal() {
+  if (!sayangStatsModal || !isHub()) return;
+  sayangStatsModal.classList.remove('hidden');
+  sayangStatsContentEl.classList.add('hidden');
+  sayangStatsStateEl.classList.remove('hidden');
+  sayangStatsStateEl.textContent = 'Memuat…';
+  try {
+    const res = await fetch('/sayang-stats', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || ('HTTP ' + res.status));
+    }
+    renderSayangStats(data);
+    sayangStatsStateEl.classList.add('hidden');
+    sayangStatsContentEl.classList.remove('hidden');
+  } catch (err) {
+    sayangStatsStateEl.textContent = 'Gagal memuat: ' + (err.message || err);
+  }
+}
+
+if (sayangStatsBtn) sayangStatsBtn.addEventListener('click', openSayangStatsModal);
+if (sayangStatsCloseBtn) sayangStatsCloseBtn.addEventListener('click', closeSayangStatsModal);
+if (sayangStatsModal) sayangStatsModal.addEventListener('click', (e) => {
+  if (e.target === sayangStatsModal) closeSayangStatsModal();
+});
 
 const clearHistoryBtn = document.getElementById('clear-history-btn');
 const clearHistoryModal = document.getElementById('clear-history-modal');
