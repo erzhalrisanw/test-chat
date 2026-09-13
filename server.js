@@ -1149,6 +1149,9 @@ app.get('/sayang-stats', async (req, res) => {
   if (!username) return res.status(401).json({ ok: false });
   if (username !== HUB_USER) return res.status(403).json({ ok: false, error: 'Forbidden' });
   const target = 'turki';
+  const rawSince = typeof req.query.todayStart === 'string' ? req.query.todayStart : '';
+  const parsedSince = rawSince && !isNaN(new Date(rawSince).getTime()) ? new Date(rawSince) : null;
+  const todayStartIso = (parsedSince || (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })()).toISOString();
   try {
     const totals = (await db.execute({
       sql: `SELECT
@@ -1158,11 +1161,15 @@ app.get('/sayang-stats', async (req, res) => {
               SUM(CASE WHEN auto_sayang = 0 AND text IS NOT NULL
                        THEN (length(lower(text)) - length(replace(lower(text), 'sayang', ''))) / 6
                        ELSE 0 END) AS manual_occurrences,
+              SUM(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND lower(text) LIKE '%sayang%' AND time >= ? THEN 1 ELSE 0 END) AS today_manual_count,
+              SUM(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND time >= ?
+                       THEN (length(lower(text)) - length(replace(lower(text), 'sayang', ''))) / 6
+                       ELSE 0 END) AS today_manual_occurrences,
               MIN(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND lower(text) LIKE '%sayang%' THEN time END) AS first_manual_at,
               MAX(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND lower(text) LIKE '%sayang%' THEN time END) AS last_manual_at
             FROM messages
             WHERE username = ? AND (unsent IS NULL OR unsent = 0)`,
-      args: [target],
+      args: [todayStartIso, todayStartIso, target],
     })).rows[0] || {};
 
     const recentRows = (await db.execute({
@@ -1200,6 +1207,9 @@ app.get('/sayang-stats', async (req, res) => {
         manual: Number(totals.manual_count || 0),
         auto: Number(totals.auto_count || 0),
         manualOccurrences: Number(totals.manual_occurrences || 0),
+        todayManual: Number(totals.today_manual_count || 0),
+        todayManualOccurrences: Number(totals.today_manual_occurrences || 0),
+        todayStart: todayStartIso,
         firstManualAt: totals.first_manual_at || null,
         lastManualAt: totals.last_manual_at || null,
       },
