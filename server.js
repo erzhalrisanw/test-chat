@@ -199,6 +199,24 @@ async function initDb() {
     )
   `);
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_message_reactions_msg ON message_reactions (message_id)`);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS app_kv (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )
+  `);
+}
+
+async function getAppKv(key) {
+  const r = await db.execute({ sql: 'SELECT value FROM app_kv WHERE key = ?', args: [key] });
+  return r.rows.length ? String(r.rows[0].value) : null;
+}
+async function setAppKv(key, value) {
+  await db.execute({
+    sql: `INSERT INTO app_kv (key, value) VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    args: [key, String(value)],
+  });
 }
 
 async function loadAllReadState() {
@@ -1144,15 +1162,25 @@ app.delete('/history/:peer', async (req, res) => {
   }
 });
 
+const SAYANG_COUNTER_KEY = 'sayang_counter_start';
+
+async function getSayangCounterStart() {
+  let iso = await getAppKv(SAYANG_COUNTER_KEY);
+  if (!iso || isNaN(new Date(iso).getTime())) {
+    iso = new Date().toISOString();
+    await setAppKv(SAYANG_COUNTER_KEY, iso);
+  }
+  return iso;
+}
+
 app.get('/sayang-stats', async (req, res) => {
   const username = authFromReq(req);
   if (!username) return res.status(401).json({ ok: false });
   if (username !== HUB_USER) return res.status(403).json({ ok: false, error: 'Forbidden' });
   const target = 'turki';
-  const rawSince = typeof req.query.todayStart === 'string' ? req.query.todayStart : '';
-  const parsedSince = rawSince && !isNaN(new Date(rawSince).getTime()) ? new Date(rawSince) : null;
-  const todayStartIso = (parsedSince || (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })()).toISOString();
   try {
+    const counterStart = await getSayangCounterStart();
+
     const totals = (await db.execute({
       sql: `SELECT
               SUM(CASE WHEN text IS NOT NULL AND text != '' THEN 1 ELSE 0 END) AS total_text,
@@ -1161,15 +1189,11 @@ app.get('/sayang-stats', async (req, res) => {
               SUM(CASE WHEN auto_sayang = 0 AND text IS NOT NULL
                        THEN (length(lower(text)) - length(replace(lower(text), 'sayang', ''))) / 6
                        ELSE 0 END) AS manual_occurrences,
-              SUM(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND lower(text) LIKE '%sayang%' AND time >= ? THEN 1 ELSE 0 END) AS today_manual_count,
-              SUM(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND time >= ?
-                       THEN (length(lower(text)) - length(replace(lower(text), 'sayang', ''))) / 6
-                       ELSE 0 END) AS today_manual_occurrences,
               MIN(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND lower(text) LIKE '%sayang%' THEN time END) AS first_manual_at,
               MAX(CASE WHEN auto_sayang = 0 AND text IS NOT NULL AND lower(text) LIKE '%sayang%' THEN time END) AS last_manual_at
             FROM messages
-            WHERE username = ? AND (unsent IS NULL OR unsent = 0)`,
-      args: [todayStartIso, todayStartIso, target],
+            WHERE username = ? AND (unsent IS NULL OR unsent = 0) AND time >= ?`,
+      args: [target, counterStart],
     })).rows[0] || {};
 
     const recentRows = (await db.execute({
@@ -1180,9 +1204,10 @@ app.get('/sayang-stats', async (req, res) => {
               AND auto_sayang = 0
               AND text IS NOT NULL
               AND lower(text) LIKE '%sayang%'
+              AND time >= ?
             ORDER BY id DESC
             LIMIT 20`,
-      args: [target],
+      args: [target, counterStart],
     })).rows;
 
     const dailyRows = (await db.execute({
@@ -1196,7 +1221,7 @@ app.get('/sayang-stats', async (req, res) => {
               AND time >= ?
             GROUP BY day
             ORDER BY day ASC`,
-      args: [target, new Date(Date.now() - 30 * 86400000).toISOString()],
+      args: [target, counterStart],
     })).rows;
 
     res.json({
@@ -1207,9 +1232,7 @@ app.get('/sayang-stats', async (req, res) => {
         manual: Number(totals.manual_count || 0),
         auto: Number(totals.auto_count || 0),
         manualOccurrences: Number(totals.manual_occurrences || 0),
-        todayManual: Number(totals.today_manual_count || 0),
-        todayManualOccurrences: Number(totals.today_manual_occurrences || 0),
-        todayStart: todayStartIso,
+        counterStart,
         firstManualAt: totals.first_manual_at || null,
         lastManualAt: totals.last_manual_at || null,
       },

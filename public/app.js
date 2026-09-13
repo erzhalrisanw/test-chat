@@ -4411,11 +4411,8 @@ function renderSayangDaily(daily) {
 
 function renderSayangStats(data) {
   const totals = data.totals || {};
-  document.getElementById('ss-today').textContent = String(totals.todayManual || 0);
-  document.getElementById('ss-today-occ').innerHTML =
-    (totals.todayManualOccurrences || 0) + ' kata • s/d <span id="ss-today-now">'
-    + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-    + '</span>';
+  const csEl = document.getElementById('ss-counter-start');
+  if (csEl) csEl.textContent = formatSayangTime(totals.counterStart);
   document.getElementById('ss-manual').textContent = String(totals.manual || 0);
   document.getElementById('ss-manual-occ').textContent = (totals.manualOccurrences || 0) + ' kata';
   document.getElementById('ss-auto').textContent = String(totals.auto || 0);
@@ -4463,10 +4460,7 @@ async function openSayangStatsModal() {
   try {
     const token = localStorage.getItem('token');
     if (!token) throw new Error('Not logged in');
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const q = '?todayStart=' + encodeURIComponent(todayStart.toISOString());
-    const res = await fetch('/sayang-stats' + q, {
+    const res = await fetch('/sayang-stats', {
       headers: { Authorization: 'Bearer ' + token },
     });
     const data = await res.json().catch(() => ({}));
@@ -4486,6 +4480,7 @@ if (sayangStatsCloseBtn) sayangStatsCloseBtn.addEventListener('click', closeSaya
 if (sayangStatsModal) sayangStatsModal.addEventListener('click', (e) => {
   if (e.target === sayangStatsModal) closeSayangStatsModal();
 });
+
 
 const clearHistoryBtn = document.getElementById('clear-history-btn');
 const clearHistoryModal = document.getElementById('clear-history-modal');
