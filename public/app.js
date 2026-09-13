@@ -4456,6 +4456,8 @@ async function openSayangStatsModal() {
   sayangStatsStateEl.classList.remove('hidden');
   sayangStatsStateEl.textContent = 'Memuat…';
   try {
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('Not logged in');
     const res = await fetch('/sayang-stats', {
       headers: { Authorization: 'Bearer ' + token },
     });
