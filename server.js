@@ -205,6 +205,40 @@ async function initDb() {
       value TEXT NOT NULL
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS journal_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      peer TEXT NOT NULL,
+      author TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT
+    )
+  `);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_journal_peer_id ON journal_entries (peer, id)`);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS presence_peer (
+      username TEXT NOT NULL,
+      peer TEXT NOT NULL,
+      last_seen TEXT NOT NULL,
+      PRIMARY KEY (username, peer)
+    )
+  `);
+  const ppExisting = await db.execute('SELECT COUNT(*) AS c FROM presence_peer');
+  if (Number(ppExisting.rows[0].c) === 0) {
+    const global = await db.execute('SELECT username, last_seen FROM presence');
+    for (const row of global.rows) {
+      const u = String(row.username);
+      const iso = String(row.last_seen);
+      for (const other of users) {
+        if (other === u) continue;
+        await db.execute({
+          sql: `INSERT OR IGNORE INTO presence_peer (username, peer, last_seen) VALUES (?, ?, ?)`,
+          args: [u, other, iso],
+        });
+      }
+    }
+  }
 }
 
 async function getAppKv(key) {
@@ -239,13 +273,6 @@ function getLastRead(username, peer) {
   const inner = lastRead.get(username);
   if (!inner) return 0;
   return inner.get(peer) || 0;
-}
-
-async function loadAllPresence() {
-  const result = await db.execute('SELECT username, last_seen FROM presence');
-  for (const row of result.rows) {
-    lastSeen.set(String(row.username), String(row.last_seen));
-  }
 }
 
 const presenceHidden = new Set();
@@ -306,14 +333,6 @@ function avatarsSnapshot() {
     snap[u] = avatars.get(u) || null;
   }
   return snap;
-}
-
-async function persistLastSeen(username, iso) {
-  await db.execute({
-    sql: `INSERT INTO presence (username, last_seen) VALUES (?, ?)
-          ON CONFLICT(username) DO UPDATE SET last_seen = excluded.last_seen`,
-    args: [username, iso],
-  });
 }
 
 async function persistReadState(username, peer, id) {
@@ -1162,6 +1181,164 @@ app.delete('/history/:peer', async (req, res) => {
   }
 });
 
+const JOURNAL_BODY_MAX = 4000;
+const JOURNAL_PAGE_DEFAULT = 30;
+const JOURNAL_PAGE_MAX = 100;
+
+function resolveJournalPeer(username, requested) {
+  const p = typeof requested === 'string' ? requested.trim() : '';
+  if (!p || p === HUB_USER || !users.has(p)) return null;
+  if (username !== HUB_USER && username !== p) return null;
+  return p;
+}
+
+function journalRow(r) {
+  return {
+    id: Number(r.id),
+    peer: String(r.peer),
+    author: String(r.author),
+    body: String(r.body || ''),
+    createdAt: String(r.created_at),
+    updatedAt: r.updated_at ? String(r.updated_at) : null,
+  };
+}
+
+app.get('/journal/:peer', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const peer = resolveJournalPeer(username, req.params.peer);
+  if (!peer) return res.status(400).json({ ok: false, error: 'Invalid peer' });
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Math.min(
+    JOURNAL_PAGE_MAX,
+    Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : JOURNAL_PAGE_DEFAULT)
+  );
+  const before = parseInt(req.query.before, 10);
+  try {
+    const args = [peer];
+    let where = 'peer = ?';
+    if (Number.isFinite(before) && before > 0) {
+      where += ' AND id < ?';
+      args.push(before);
+    }
+    args.push(limit);
+    const result = await db.execute({
+      sql: `SELECT id, peer, author, body, created_at, updated_at
+              FROM journal_entries
+             WHERE ${where}
+          ORDER BY id DESC
+             LIMIT ?`,
+      args,
+    });
+    const items = result.rows.map(journalRow);
+    res.json({ ok: true, peer, items, hasMore: items.length === limit });
+  } catch (err) {
+    console.error('journal list error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.post('/journal/:peer', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const peer = resolveJournalPeer(username, req.params.peer);
+  if (!peer) return res.status(400).json({ ok: false, error: 'Invalid peer' });
+  const raw = req.body && typeof req.body.body === 'string' ? req.body.body : '';
+  const body = raw.trim();
+  if (!body) return res.status(400).json({ ok: false, error: 'Body required' });
+  if (body.length > JOURNAL_BODY_MAX) {
+    return res.status(400).json({ ok: false, error: 'Too long' });
+  }
+  try {
+    const now = new Date().toISOString();
+    const result = await db.execute({
+      sql: `INSERT INTO journal_entries (peer, author, body, created_at)
+            VALUES (?, ?, ?, ?)`,
+      args: [peer, username, body, now],
+    });
+    const entry = {
+      id: Number(result.lastInsertRowid),
+      peer,
+      author: username,
+      body,
+      createdAt: now,
+      updatedAt: null,
+    };
+    emitToThread(peer, 'journal:new', entry);
+    res.json({ ok: true, entry });
+  } catch (err) {
+    console.error('journal create error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.patch('/journal/:peer/:id', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const peer = resolveJournalPeer(username, req.params.peer);
+  if (!peer) return res.status(400).json({ ok: false, error: 'Invalid peer' });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'Invalid id' });
+  const raw = req.body && typeof req.body.body === 'string' ? req.body.body : '';
+  const body = raw.trim();
+  if (!body) return res.status(400).json({ ok: false, error: 'Body required' });
+  if (body.length > JOURNAL_BODY_MAX) {
+    return res.status(400).json({ ok: false, error: 'Too long' });
+  }
+  try {
+    const cur = await db.execute({
+      sql: `SELECT id, peer, author FROM journal_entries WHERE id = ? AND peer = ?`,
+      args: [id, peer],
+    });
+    if (!cur.rows.length) return res.status(404).json({ ok: false, error: 'Not found' });
+    if (String(cur.rows[0].author) !== username) {
+      return res.status(403).json({ ok: false, error: 'Forbidden' });
+    }
+    const now = new Date().toISOString();
+    await db.execute({
+      sql: `UPDATE journal_entries SET body = ?, updated_at = ? WHERE id = ?`,
+      args: [body, now, id],
+    });
+    const entry = {
+      id,
+      peer,
+      author: username,
+      body,
+      updatedAt: now,
+    };
+    emitToThread(peer, 'journal:update', entry);
+    res.json({ ok: true, entry });
+  } catch (err) {
+    console.error('journal update error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.delete('/journal/:peer/:id', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const peer = resolveJournalPeer(username, req.params.peer);
+  if (!peer) return res.status(400).json({ ok: false, error: 'Invalid peer' });
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'Invalid id' });
+  try {
+    const cur = await db.execute({
+      sql: `SELECT id, peer, author FROM journal_entries WHERE id = ? AND peer = ?`,
+      args: [id, peer],
+    });
+    if (!cur.rows.length) return res.status(404).json({ ok: false, error: 'Not found' });
+    if (String(cur.rows[0].author) !== username) {
+      return res.status(403).json({ ok: false, error: 'Forbidden' });
+    }
+    await db.execute({ sql: `DELETE FROM journal_entries WHERE id = ?`, args: [id] });
+    emitToThread(peer, 'journal:delete', { id, peer });
+    res.json({ ok: true, id, peer });
+  } catch (err) {
+    console.error('journal delete error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
 const SAYANG_COUNTER_KEY = 'sayang_counter_start';
 
 async function getSayangCounterStart() {
@@ -1301,10 +1478,17 @@ app.post('/user-settings', async (req, res) => {
       await setPresenceVisible(username, presenceVisible);
       const nowHidden = !presenceVisible;
       if (wasHidden !== nowHidden) {
-        const payload = nowHidden
-          ? { username, online: false, lastSeen: null }
-          : { username, online: onlineUsers.has(username), lastSeen: lastSeen.get(username) || null };
-        io.except(userRoom(username)).emit('presence:update', payload);
+        for (const other of users) {
+          if (other === username) continue;
+          const payload = nowHidden
+            ? { username, online: false, lastSeen: null }
+            : {
+                username,
+                online: getPeerOnline(username, other),
+                lastSeen: getPeerLastSeen(username, other),
+              };
+          io.to(userRoom(other)).emit('presence:update', payload);
+        }
       }
     }
     res.json({ ok: true });
@@ -1523,7 +1707,8 @@ io.use((socket, next) => {
 const onlineUsers = new Set();
 const socketCounts = new Map();
 const lastRead = new Map();
-const lastSeen = new Map();
+const peerLastSeen = new Map(); // user → Map(other → iso)
+const peerActiveSockets = new Map(); // user → Map(other → Set(socket.id))
 const activeCalls = new Map();
 const lastPingAt = new Map();
 const tttSessions = new Map();
@@ -1598,22 +1783,100 @@ function tttPublicState(session) {
   };
 }
 
+function ensureInnerMap(map, key) {
+  let inner = map.get(key);
+  if (!inner) { inner = new Map(); map.set(key, inner); }
+  return inner;
+}
+
+function getPeerLastSeen(user, other) {
+  const inner = peerLastSeen.get(user);
+  return inner ? (inner.get(other) || null) : null;
+}
+
+function setPeerLastSeenInMemory(user, other, iso) {
+  ensureInnerMap(peerLastSeen, user).set(other, iso);
+}
+
+async function persistPeerLastSeen(user, other, iso) {
+  await db.execute({
+    sql: `INSERT INTO presence_peer (username, peer, last_seen) VALUES (?, ?, ?)
+          ON CONFLICT(username, peer) DO UPDATE SET last_seen = excluded.last_seen`,
+    args: [user, other, iso],
+  });
+}
+
+function touchPeerLastSeen(user, other, iso) {
+  setPeerLastSeenInMemory(user, other, iso);
+  persistPeerLastSeen(user, other, iso).catch((e) => console.error('persist peer last seen:', e.message));
+}
+
+function getPeerOnline(user, other) {
+  const inner = peerActiveSockets.get(user);
+  if (!inner) return false;
+  const s = inner.get(other);
+  return !!(s && s.size > 0);
+}
+
+function attachPeerSocket(user, other, socketId) {
+  const inner = ensureInnerMap(peerActiveSockets, user);
+  let s = inner.get(other);
+  if (!s) { s = new Set(); inner.set(other, s); }
+  s.add(socketId);
+  return s.size;
+}
+
+function detachPeerSocket(user, other, socketId) {
+  const inner = peerActiveSockets.get(user);
+  if (!inner) return 0;
+  const s = inner.get(other);
+  if (!s) return 0;
+  s.delete(socketId);
+  const remaining = s.size;
+  if (remaining === 0) inner.delete(other);
+  if (inner.size === 0) peerActiveSockets.delete(user);
+  return remaining;
+}
+
+async function loadAllPeerPresence() {
+  const result = await db.execute('SELECT username, peer, last_seen FROM presence_peer');
+  for (const row of result.rows) {
+    setPeerLastSeenInMemory(String(row.username), String(row.peer), String(row.last_seen));
+  }
+}
+
 function presenceSnapshot(viewer) {
   const snap = {};
   for (const u of users) {
-    const hidden = u !== viewer && isPresenceHidden(u);
+    if (u === viewer) {
+      snap[u] = {
+        online: (socketCounts.get(u) || 0) > 0,
+        lastSeen: null,
+        avatar: avatars.get(u) || null,
+      };
+      continue;
+    }
+    const hidden = isPresenceHidden(u);
     snap[u] = {
-      online: hidden ? false : onlineUsers.has(u),
-      lastSeen: hidden ? null : (lastSeen.get(u) || null),
+      online: hidden ? false : getPeerOnline(u, viewer),
+      lastSeen: hidden ? null : getPeerLastSeen(u, viewer),
       avatar: avatars.get(u) || null,
     };
   }
   return snap;
 }
 
-function touchLastSeen(username, iso) {
-  lastSeen.set(username, iso);
-  persistLastSeen(username, iso).catch((e) => console.error('persist last seen:', e.message));
+function presencePayloadFor(subject, viewer) {
+  const hidden = isPresenceHidden(subject);
+  return {
+    username: subject,
+    online: hidden ? false : getPeerOnline(subject, viewer),
+    lastSeen: hidden ? null : getPeerLastSeen(subject, viewer),
+  };
+}
+
+function emitPresenceTo(viewer, subject) {
+  io.to(userRoom(viewer)).emit('presence:update', presencePayloadFor(subject, viewer));
 }
 
 io.on('connection', async (socket) => {
@@ -1624,11 +1887,15 @@ io.on('connection', async (socket) => {
   const wasOffline = prev === 0;
   if (wasOffline) {
     onlineUsers.add(username);
-    touchLastSeen(username, new Date().toISOString());
   }
 
   const initialPeer = defaultPeerFor(username);
   socket.data.activePeer = initialPeer;
+  const initialOther = recipientOf(username, initialPeer);
+  const initialSize = attachPeerSocket(username, initialOther, socket.id);
+  const nowIso = new Date().toISOString();
+  touchPeerLastSeen(username, initialOther, nowIso);
+  const cameOnlineWithInitial = initialSize === 1;
 
   async function emitHistoryFor(peer) {
     try {
@@ -1644,24 +1911,43 @@ io.on('connection', async (socket) => {
   await emitHistoryFor(initialPeer);
   socket.emit('presence:init', presenceSnapshot(username));
   if (username === HUB_USER) socket.emit('peers', peersList());
-  if (wasOffline && !isPresenceHidden(username)) {
-    socket.broadcast.emit('presence:update', { username, online: true, lastSeen: lastSeen.get(username) || null });
+  if (cameOnlineWithInitial && !isPresenceHidden(username)) {
+    emitPresenceTo(initialOther, username);
   }
 
   socket.on('selectPeer', async (payload, ack) => {
     const requested = payload && typeof payload.peer === 'string' ? payload.peer : null;
+    let newPeer;
     if (username !== HUB_USER) {
-      socket.data.activePeer = username;
-      if (typeof ack === 'function') ack({ ok: true, peer: username });
-      return;
+      newPeer = username;
+    } else {
+      if (!requested || !users.has(requested) || requested === HUB_USER) {
+        if (typeof ack === 'function') ack({ ok: false, error: 'Invalid peer' });
+        return;
+      }
+      newPeer = requested;
     }
-    if (!requested || !users.has(requested) || requested === HUB_USER) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid peer' });
-      return;
+    const oldPeer = socket.data.activePeer;
+    const oldOther = recipientOf(username, oldPeer);
+    const newOther = recipientOf(username, newPeer);
+    if (oldOther !== newOther) {
+      const remaining = detachPeerSocket(username, oldOther, socket.id);
+      const iso = new Date().toISOString();
+      touchPeerLastSeen(username, oldOther, iso);
+      if (remaining === 0 && !isPresenceHidden(username)) {
+        emitPresenceTo(oldOther, username);
+      }
+      const size = attachPeerSocket(username, newOther, socket.id);
+      touchPeerLastSeen(username, newOther, iso);
+      if (size === 1 && !isPresenceHidden(username)) {
+        emitPresenceTo(newOther, username);
+      }
+    } else {
+      touchPeerLastSeen(username, newOther, new Date().toISOString());
     }
-    socket.data.activePeer = requested;
-    await emitHistoryFor(requested);
-    if (typeof ack === 'function') ack({ ok: true, peer: requested });
+    socket.data.activePeer = newPeer;
+    if (username === HUB_USER) await emitHistoryFor(newPeer);
+    if (typeof ack === 'function') ack({ ok: true, peer: newPeer });
   });
 
   async function handleOutgoing(payload, ack, build) {
@@ -1684,7 +1970,7 @@ io.on('connection', async (socket) => {
       if (clientId != null) broadcast.clientId = clientId;
       if (broadcastExtras) Object.assign(broadcast, broadcastExtras);
       emitToThread(peer, 'message', broadcast);
-      touchLastSeen(username, msg.time);
+      touchPeerLastSeen(username, recipientOf(username, peer), msg.time);
       sendPushToRecipient(recipientOf(username, peer), {
         title: 'Berita terkini',
         body: 'Simak update dan artikel pilihan hari ini',
@@ -2635,9 +2921,15 @@ io.on('connection', async (socket) => {
 
   socket.on('disconnect', () => {
     const peer = socket.data.activePeer;
+    const other = recipientOf(username, peer);
     if (peer) {
-      const recipient = recipientOf(username, peer);
-      io.to(userRoom(recipient)).emit('typing', { username, peer, typing: false });
+      io.to(userRoom(other)).emit('typing', { username, peer, typing: false });
+    }
+    const remaining = detachPeerSocket(username, other, socket.id);
+    const iso = new Date().toISOString();
+    touchPeerLastSeen(username, other, iso);
+    if (remaining === 0 && !isPresenceHidden(username)) {
+      emitPresenceTo(other, username);
     }
     const count = (socketCounts.get(username) || 1) - 1;
     if (count > 0) {
@@ -2647,13 +2939,6 @@ io.on('connection', async (socket) => {
     socketCounts.delete(username);
     onlineUsers.delete(username);
     if (activeCalls.has(username)) clearActiveCall('peer_disconnected');
-    const iso = new Date().toISOString();
-    touchLastSeen(username, iso);
-    if (isPresenceHidden(username)) {
-      io.to(userRoom(username)).emit('presence:update', { username, online: false, lastSeen: iso });
-    } else {
-      io.emit('presence:update', { username, online: false, lastSeen: iso });
-    }
   });
 });
 
@@ -2663,7 +2948,7 @@ initDb()
   .then(() => loadPasswordCache())
   .then(() => seedPasswords())
   .then(() => loadAllReadState())
-  .then(() => loadAllPresence())
+  .then(() => loadAllPeerPresence())
   .then(() => loadAllPresenceVisibility())
   .then(() => loadAllAvatars())
   .then(() => {

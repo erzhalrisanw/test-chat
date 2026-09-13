@@ -750,6 +750,9 @@ function switchPeer(peer) {
   socket.emit('selectPeer', { peer });
   if (typeof window.__tttBannerSync === 'function') window.__tttBannerSync();
   if (typeof window.__snlBannerSync === 'function') window.__snlBannerSync();
+  if (typeof closeJournalModal === 'function' && journalModal && !journalModal.classList.contains('hidden')) {
+    closeJournalModal();
+  }
 }
 
 function reloadCurrentPeer() {
@@ -2254,6 +2257,7 @@ function startChat(token, username) {
   updateGalleryBtn();
   updateClearHistoryBtn();
   updateSayangStatsBtn();
+  updateJournalBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
   if (pingBtn) pingBtn.classList.remove('hidden');
   renderMeAvatar();
@@ -2366,6 +2370,33 @@ function startChat(token, username) {
       renderAvatarPreview();
       markSelectedPreset();
     }
+  });
+
+  socket.on('journal:new', (entry) => {
+    if (!entry || !journalModal || journalModal.classList.contains('hidden')) return;
+    if (entry.peer !== journalState.peer) return;
+    if (journalState.entries.some((e) => e.id === entry.id)) return;
+    journalState.entries.unshift(entry);
+    renderJournalList();
+  });
+
+  socket.on('journal:update', (entry) => {
+    if (!entry || !journalModal || journalModal.classList.contains('hidden')) return;
+    if (entry.peer !== journalState.peer) return;
+    const idx = journalState.entries.findIndex((e) => e.id === entry.id);
+    if (idx === -1) return;
+    journalState.entries[idx] = Object.assign({}, journalState.entries[idx], entry);
+    renderJournalList();
+  });
+
+  socket.on('journal:delete', ({ id, peer }) => {
+    if (!journalModal || journalModal.classList.contains('hidden')) return;
+    if (peer !== journalState.peer) return;
+    const idx = journalState.entries.findIndex((e) => e.id === id);
+    if (idx === -1) return;
+    journalState.entries.splice(idx, 1);
+    if (journalState.editingId === id) journalState.editingId = null;
+    renderJournalList();
   });
 
   socket.on('typing', ({ username, peer, typing }) => {
@@ -4481,6 +4512,307 @@ if (sayangStatsModal) sayangStatsModal.addEventListener('click', (e) => {
   if (e.target === sayangStatsModal) closeSayangStatsModal();
 });
 
+const journalBtn = document.getElementById('journal-btn');
+const journalModal = document.getElementById('journal-modal');
+const journalCloseBtn = document.getElementById('journal-close');
+const journalPeerLabel = document.getElementById('journal-peer-label');
+const journalForm = document.getElementById('journal-form');
+const journalInput = document.getElementById('journal-input');
+const journalSubmitBtn = document.getElementById('journal-submit');
+const journalErrorEl = document.getElementById('journal-error');
+const journalStateEl = document.getElementById('journal-state');
+const journalListEl = document.getElementById('journal-list');
+const journalLoadMoreBtn = document.getElementById('journal-load-more');
+
+const journalState = {
+  peer: null,
+  entries: [],
+  hasMore: false,
+  loading: false,
+  editingId: null,
+};
+
+function updateJournalBtn() {
+  if (!journalBtn) return;
+  if (me) journalBtn.classList.remove('hidden');
+  else journalBtn.classList.add('hidden');
+}
+
+function journalPeerFor() {
+  return isHub() ? currentPeer : me;
+}
+
+function formatJournalTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) { return ''; }
+}
+
+function escapeHtmlJournal(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function showJournalError(msg) {
+  if (!journalErrorEl) return;
+  if (!msg) {
+    journalErrorEl.textContent = '';
+    journalErrorEl.classList.add('hidden');
+  } else {
+    journalErrorEl.textContent = msg;
+    journalErrorEl.classList.remove('hidden');
+  }
+}
+
+function renderJournalList() {
+  if (!journalListEl) return;
+  journalListEl.innerHTML = '';
+  if (!journalState.entries.length) {
+    journalListEl.classList.add('hidden');
+    journalStateEl.textContent = 'Belum ada entry. Yuk tulis yang pertama.';
+    journalStateEl.classList.remove('hidden');
+    journalLoadMoreBtn.classList.add('hidden');
+    return;
+  }
+  journalStateEl.classList.add('hidden');
+  journalListEl.classList.remove('hidden');
+  for (const entry of journalState.entries) {
+    const li = document.createElement('li');
+    li.className = 'journal-entry' + (entry.author === me ? ' mine' : '');
+    li.dataset.id = String(entry.id);
+
+    const meta = document.createElement('div');
+    meta.className = 'journal-entry-meta';
+    const left = document.createElement('div');
+    const author = document.createElement('span');
+    author.className = 'journal-entry-author';
+    author.textContent = entry.author;
+    const time = document.createElement('span');
+    time.className = 'journal-entry-time';
+    time.textContent = ' • ' + formatJournalTime(entry.createdAt);
+    left.appendChild(author);
+    left.appendChild(time);
+    if (entry.updatedAt) {
+      const edited = document.createElement('span');
+      edited.className = 'journal-entry-edited';
+      edited.textContent = '(diedit)';
+      left.appendChild(edited);
+    }
+    meta.appendChild(left);
+
+    if (entry.author === me) {
+      const actions = document.createElement('div');
+      actions.className = 'journal-entry-actions';
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', () => beginEditJournal(entry.id));
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.textContent = 'Hapus';
+      delBtn.addEventListener('click', () => confirmDeleteJournal(entry.id));
+      actions.appendChild(editBtn);
+      actions.appendChild(delBtn);
+      meta.appendChild(actions);
+    }
+    li.appendChild(meta);
+
+    if (journalState.editingId === entry.id) {
+      const wrap = document.createElement('div');
+      wrap.className = 'journal-entry-edit';
+      const ta = document.createElement('textarea');
+      ta.value = entry.body;
+      ta.maxLength = 4000;
+      const row = document.createElement('div');
+      row.className = 'journal-composer-row';
+      const err = document.createElement('span');
+      err.className = 'journal-error hidden';
+      const btnRow = document.createElement('div');
+      btnRow.style.display = 'flex';
+      btnRow.style.gap = '6px';
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.textContent = 'Simpan';
+      save.className = 'journal-entry-save';
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.textContent = 'Batal';
+      cancel.className = 'journal-entry-cancel';
+      save.addEventListener('click', () => submitEditJournal(entry.id, ta.value, err, save));
+      cancel.addEventListener('click', () => { journalState.editingId = null; renderJournalList(); });
+      btnRow.appendChild(cancel);
+      btnRow.appendChild(save);
+      row.appendChild(err);
+      row.appendChild(btnRow);
+      wrap.appendChild(ta);
+      wrap.appendChild(row);
+      li.appendChild(wrap);
+      setTimeout(() => ta.focus(), 0);
+    } else {
+      const body = document.createElement('div');
+      body.className = 'journal-entry-body';
+      body.textContent = entry.body;
+      li.appendChild(body);
+    }
+    journalListEl.appendChild(li);
+  }
+  journalLoadMoreBtn.classList.toggle('hidden', !journalState.hasMore);
+}
+
+async function loadJournal(reset) {
+  const peer = journalPeerFor();
+  if (!peer) return;
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  if (reset) {
+    journalState.entries = [];
+    journalState.hasMore = false;
+    journalState.editingId = null;
+    journalListEl.classList.add('hidden');
+    journalStateEl.classList.remove('hidden');
+    journalStateEl.textContent = 'Memuat…';
+    journalLoadMoreBtn.classList.add('hidden');
+  }
+  journalState.loading = true;
+  try {
+    const before = !reset && journalState.entries.length
+      ? journalState.entries[journalState.entries.length - 1].id
+      : null;
+    const params = new URLSearchParams({ limit: '30' });
+    if (before) params.set('before', String(before));
+    const res = await fetch('/journal/' + encodeURIComponent(peer) + '?' + params.toString(), {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if (reset) journalState.entries = data.items || [];
+    else journalState.entries = journalState.entries.concat(data.items || []);
+    journalState.hasMore = !!data.hasMore;
+    renderJournalList();
+  } catch (err) {
+    journalStateEl.textContent = 'Gagal memuat: ' + (err.message || err);
+    journalStateEl.classList.remove('hidden');
+    journalListEl.classList.add('hidden');
+  } finally {
+    journalState.loading = false;
+  }
+}
+
+function beginEditJournal(id) {
+  journalState.editingId = id;
+  renderJournalList();
+}
+
+async function submitEditJournal(id, value, errEl, btn) {
+  const peer = journalPeerFor();
+  const body = String(value || '').trim();
+  if (!body) {
+    errEl.textContent = 'Kosong';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  const token = localStorage.getItem('token');
+  if (!token || !peer) return;
+  btn.disabled = true;
+  try {
+    const res = await fetch('/journal/' + encodeURIComponent(peer) + '/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ body }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    journalState.editingId = null;
+  } catch (err) {
+    errEl.textContent = 'Gagal: ' + (err.message || err);
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function confirmDeleteJournal(id) {
+  if (!window.confirm('Hapus entry ini?')) return;
+  const peer = journalPeerFor();
+  const token = localStorage.getItem('token');
+  if (!token || !peer) return;
+  try {
+    const res = await fetch('/journal/' + encodeURIComponent(peer) + '/' + id, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  } catch (err) {
+    alert('Gagal menghapus: ' + (err.message || err));
+  }
+}
+
+async function openJournalModal() {
+  if (!journalModal) return;
+  const peer = journalPeerFor();
+  if (!peer) return;
+  journalState.peer = peer;
+  journalPeerLabel.textContent = peer;
+  showJournalError('');
+  journalInput.value = '';
+  journalModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  await loadJournal(true);
+  setTimeout(() => { if (journalInput) journalInput.focus(); }, 50);
+}
+
+function closeJournalModal() {
+  if (!journalModal) return;
+  journalModal.classList.add('hidden');
+  journalState.editingId = null;
+  document.body.style.overflow = '';
+}
+
+if (journalForm) {
+  journalForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const peer = journalPeerFor();
+    const body = journalInput.value.trim();
+    if (!peer) return;
+    if (!body) { showJournalError('Kosong'); return; }
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    showJournalError('');
+    journalSubmitBtn.disabled = true;
+    try {
+      const res = await fetch('/journal/' + encodeURIComponent(peer), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify({ body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+      journalInput.value = '';
+    } catch (err) {
+      showJournalError('Gagal: ' + (err.message || err));
+    } finally {
+      journalSubmitBtn.disabled = false;
+    }
+  });
+}
+if (journalBtn) journalBtn.addEventListener('click', openJournalModal);
+if (journalCloseBtn) journalCloseBtn.addEventListener('click', closeJournalModal);
+if (journalModal) journalModal.addEventListener('click', (e) => {
+  if (e.target === journalModal) closeJournalModal();
+});
+if (journalLoadMoreBtn) journalLoadMoreBtn.addEventListener('click', () => loadJournal(false));
+
 
 const clearHistoryBtn = document.getElementById('clear-history-btn');
 const clearHistoryModal = document.getElementById('clear-history-modal');
@@ -5065,6 +5397,10 @@ logoutBtn.addEventListener('click', function() {
   }
   Object.keys(avatarState).forEach((k) => delete avatarState[k]);
   closeAvatarModal();
+  closeJournalModal();
+  journalState.entries = [];
+  journalState.peer = null;
+  journalState.editingId = null;
   closePeerMenu();
   currentPeer = null;
   availablePeers = [];

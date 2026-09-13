@@ -87,6 +87,7 @@
             <button id="call-btn" class="hidden header-menu-item" title="Video call"><span class="header-menu-icon">📹</span><span class="header-menu-label">Video Call</span></button>
             <button id="game-btn" class="hidden header-menu-item" title="Main game sejenak"><span class="header-menu-icon">🎮</span><span class="header-menu-label">Game</span></button>
             <button id="gallery-btn" class="hidden header-menu-item" title="Gallery"><span class="header-menu-icon">🖼️</span><span class="header-menu-label">Gallery</span></button>
+            <button id="journal-btn" class="hidden header-menu-item" title="Journal berdua"><span class="header-menu-icon">📓</span><span class="header-menu-label">Journal</span></button>
             <button id="ping-btn" class="hidden header-menu-item" title="Thinking of you"><span class="header-menu-icon">💗</span><span class="header-menu-label">Thinking of You</span></button>
             <button id="clear-history-btn" class="hidden header-menu-item" title="Hapus history chat"><span class="header-menu-icon">🧹</span><span class="header-menu-label">Hapus History</span></button>
             <button id="sayang-stats-btn" class="hidden header-menu-item" title="Statistik ‘sayang’ manual"><span class="header-menu-icon">💖</span><span class="header-menu-label">Sayang Stats</span></button>
@@ -276,6 +277,27 @@
             <ul id="ss-recent" class="sayang-stats-recent"></ul>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="journal-modal" class="hidden">
+    <div class="journal-dialog">
+      <div class="journal-header">
+        <span>📓 Journal — <span id="journal-peer-label">—</span></span>
+        <button id="journal-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div class="journal-body">
+        <form id="journal-form" class="journal-composer">
+          <textarea id="journal-input" rows="3" maxlength="4000" placeholder="Tulis apa aja di sini…"></textarea>
+          <div class="journal-composer-row">
+            <span id="journal-error" class="journal-error hidden"></span>
+            <button id="journal-submit" type="submit">Simpan</button>
+          </div>
+        </form>
+        <div id="journal-state" class="journal-state">Memuat…</div>
+        <ul id="journal-list" class="journal-list hidden"></ul>
+        <button id="journal-load-more" type="button" class="journal-load-more hidden">Muat lebih lama</button>
       </div>
     </div>
   </div>
