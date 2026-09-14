@@ -1215,8 +1215,8 @@ app.get('/journal/:peer', async (req, res) => {
   );
   const before = parseInt(req.query.before, 10);
   try {
-    const args = [peer];
-    let where = 'peer = ?';
+    const args = [peer, username];
+    let where = 'peer = ? AND author = ?';
     if (Number.isFinite(before) && before > 0) {
       where += ' AND id < ?';
       args.push(before);
@@ -1264,7 +1264,7 @@ app.post('/journal/:peer', async (req, res) => {
       createdAt: now,
       updatedAt: null,
     };
-    emitToThread(peer, 'journal:new', entry);
+    io.to(userRoom(username)).emit('journal:new', entry);
     res.json({ ok: true, entry });
   } catch (err) {
     console.error('journal create error:', err.message);
@@ -1306,7 +1306,7 @@ app.patch('/journal/:peer/:id', async (req, res) => {
       body,
       updatedAt: now,
     };
-    emitToThread(peer, 'journal:update', entry);
+    io.to(userRoom(username)).emit('journal:update', entry);
     res.json({ ok: true, entry });
   } catch (err) {
     console.error('journal update error:', err.message);
@@ -1331,7 +1331,7 @@ app.delete('/journal/:peer/:id', async (req, res) => {
       return res.status(403).json({ ok: false, error: 'Forbidden' });
     }
     await db.execute({ sql: `DELETE FROM journal_entries WHERE id = ?`, args: [id] });
-    emitToThread(peer, 'journal:delete', { id, peer });
+    io.to(userRoom(username)).emit('journal:delete', { id, peer });
     res.json({ ok: true, id, peer });
   } catch (err) {
     console.error('journal delete error:', err.message);
