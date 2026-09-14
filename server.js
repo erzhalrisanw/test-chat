@@ -234,6 +234,13 @@ async function initDb() {
       PRIMARY KEY (username, peer)
     )
   `);
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS peer_server (
+      username TEXT PRIMARY KEY,
+      server_key TEXT NOT NULL,
+      last_seen TEXT NOT NULL
+    )
+  `);
   const ppExisting = await db.execute('SELECT COUNT(*) AS c FROM presence_peer');
   if (Number(ppExisting.rows[0].c) === 0) {
     const global = await db.execute('SELECT username, last_seen FROM presence');
@@ -1360,7 +1367,6 @@ async function getActiveServerKey() {
 
 app.get('/active-server', async (req, res) => {
   const username = authFromReq(req);
-  if (!username) return res.status(401).json({ ok: false });
   const activeKey = await getActiveServerKey();
   res.json({
     ok: true,
@@ -1386,6 +1392,32 @@ app.post('/active-server', async (req, res) => {
     activeDisplay: SERVER_OPTIONS[key].display,
   });
   res.json({ ok: true, activeKey: key, activeDisplay: SERVER_OPTIONS[key].display });
+});
+
+app.get('/peer-server-status', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  if (username !== HUB_USER) return res.status(403).json({ ok: false, error: 'Forbidden' });
+  try {
+    const activeKey = await getActiveServerKey();
+    const result = await db.execute(
+      'SELECT username, server_key, last_seen FROM peer_server ORDER BY last_seen DESC'
+    );
+    const peers = result.rows.map((r) => {
+      const key = String(r.server_key);
+      return {
+        username: String(r.username),
+        serverKey: key,
+        serverDisplay: (SERVER_OPTIONS[key] || {}).display || key,
+        lastSeen: String(r.last_seen),
+        match: key === activeKey,
+      };
+    });
+    res.json({ ok: true, activeKey, peers });
+  } catch (err) {
+    console.error('peer-server-status error:', err.message);
+    res.status(500).json({ ok: false });
+  }
 });
 
 const SAYANG_COUNTER_KEY = 'sayang_counter_start';
@@ -1936,6 +1968,25 @@ io.on('connection', async (socket) => {
   const wasOffline = prev === 0;
   if (wasOffline) {
     onlineUsers.add(username);
+  }
+  try {
+    const seenAt = new Date().toISOString();
+    await db.execute({
+      sql: `INSERT INTO peer_server (username, server_key, last_seen)
+            VALUES (?, ?, ?)
+            ON CONFLICT(username) DO UPDATE SET
+              server_key = excluded.server_key,
+              last_seen = excluded.last_seen`,
+      args: [username, SERVER_KEY, seenAt],
+    });
+    io.to(userRoom(HUB_USER)).emit('peer-server:update', {
+      username,
+      serverKey: SERVER_KEY,
+      serverDisplay: SERVER_OPTIONS[SERVER_KEY].display,
+      lastSeen: seenAt,
+    });
+  } catch (err) {
+    console.error('peer_server upsert error:', err.message);
   }
 
   const initialPeer = defaultPeerFor(username);

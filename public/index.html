@@ -61,15 +61,6 @@
 
   <button id="panic-btn" class="hidden" type="button" title="Panic: clear session & leave" aria-label="Panic">🚨</button>
 
-  <div id="server-info" class="hidden" aria-live="polite">
-    <button id="server-info-btn" type="button" aria-haspopup="true" aria-expanded="false">
-      <span id="server-info-status" class="server-info-status" aria-hidden="true"></span>
-      <span id="server-info-label"></span>
-      <span id="server-info-caret" class="hidden" aria-hidden="true">▾</span>
-    </button>
-    <div id="server-info-menu" class="hidden" role="menu"></div>
-  </div>
-
   <div id="chat-view" class="hidden">
     <header>
       <div class="header-left">
@@ -100,6 +91,7 @@
             <button id="ping-btn" class="hidden header-menu-item" title="Thinking of you"><span class="header-menu-icon">💗</span><span class="header-menu-label">Thinking of You</span></button>
             <button id="clear-history-btn" class="hidden header-menu-item" title="Hapus history chat"><span class="header-menu-icon">🧹</span><span class="header-menu-label">Hapus History</span></button>
             <button id="sayang-stats-btn" class="hidden header-menu-item" title="Statistik ‘sayang’ manual"><span class="header-menu-icon">💖</span><span class="header-menu-label">Sayang Stats</span></button>
+            <button id="server-picker-btn" class="hidden header-menu-item" title="Atur server aktif"><span class="header-menu-icon">🖥️</span><span class="header-menu-label">Server Aktif</span></button>
             <div class="header-menu-sep"></div>
             <div id="theme-switcher" class="header-menu-sub">
               <button id="theme-toggle" type="button" title="Ganti tema" aria-label="Ganti tema" aria-haspopup="true" aria-expanded="false"><span class="header-menu-icon theme-toggle-icon">🌙</span><span class="header-menu-label">Tema</span><span class="header-menu-caret">▸</span></button>
@@ -286,6 +278,29 @@
             <ul id="ss-recent" class="sayang-stats-recent"></ul>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="server-picker-modal" class="hidden">
+    <div class="server-picker-dialog">
+      <div class="server-picker-header">
+        <span>🖥️ Server Aktif</span>
+        <button id="server-picker-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div class="server-picker-body">
+        <p class="server-picker-hint">Pilih server yang sekarang lagi dipakai. Peer di server lain akan otomatis dipindah.</p>
+        <div id="server-picker-options" class="server-picker-options"></div>
+        <div id="server-picker-error" class="server-picker-error hidden"></div>
+        <div class="server-picker-peers">
+          <div class="server-picker-peers-title">Status peer</div>
+          <div id="server-picker-peers-state" class="server-picker-peers-state">Memuat…</div>
+          <ul id="server-picker-peers-list" class="server-picker-peers-list hidden"></ul>
+        </div>
+      </div>
+      <div class="server-picker-actions">
+        <button id="server-picker-cancel" type="button">Batal</button>
+        <button id="server-picker-save" type="button">Simpan</button>
       </div>
     </div>
   </div>

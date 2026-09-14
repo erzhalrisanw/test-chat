@@ -2579,7 +2579,13 @@ function startChat(token, username) {
     if (!payload || typeof payload.activeKey !== 'string') return;
     serverInfoState.activeKey = payload.activeKey;
     serverInfoState.match = serverInfoState.serverKey === payload.activeKey;
-    renderServerInfo();
+    recomputePeerServerMatches();
+    attemptRedirectToActive();
+  });
+
+  socket.on('peer-server:update', (payload) => {
+    if (!payload || typeof payload.username !== 'string') return;
+    upsertPeerServerRow(payload);
   });
 
   socket.on('system', (m) => {
@@ -5531,12 +5537,26 @@ panicBtn.addEventListener('click', function() {
   runPanic();
 });
 
-const serverInfoEl = document.getElementById('server-info');
-const serverInfoBtn = document.getElementById('server-info-btn');
-const serverInfoLabel = document.getElementById('server-info-label');
-const serverInfoStatus = document.getElementById('server-info-status');
-const serverInfoCaret = document.getElementById('server-info-caret');
-const serverInfoMenu = document.getElementById('server-info-menu');
+const serverPickerBtn = document.getElementById('server-picker-btn');
+const serverPickerModal = document.getElementById('server-picker-modal');
+const serverPickerCloseBtn = document.getElementById('server-picker-close');
+const serverPickerCancelBtn = document.getElementById('server-picker-cancel');
+const serverPickerSaveBtn = document.getElementById('server-picker-save');
+const serverPickerOptionsEl = document.getElementById('server-picker-options');
+const serverPickerErrorEl = document.getElementById('server-picker-error');
+const serverPickerPeersStateEl = document.getElementById('server-picker-peers-state');
+const serverPickerPeersListEl = document.getElementById('server-picker-peers-list');
+
+const SERVER_INFO_FALLBACK = [
+  { key: 'chat00', host: 'test-chat-ewz1.onrender.com', display: 'bit.ly/chat00' },
+  { key: 'test-doang', host: 'test-doang.onrender.com', display: 'bit.ly/test-doang' },
+];
+
+function detectServerKeyFromHost() {
+  const host = (window.location && window.location.host) || '';
+  const found = SERVER_INFO_FALLBACK.find((s) => s.host === host);
+  return found ? found.key : null;
+}
 
 const serverInfoState = {
   activeKey: null,
@@ -5544,75 +5564,179 @@ const serverInfoState = {
   match: false,
   canEdit: false,
   options: [],
-  menuOpen: false,
+  pickerSelectedKey: null,
 };
 
-function renderServerInfo() {
-  if (!serverInfoEl) return;
-  if (!serverInfoState.activeKey) {
-    serverInfoEl.classList.add('hidden');
-    return;
-  }
-  serverInfoEl.classList.remove('hidden');
-  const active = serverInfoState.options.find((o) => o.key === serverInfoState.activeKey);
-  serverInfoLabel.textContent = active ? active.display : serverInfoState.activeKey;
-  serverInfoStatus.classList.remove('ok', 'bad');
-  if (serverInfoState.match) {
-    serverInfoStatus.classList.add('ok');
-    serverInfoStatus.textContent = '✓';
-  } else {
-    serverInfoStatus.classList.add('bad');
-    serverInfoStatus.textContent = '✕';
-  }
-  if (serverInfoState.canEdit) {
-    serverInfoBtn.classList.add('is-editable');
-    serverInfoBtn.setAttribute('aria-expanded', serverInfoState.menuOpen ? 'true' : 'false');
-    serverInfoCaret.classList.remove('hidden');
-  } else {
-    serverInfoBtn.classList.remove('is-editable');
-    serverInfoBtn.removeAttribute('aria-expanded');
-    serverInfoCaret.classList.add('hidden');
-  }
-  renderServerInfoMenu();
+function updateServerPickerBtn() {
+  if (!serverPickerBtn) return;
+  if (serverInfoState.canEdit) serverPickerBtn.classList.remove('hidden');
+  else serverPickerBtn.classList.add('hidden');
 }
 
-function renderServerInfoMenu() {
-  if (!serverInfoMenu) return;
-  serverInfoMenu.innerHTML = '';
-  if (!serverInfoState.canEdit || !serverInfoState.menuOpen) {
-    serverInfoMenu.classList.add('hidden');
-    return;
-  }
+function renderServerPickerOptions() {
+  if (!serverPickerOptionsEl) return;
+  serverPickerOptionsEl.innerHTML = '';
   for (const opt of serverInfoState.options) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.setAttribute('role', 'menuitemradio');
-    const isActive = opt.key === serverInfoState.activeKey;
-    b.setAttribute('aria-checked', isActive ? 'true' : 'false');
-    const label = document.createElement('span');
-    label.textContent = opt.display;
-    b.appendChild(label);
-    if (isActive) {
-      const mark = document.createElement('span');
-      mark.textContent = '✓';
-      b.appendChild(mark);
-    }
-    b.addEventListener('click', () => selectServerKey(opt.key));
-    serverInfoMenu.appendChild(b);
+    const label = document.createElement('label');
+    label.className = 'server-picker-option';
+    if (opt.key === serverInfoState.activeKey) label.classList.add('is-current');
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'server-picker';
+    input.value = opt.key;
+    input.checked = opt.key === serverInfoState.pickerSelectedKey;
+    input.addEventListener('change', () => {
+      serverInfoState.pickerSelectedKey = opt.key;
+      updateServerPickerSaveBtn();
+    });
+    const text = document.createElement('span');
+    text.textContent = opt.display + (opt.key === serverInfoState.activeKey ? ' (aktif)' : '');
+    label.appendChild(input);
+    label.appendChild(text);
+    serverPickerOptionsEl.appendChild(label);
   }
-  serverInfoMenu.classList.remove('hidden');
 }
 
-function closeServerInfoMenu() {
-  if (!serverInfoState.menuOpen) return;
-  serverInfoState.menuOpen = false;
-  renderServerInfo();
+function updateServerPickerSaveBtn() {
+  if (!serverPickerSaveBtn) return;
+  const sel = serverInfoState.pickerSelectedKey;
+  serverPickerSaveBtn.disabled = !sel || sel === serverInfoState.activeKey;
 }
 
-async function selectServerKey(key) {
+function showServerPickerError(msg) {
+  if (!serverPickerErrorEl) return;
+  if (!msg) {
+    serverPickerErrorEl.textContent = '';
+    serverPickerErrorEl.classList.add('hidden');
+  } else {
+    serverPickerErrorEl.textContent = msg;
+    serverPickerErrorEl.classList.remove('hidden');
+  }
+}
+
+function openServerPickerModal() {
+  if (!serverPickerModal || !serverInfoState.canEdit) return;
+  serverInfoState.pickerSelectedKey = serverInfoState.activeKey;
+  showServerPickerError('');
+  renderServerPickerOptions();
+  updateServerPickerSaveBtn();
+  serverPickerModal.classList.remove('hidden');
+  closeHeaderMenu && closeHeaderMenu();
+  loadPeerServerStatus();
+}
+
+const peerServerState = { rows: [] };
+
+function formatPeerServerTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('id-ID', {
+      day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) { return ''; }
+}
+
+function renderPeerServerList() {
+  if (!serverPickerPeersListEl || !serverPickerPeersStateEl) return;
+  const rows = peerServerState.rows;
+  if (!rows.length) {
+    serverPickerPeersListEl.classList.add('hidden');
+    serverPickerPeersStateEl.classList.remove('hidden');
+    serverPickerPeersStateEl.textContent = 'Belum ada peer yang tercatat.';
+    return;
+  }
+  serverPickerPeersStateEl.classList.add('hidden');
+  serverPickerPeersListEl.classList.remove('hidden');
+  serverPickerPeersListEl.innerHTML = '';
+  for (const row of rows) {
+    const li = document.createElement('li');
+    li.className = 'server-picker-peer';
+    const left = document.createElement('div');
+    left.className = 'server-picker-peer-left';
+    const badge = document.createElement('span');
+    badge.className = 'server-picker-peer-badge ' + (row.match ? 'ok' : 'bad');
+    badge.textContent = row.match ? '✓' : '✕';
+    const info = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'server-picker-peer-name';
+    name.textContent = row.username;
+    const meta = document.createElement('div');
+    meta.className = 'server-picker-peer-meta';
+    const time = formatPeerServerTime(row.lastSeen);
+    meta.textContent = (row.serverDisplay || row.serverKey) + (time ? ' • ' + time : '');
+    info.appendChild(name);
+    info.appendChild(meta);
+    left.appendChild(badge);
+    left.appendChild(info);
+    li.appendChild(left);
+    serverPickerPeersListEl.appendChild(li);
+  }
+}
+
+function upsertPeerServerRow(payload) {
+  const activeKey = serverInfoState.activeKey;
+  const row = {
+    username: String(payload.username),
+    serverKey: String(payload.serverKey || ''),
+    serverDisplay: String(payload.serverDisplay || payload.serverKey || ''),
+    lastSeen: String(payload.lastSeen || ''),
+    match: activeKey ? String(payload.serverKey) === activeKey : false,
+  };
+  const idx = peerServerState.rows.findIndex((r) => r.username === row.username);
+  if (idx >= 0) peerServerState.rows[idx] = row;
+  else peerServerState.rows.unshift(row);
+  peerServerState.rows.sort((a, b) => (b.lastSeen || '').localeCompare(a.lastSeen || ''));
+  if (serverPickerModal && !serverPickerModal.classList.contains('hidden')) {
+    renderPeerServerList();
+  }
+}
+
+function recomputePeerServerMatches() {
+  const activeKey = serverInfoState.activeKey;
+  if (!activeKey || !peerServerState.rows.length) return;
+  for (const r of peerServerState.rows) r.match = r.serverKey === activeKey;
+  if (serverPickerModal && !serverPickerModal.classList.contains('hidden')) {
+    renderPeerServerList();
+  }
+}
+
+async function loadPeerServerStatus() {
+  if (!serverInfoState.canEdit) return;
+  if (!serverPickerPeersStateEl || !serverPickerPeersListEl) return;
   const token = localStorage.getItem('token');
   if (!token) return;
-  if (key === serverInfoState.activeKey) { closeServerInfoMenu(); return; }
+  serverPickerPeersStateEl.classList.remove('hidden');
+  serverPickerPeersStateEl.textContent = 'Memuat…';
+  serverPickerPeersListEl.classList.add('hidden');
+  try {
+    const res = await fetch('/peer-server-status', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    peerServerState.rows = Array.isArray(data.peers) ? data.peers : [];
+    renderPeerServerList();
+  } catch (err) {
+    serverPickerPeersStateEl.textContent = 'Gagal memuat: ' + (err.message || err);
+    serverPickerPeersStateEl.classList.remove('hidden');
+    serverPickerPeersListEl.classList.add('hidden');
+  }
+}
+
+function closeServerPickerModal() {
+  if (!serverPickerModal) return;
+  serverPickerModal.classList.add('hidden');
+}
+
+async function submitServerPicker() {
+  const key = serverInfoState.pickerSelectedKey;
+  const token = localStorage.getItem('token');
+  if (!token || !key || key === serverInfoState.activeKey) return;
+  serverPickerSaveBtn.disabled = true;
+  showServerPickerError('');
   try {
     const res = await fetch('/active-server', {
       method: 'POST',
@@ -5623,51 +5747,83 @@ async function selectServerKey(key) {
     if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
     serverInfoState.activeKey = data.activeKey;
     serverInfoState.match = serverInfoState.serverKey === data.activeKey;
+    closeServerPickerModal();
+    attemptRedirectToActive();
   } catch (err) {
-    alert('Gagal simpan: ' + (err.message || err));
-  } finally {
-    closeServerInfoMenu();
+    showServerPickerError('Gagal simpan: ' + (err.message || err));
+    serverPickerSaveBtn.disabled = false;
   }
+}
+
+function applyServerInfoFallback() {
+  const detected = detectServerKeyFromHost();
+  const fallbackOptions = SERVER_INFO_FALLBACK.map(({ key, display }) => ({ key, display }));
+  serverInfoState.options = fallbackOptions;
+  serverInfoState.serverKey = detected;
+  serverInfoState.activeKey = detected;
+  serverInfoState.match = false;
+  serverInfoState.canEdit = false;
+  updateServerPickerBtn();
 }
 
 async function loadServerInfo() {
   const token = localStorage.getItem('token');
-  if (!token) return;
+  const headers = token ? { Authorization: 'Bearer ' + token } : {};
   try {
-    const res = await fetch('/active-server', {
-      headers: { Authorization: 'Bearer ' + token },
-    });
+    const res = await fetch('/active-server', { headers });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) return;
+    if (!res.ok || !data.ok) { applyServerInfoFallback(); return; }
     serverInfoState.activeKey = data.activeKey;
     serverInfoState.serverKey = data.serverKey;
     serverInfoState.match = !!data.match;
     serverInfoState.canEdit = !!data.canEdit;
-    serverInfoState.options = Array.isArray(data.options) ? data.options : [];
-    renderServerInfo();
-  } catch (_) {}
+    serverInfoState.options = Array.isArray(data.options) && data.options.length
+      ? data.options
+      : SERVER_INFO_FALLBACK.map(({ key, display }) => ({ key, display }));
+    updateServerPickerBtn();
+    attemptRedirectToActive();
+  } catch (_) {
+    applyServerInfoFallback();
+  }
+}
+
+function attemptRedirectToActive() {
+  const activeKey = serverInfoState.activeKey;
+  if (!activeKey) return false;
+  const active = SERVER_INFO_FALLBACK.find((s) => s.key === activeKey);
+  if (!active) return false;
+  const currentHost = (window.location && window.location.host) || '';
+  if (currentHost === active.host) return false;
+  const detected = detectServerKeyFromHost();
+  if (!detected) return false;
+  const token = localStorage.getItem('token');
+  const user = localStorage.getItem('username');
+  const parts = [];
+  if (token && user) {
+    parts.push('t=' + encodeURIComponent(token));
+    parts.push('u=' + encodeURIComponent(user));
+  }
+  const hash = parts.length ? '#' + parts.join('&') : '';
+  const target = 'https://' + active.host + window.location.pathname + window.location.search + hash;
+  window.location.replace(target);
+  return true;
 }
 
 function hideServerInfo() {
   serverInfoState.activeKey = null;
-  serverInfoState.menuOpen = false;
-  if (serverInfoEl) serverInfoEl.classList.add('hidden');
-  if (serverInfoMenu) serverInfoMenu.classList.add('hidden');
+  if (serverPickerBtn) serverPickerBtn.classList.add('hidden');
+  closeServerPickerModal();
 }
 
-if (serverInfoBtn) {
-  serverInfoBtn.addEventListener('click', (e) => {
-    if (!serverInfoState.canEdit) return;
-    e.stopPropagation();
-    serverInfoState.menuOpen = !serverInfoState.menuOpen;
-    renderServerInfo();
+if (serverPickerBtn) serverPickerBtn.addEventListener('click', openServerPickerModal);
+if (serverPickerCloseBtn) serverPickerCloseBtn.addEventListener('click', closeServerPickerModal);
+if (serverPickerCancelBtn) serverPickerCancelBtn.addEventListener('click', closeServerPickerModal);
+if (serverPickerSaveBtn) serverPickerSaveBtn.addEventListener('click', submitServerPicker);
+if (serverPickerModal) {
+  serverPickerModal.addEventListener('click', (e) => {
+    if (e.target === serverPickerModal) closeServerPickerModal();
   });
 }
-document.addEventListener('click', (e) => {
-  if (!serverInfoState.menuOpen) return;
-  if (serverInfoEl && serverInfoEl.contains(e.target)) return;
-  closeServerInfoMenu();
-});
 
 const avatarModal = document.getElementById('avatar-modal');
 const avatarPreviewEl = document.getElementById('avatar-preview');
@@ -5983,6 +6139,22 @@ if ('serviceWorker' in navigator) {
   });
 }
 document.addEventListener('header:menu:close', () => closeThemeMenu());
+
+(function consumeAuthHash() {
+  try {
+    if (!window.location.hash) return;
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const t = params.get('t');
+    const u = params.get('u');
+    if (t && u) {
+      localStorage.setItem('token', t);
+      localStorage.setItem('username', u);
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  } catch (_) {}
+})();
+
+loadServerInfo();
 
 var savedToken = localStorage.getItem('token');
 var savedUser = localStorage.getItem('username');
