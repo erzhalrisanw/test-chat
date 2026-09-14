@@ -2240,6 +2240,7 @@ function startChat(token, username) {
   chatView.classList.remove('hidden');
   panicBtn.classList.remove('hidden');
   applyBirthdayPanic(username);
+  loadServerInfo();
   messagesEl.innerHTML = '';
   showMessagesLoading();
   Object.keys(unreadByPeer).forEach((k) => delete unreadByPeer[k]);
@@ -2574,6 +2575,13 @@ function startChat(token, username) {
     runPanic();
   });
 
+  socket.on('active-server:update', (payload) => {
+    if (!payload || typeof payload.activeKey !== 'string') return;
+    serverInfoState.activeKey = payload.activeKey;
+    serverInfoState.match = serverInfoState.serverKey === payload.activeKey;
+    renderServerInfo();
+  });
+
   socket.on('system', (m) => {
     if (m.text) addSystem(m.text);
   });
@@ -2585,6 +2593,7 @@ function startChat(token, username) {
       socket.disconnect();
       chatView.classList.add('hidden');
       panicBtn.classList.add('hidden');
+      hideServerInfo();
       loginView.classList.remove('hidden');
       loginError.textContent = 'Session expired, please log in again';
       return;
@@ -5379,6 +5388,7 @@ logoutBtn.addEventListener('click', function() {
   hideMessagesLoading();
   chatView.classList.add('hidden');
   panicBtn.classList.add('hidden');
+  hideServerInfo();
   loginView.classList.remove('hidden');
   if (presenceTimerId) { clearInterval(presenceTimerId); presenceTimerId = null; }
   if (presenceBtn) presenceBtn.classList.add('hidden');
@@ -5519,6 +5529,144 @@ panicBtn.addEventListener('click', function() {
     }
   } catch (_) {}
   runPanic();
+});
+
+const serverInfoEl = document.getElementById('server-info');
+const serverInfoBtn = document.getElementById('server-info-btn');
+const serverInfoLabel = document.getElementById('server-info-label');
+const serverInfoStatus = document.getElementById('server-info-status');
+const serverInfoCaret = document.getElementById('server-info-caret');
+const serverInfoMenu = document.getElementById('server-info-menu');
+
+const serverInfoState = {
+  activeKey: null,
+  serverKey: null,
+  match: false,
+  canEdit: false,
+  options: [],
+  menuOpen: false,
+};
+
+function renderServerInfo() {
+  if (!serverInfoEl) return;
+  if (!serverInfoState.activeKey) {
+    serverInfoEl.classList.add('hidden');
+    return;
+  }
+  serverInfoEl.classList.remove('hidden');
+  const active = serverInfoState.options.find((o) => o.key === serverInfoState.activeKey);
+  serverInfoLabel.textContent = active ? active.display : serverInfoState.activeKey;
+  serverInfoStatus.classList.remove('ok', 'bad');
+  if (serverInfoState.match) {
+    serverInfoStatus.classList.add('ok');
+    serverInfoStatus.textContent = '✓';
+  } else {
+    serverInfoStatus.classList.add('bad');
+    serverInfoStatus.textContent = '✕';
+  }
+  if (serverInfoState.canEdit) {
+    serverInfoBtn.classList.add('is-editable');
+    serverInfoBtn.setAttribute('aria-expanded', serverInfoState.menuOpen ? 'true' : 'false');
+    serverInfoCaret.classList.remove('hidden');
+  } else {
+    serverInfoBtn.classList.remove('is-editable');
+    serverInfoBtn.removeAttribute('aria-expanded');
+    serverInfoCaret.classList.add('hidden');
+  }
+  renderServerInfoMenu();
+}
+
+function renderServerInfoMenu() {
+  if (!serverInfoMenu) return;
+  serverInfoMenu.innerHTML = '';
+  if (!serverInfoState.canEdit || !serverInfoState.menuOpen) {
+    serverInfoMenu.classList.add('hidden');
+    return;
+  }
+  for (const opt of serverInfoState.options) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitemradio');
+    const isActive = opt.key === serverInfoState.activeKey;
+    b.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    const label = document.createElement('span');
+    label.textContent = opt.display;
+    b.appendChild(label);
+    if (isActive) {
+      const mark = document.createElement('span');
+      mark.textContent = '✓';
+      b.appendChild(mark);
+    }
+    b.addEventListener('click', () => selectServerKey(opt.key));
+    serverInfoMenu.appendChild(b);
+  }
+  serverInfoMenu.classList.remove('hidden');
+}
+
+function closeServerInfoMenu() {
+  if (!serverInfoState.menuOpen) return;
+  serverInfoState.menuOpen = false;
+  renderServerInfo();
+}
+
+async function selectServerKey(key) {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  if (key === serverInfoState.activeKey) { closeServerInfoMenu(); return; }
+  try {
+    const res = await fetch('/active-server', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ key }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    serverInfoState.activeKey = data.activeKey;
+    serverInfoState.match = serverInfoState.serverKey === data.activeKey;
+  } catch (err) {
+    alert('Gagal simpan: ' + (err.message || err));
+  } finally {
+    closeServerInfoMenu();
+  }
+}
+
+async function loadServerInfo() {
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  try {
+    const res = await fetch('/active-server', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) return;
+    serverInfoState.activeKey = data.activeKey;
+    serverInfoState.serverKey = data.serverKey;
+    serverInfoState.match = !!data.match;
+    serverInfoState.canEdit = !!data.canEdit;
+    serverInfoState.options = Array.isArray(data.options) ? data.options : [];
+    renderServerInfo();
+  } catch (_) {}
+}
+
+function hideServerInfo() {
+  serverInfoState.activeKey = null;
+  serverInfoState.menuOpen = false;
+  if (serverInfoEl) serverInfoEl.classList.add('hidden');
+  if (serverInfoMenu) serverInfoMenu.classList.add('hidden');
+}
+
+if (serverInfoBtn) {
+  serverInfoBtn.addEventListener('click', (e) => {
+    if (!serverInfoState.canEdit) return;
+    e.stopPropagation();
+    serverInfoState.menuOpen = !serverInfoState.menuOpen;
+    renderServerInfo();
+  });
+}
+document.addEventListener('click', (e) => {
+  if (!serverInfoState.menuOpen) return;
+  if (serverInfoEl && serverInfoEl.contains(e.target)) return;
+  closeServerInfoMenu();
 });
 
 const avatarModal = document.getElementById('avatar-modal');

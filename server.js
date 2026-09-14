@@ -67,6 +67,16 @@ const db = createClient({
 const HUB_USER = 'occupatus';
 const LEGACY_PEER = 'mutatio';
 
+const SERVER_OPTIONS = {
+  'chat00': { url: 'https://test-chat-ewz1.onrender.com', display: 'bit.ly/chat00' },
+  'test-doang': { url: 'https://test-doang.onrender.com', display: 'bit.ly/test-doang' },
+};
+const DEFAULT_ACTIVE_SERVER = 'chat00';
+const ACTIVE_SERVER_KV = 'active_server';
+const SERVER_KEY = SERVER_OPTIONS[process.env.SERVER_KEY]
+  ? process.env.SERVER_KEY
+  : DEFAULT_ACTIVE_SERVER;
+
 async function initDb() {
   await db.execute(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -1337,6 +1347,45 @@ app.delete('/journal/:peer/:id', async (req, res) => {
     console.error('journal delete error:', err.message);
     res.status(500).json({ ok: false });
   }
+});
+
+function serverOptionsPayload() {
+  return Object.entries(SERVER_OPTIONS).map(([key, v]) => ({ key, display: v.display }));
+}
+
+async function getActiveServerKey() {
+  const stored = await getAppKv(ACTIVE_SERVER_KV);
+  return SERVER_OPTIONS[stored] ? stored : DEFAULT_ACTIVE_SERVER;
+}
+
+app.get('/active-server', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const activeKey = await getActiveServerKey();
+  res.json({
+    ok: true,
+    activeKey,
+    activeDisplay: SERVER_OPTIONS[activeKey].display,
+    serverKey: SERVER_KEY,
+    serverDisplay: SERVER_OPTIONS[SERVER_KEY].display,
+    match: SERVER_KEY === activeKey,
+    canEdit: username === HUB_USER,
+    options: serverOptionsPayload(),
+  });
+});
+
+app.post('/active-server', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  if (username !== HUB_USER) return res.status(403).json({ ok: false, error: 'Forbidden' });
+  const key = req.body && typeof req.body.key === 'string' ? req.body.key : '';
+  if (!SERVER_OPTIONS[key]) return res.status(400).json({ ok: false, error: 'Invalid key' });
+  await setAppKv(ACTIVE_SERVER_KV, key);
+  io.emit('active-server:update', {
+    activeKey: key,
+    activeDisplay: SERVER_OPTIONS[key].display,
+  });
+  res.json({ ok: true, activeKey: key, activeDisplay: SERVER_OPTIONS[key].display });
 });
 
 const SAYANG_COUNTER_KEY = 'sayang_counter_start';

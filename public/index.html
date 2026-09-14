@@ -61,6 +61,15 @@
 
   <button id="panic-btn" class="hidden" type="button" title="Panic: clear session & leave" aria-label="Panic">🚨</button>
 
+  <div id="server-info" class="hidden" aria-live="polite">
+    <button id="server-info-btn" type="button" aria-haspopup="true" aria-expanded="false">
+      <span id="server-info-status" class="server-info-status" aria-hidden="true"></span>
+      <span id="server-info-label"></span>
+      <span id="server-info-caret" class="hidden" aria-hidden="true">▾</span>
+    </button>
+    <div id="server-info-menu" class="hidden" role="menu"></div>
+  </div>
+
   <div id="chat-view" class="hidden">
     <header>
       <div class="header-left">
