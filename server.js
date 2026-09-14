@@ -1387,10 +1387,6 @@ app.post('/active-server', async (req, res) => {
   const key = req.body && typeof req.body.key === 'string' ? req.body.key : '';
   if (!SERVER_OPTIONS[key]) return res.status(400).json({ ok: false, error: 'Invalid key' });
   await setAppKv(ACTIVE_SERVER_KV, key);
-  io.emit('active-server:update', {
-    activeKey: key,
-    activeDisplay: SERVER_OPTIONS[key].display,
-  });
   res.json({ ok: true, activeKey: key, activeDisplay: SERVER_OPTIONS[key].display });
 });
 

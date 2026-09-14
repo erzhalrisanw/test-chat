@@ -61,6 +61,18 @@
 
   <button id="panic-btn" class="hidden" type="button" title="Panic: clear session & leave" aria-label="Panic">🚨</button>
 
+  <div id="server-mismatch-banner" class="hidden" role="alert">
+    <div class="server-mismatch-banner-inner">
+      <span class="server-mismatch-banner-icon" aria-hidden="true">⚠️</span>
+      <div class="server-mismatch-banner-text">
+        <div class="server-mismatch-banner-title">Server aktif berbeda</div>
+        <div class="server-mismatch-banner-msg">Sekarang server aktif ada di <b id="server-mismatch-banner-target">-</b>. Silakan pindah supaya chat tetap sinkron.</div>
+      </div>
+      <button id="server-mismatch-banner-go" type="button" class="server-mismatch-banner-go">Pindah sekarang</button>
+      <button id="server-mismatch-banner-close" type="button" class="server-mismatch-banner-close" aria-label="Tutup">✕</button>
+    </div>
+  </div>
+
   <div id="chat-view" class="hidden">
     <header>
       <div class="header-left">

@@ -2575,14 +2575,6 @@ function startChat(token, username) {
     runPanic();
   });
 
-  socket.on('active-server:update', (payload) => {
-    if (!payload || typeof payload.activeKey !== 'string') return;
-    serverInfoState.activeKey = payload.activeKey;
-    serverInfoState.match = serverInfoState.serverKey === payload.activeKey;
-    recomputePeerServerMatches();
-    attemptRedirectToActive();
-  });
-
   socket.on('peer-server:update', (payload) => {
     if (!payload || typeof payload.username !== 'string') return;
     upsertPeerServerRow(payload);
@@ -5781,10 +5773,37 @@ async function loadServerInfo() {
       ? data.options
       : SERVER_INFO_FALLBACK.map(({ key, display }) => ({ key, display }));
     updateServerPickerBtn();
-    attemptRedirectToActive();
+    evaluateServerMismatch();
   } catch (_) {
     applyServerInfoFallback();
   }
+}
+
+function evaluateServerMismatch() {
+  const activeKey = serverInfoState.activeKey;
+  if (!activeKey) { hideServerMismatchBanner(); return; }
+  const detected = detectServerKeyFromHost();
+  if (!detected) { hideServerMismatchBanner(); return; }
+  if (detected === activeKey) { hideServerMismatchBanner(); return; }
+  showServerMismatchBanner();
+}
+
+function showServerMismatchBanner() {
+  const banner = document.getElementById('server-mismatch-banner');
+  if (!banner) return;
+  const activeKey = serverInfoState.activeKey;
+  const active = SERVER_INFO_FALLBACK.find((s) => s.key === activeKey);
+  const targetEl = document.getElementById('server-mismatch-banner-target');
+  if (targetEl) {
+    const opt = (serverInfoState.options || []).find((o) => o.key === activeKey);
+    targetEl.textContent = (opt && opt.display) || (active && active.display) || activeKey;
+  }
+  banner.classList.remove('hidden');
+}
+
+function hideServerMismatchBanner() {
+  const banner = document.getElementById('server-mismatch-banner');
+  if (banner) banner.classList.add('hidden');
 }
 
 function attemptRedirectToActive() {
@@ -5813,6 +5832,16 @@ function hideServerInfo() {
   serverInfoState.activeKey = null;
   if (serverPickerBtn) serverPickerBtn.classList.add('hidden');
   closeServerPickerModal();
+  hideServerMismatchBanner();
+}
+
+const serverMismatchGoBtn = document.getElementById('server-mismatch-banner-go');
+if (serverMismatchGoBtn) {
+  serverMismatchGoBtn.addEventListener('click', () => { attemptRedirectToActive(); });
+}
+const serverMismatchCloseBtn = document.getElementById('server-mismatch-banner-close');
+if (serverMismatchCloseBtn) {
+  serverMismatchCloseBtn.addEventListener('click', hideServerMismatchBanner);
 }
 
 if (serverPickerBtn) serverPickerBtn.addEventListener('click', openServerPickerModal);
