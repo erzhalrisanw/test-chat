@@ -53,7 +53,10 @@
     <h1>Login</h1>
     <form id="login-form">
       <input id="username" type="text" placeholder="Username" autocomplete="username" required />
-      <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+      <div class="password-wrap">
+        <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+        <button id="password-toggle" type="button" class="password-toggle" aria-label="Tampilkan password" aria-pressed="false">👁️</button>
+      </div>
       <button type="submit">Login</button>
       <p id="login-error" class="error"></p>
     </form>
@@ -69,7 +72,6 @@
         <div class="server-mismatch-banner-msg">Sekarang server aktif ada di <b id="server-mismatch-banner-target">-</b>. Silakan pindah supaya chat tetap sinkron.</div>
       </div>
       <button id="server-mismatch-banner-go" type="button" class="server-mismatch-banner-go">Pindah sekarang</button>
-      <button id="server-mismatch-banner-close" type="button" class="server-mismatch-banner-close" aria-label="Tutup">✕</button>
     </div>
   </div>
 
@@ -93,6 +95,7 @@
           </button>
           <div id="peer-switcher-menu" class="hidden" role="menu"></div>
         </div>
+        <button id="search-btn" class="hidden header-icon-btn" type="button" title="Cari history chat" aria-label="Cari history chat">🔍</button>
         <div id="header-menu-wrap">
           <button id="header-menu-btn" type="button" title="Menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false">☰</button>
           <div id="header-menu" class="hidden" role="menu">
@@ -100,6 +103,7 @@
             <button id="game-btn" class="hidden header-menu-item" title="Main game sejenak"><span class="header-menu-icon">🎮</span><span class="header-menu-label">Game</span></button>
             <button id="gallery-btn" class="hidden header-menu-item" title="Gallery"><span class="header-menu-icon">🖼️</span><span class="header-menu-label">Gallery</span></button>
             <button id="journal-btn" class="hidden header-menu-item" title="Journal berdua"><span class="header-menu-icon">📓</span><span class="header-menu-label">Journal</span></button>
+            <button id="pinned-btn" class="hidden header-menu-item" title="Pesan yang di-pin"><span class="header-menu-icon">📌</span><span class="header-menu-label">Pesan Pin</span></button>
             <button id="ping-btn" class="hidden header-menu-item" title="Thinking of you"><span class="header-menu-icon">💗</span><span class="header-menu-label">Thinking of You</span></button>
             <button id="clear-history-btn" class="hidden header-menu-item" title="Hapus history chat"><span class="header-menu-icon">🧹</span><span class="header-menu-label">Hapus History</span></button>
             <button id="sayang-stats-btn" class="hidden header-menu-item" title="Statistik ‘sayang’ manual"><span class="header-menu-icon">💖</span><span class="header-menu-label">Sayang Stats</span></button>
@@ -334,6 +338,37 @@
         <div id="journal-state" class="journal-state">Memuat…</div>
         <ul id="journal-list" class="journal-list hidden"></ul>
         <button id="journal-load-more" type="button" class="journal-load-more hidden">Muat lebih lama</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="search-modal" class="hidden">
+    <div class="search-dialog">
+      <div class="search-header">
+        <span>🔍 Cari — <span id="search-peer-label">—</span></span>
+        <button id="search-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div class="search-body">
+        <div class="search-composer">
+          <input id="search-input" type="text" autocomplete="off" spellcheck="false" placeholder="Ketik kata kunci…" maxlength="200" />
+          <button id="search-clear" type="button" class="hidden" title="Bersihkan" aria-label="Bersihkan">✕</button>
+        </div>
+        <div id="search-state" class="search-state">Ketik untuk mulai mencari.</div>
+        <ul id="search-list" class="search-list hidden"></ul>
+        <button id="search-load-more" type="button" class="search-load-more hidden">Muat hasil lebih lama</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pinned-modal" class="hidden">
+    <div class="pinned-dialog">
+      <div class="pinned-header">
+        <span>📌 Pesan Pin — <span id="pinned-peer-label">—</span></span>
+        <button id="pinned-close" type="button" title="Tutup" aria-label="Tutup">✕</button>
+      </div>
+      <div class="pinned-body">
+        <div id="pinned-state" class="pinned-state">Memuat…</div>
+        <ul id="pinned-list" class="pinned-list hidden"></ul>
       </div>
     </div>
   </div>

@@ -753,6 +753,12 @@ function switchPeer(peer) {
   if (typeof closeJournalModal === 'function' && journalModal && !journalModal.classList.contains('hidden')) {
     closeJournalModal();
   }
+  if (typeof closePinnedModal === 'function' && pinnedModal && !pinnedModal.classList.contains('hidden')) {
+    closePinnedModal();
+  }
+  if (typeof closeSearchModal === 'function' && searchModal && !searchModal.classList.contains('hidden')) {
+    closeSearchModal();
+  }
 }
 
 function reloadCurrentPeer() {
@@ -1723,7 +1729,41 @@ if (pingBtn) {
 
 const REACTION_EMOJIS = ['❤️', '🥰', '😂', '😮', '😢', '🙏', '👍', '👎', '🔥', '🎉'];
 const reactionsById = {};
+const pinnedById = {};
 let openReactionPickerEl = null;
+
+function isPinned(id) { return !!pinnedById[id]; }
+
+function renderPinnedBadgeFor(id, msgEl) {
+  if (!id) return;
+  const el = msgEl || messagesEl.querySelector('.msg[data-id="' + id + '"]');
+  if (!el) return;
+  let badge = el.querySelector('.msg-pin-badge');
+  if (isPinned(id)) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'msg-pin-badge';
+      badge.setAttribute('aria-label', 'Pinned');
+      badge.textContent = '📌';
+      el.appendChild(badge);
+    }
+    badge.classList.remove('hidden');
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+function setPinnedState(id, pinned) {
+  if (!id) return;
+  if (pinned) pinnedById[id] = true;
+  else delete pinnedById[id];
+  renderPinnedBadgeFor(id);
+}
+
+function togglePin(id) {
+  if (!socket || !id) return;
+  socket.emit('pin:toggle', { id });
+}
 
 function closeReactionPicker() {
   if (!openReactionPickerEl) return;
@@ -2206,6 +2246,20 @@ function notify(msg) {
   title.addEventListener('contextmenu', (e) => e.preventDefault());
 })();
 
+(function wirePasswordToggle() {
+  const btn = document.getElementById('password-toggle');
+  const inp = document.getElementById('password');
+  if (!btn || !inp) return;
+  btn.addEventListener('click', () => {
+    const showing = inp.type === 'text';
+    inp.type = showing ? 'password' : 'text';
+    btn.textContent = showing ? '👁️' : '🙈';
+    btn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+    btn.setAttribute('aria-label', showing ? 'Tampilkan password' : 'Sembunyikan password');
+    inp.focus();
+  });
+})();
+
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   loginError.textContent = '';
@@ -2259,6 +2313,8 @@ function startChat(token, username) {
   updateClearHistoryBtn();
   updateSayangStatsBtn();
   updateJournalBtn();
+  updatePinnedBtn();
+  updateSearchBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
   if (pingBtn) pingBtn.classList.remove('hidden');
   renderMeAvatar();
@@ -2516,6 +2572,15 @@ function startChat(token, username) {
       const el = messagesEl.querySelector(`.msg[data-id="${id}"]`);
       if (el) triggerReactionBurst(el, payload.emoji);
     }
+  });
+
+  socket.on('pin:update', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = Number(payload.id);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (payload.peer && currentPeer && payload.peer !== currentPeer) return;
+    setPinnedState(id, !!payload.pinned);
+    if (pinnedState.peer && payload.peer === pinnedState.peer) refreshPinnedList();
   });
 
   socket.on('unsend', (payload) => {
@@ -2885,6 +2950,9 @@ function buildMessageNodes(msg) {
     if (Array.isArray(msg.reactions)) reactionsById[id] = msg.reactions.slice();
     renderReactionsFor(id, reactionsContainer);
     if (!isUnsent && !hideContent) attachReactionLongPress(div, id);
+    if (msg.pinned) pinnedById[id] = true;
+    else if (msg.pinned === false) delete pinnedById[id];
+    renderPinnedBadgeFor(id, div);
   }
   return [div];
 }
@@ -2942,11 +3010,16 @@ function attachMsgMenu(div, opts) {
   const textEl = div.querySelector('.msg-text');
   const canCopy = !!(textEl && !hideContent && !isUnsent && textEl.textContent.trim());
   const canCancel = !!(isPending && username === me);
-  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend && !canCancel) return;
+  const canPin = id && !hideContent && !isUnsent && !isPending;
+  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend && !canCancel && !canPin) return;
   const items = [];
   if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
   if (canCopy) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="copy"><span class="msg-menu-icon">📋</span><span class="msg-menu-label">Salin</span></button>');
   if (canForward) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="forward"><span class="msg-menu-icon">➤</span><span class="msg-menu-label">Teruskan</span></button>');
+  if (canPin) {
+    const pinned = isPinned(id);
+    items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="pin"><span class="msg-menu-icon">📌</span><span class="msg-menu-label">' + (pinned ? 'Lepas pin' : 'Pin pesan') + '</span></button>');
+  }
   if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
   if (canResend) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="resend"><span class="msg-menu-icon">↻</span><span class="msg-menu-label">Kirim ulang</span></button>');
   if (canCancel) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="cancel"><span class="msg-menu-icon">🗑</span><span class="msg-menu-label">Batalkan</span></button>');
@@ -2962,6 +3035,8 @@ function attachMsgMenu(div, opts) {
     const isOpen = !menuEl.classList.contains('hidden');
     closeOpenMsgMenu();
     if (!isOpen) {
+      const pinItem = menuEl.querySelector('.msg-menu-item[data-action="pin"] .msg-menu-label');
+      if (pinItem && id) pinItem.textContent = isPinned(id) ? 'Lepas pin' : 'Pin pesan';
       menuEl.classList.remove('hidden');
       menuBtn.setAttribute('aria-expanded', 'true');
       openMsgMenu = menuEl;
@@ -2996,6 +3071,8 @@ function attachMsgMenu(div, opts) {
         if (t) copyTextToClipboard(t.textContent);
       } else if (action === 'cancel') {
         cancelPendingBubble(div);
+      } else if (action === 'pin' && currentId) {
+        togglePin(currentId);
       }
     });
   });
@@ -4821,6 +4898,372 @@ if (journalModal) journalModal.addEventListener('click', (e) => {
 if (journalLoadMoreBtn) journalLoadMoreBtn.addEventListener('click', () => loadJournal(false));
 
 
+const pinnedBtn = document.getElementById('pinned-btn');
+const pinnedModal = document.getElementById('pinned-modal');
+const pinnedCloseBtn = document.getElementById('pinned-close');
+const pinnedPeerLabel = document.getElementById('pinned-peer-label');
+const pinnedStateEl = document.getElementById('pinned-state');
+const pinnedListEl = document.getElementById('pinned-list');
+
+const pinnedState = {
+  peer: null,
+  items: [],
+  loading: false,
+};
+
+function updatePinnedBtn() {
+  if (!pinnedBtn) return;
+  if (me) pinnedBtn.classList.remove('hidden');
+  else pinnedBtn.classList.add('hidden');
+}
+
+function pinnedPeerFor() {
+  return isHub() ? currentPeer : me;
+}
+
+function formatPinnedTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) { return ''; }
+}
+
+function escapeHtmlPinned(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function pinnedMediaTag(m) {
+  if (m.image) return '🖼️ Foto';
+  if (m.video) return '🎬 Video';
+  if (m.audio) return '🎙️ Voice';
+  return '';
+}
+
+function renderPinnedList() {
+  if (!pinnedListEl || !pinnedStateEl) return;
+  pinnedListEl.innerHTML = '';
+  if (!pinnedState.items.length) {
+    pinnedListEl.classList.add('hidden');
+    pinnedStateEl.textContent = 'Belum ada pesan yang di-pin.';
+    pinnedStateEl.classList.remove('hidden');
+    return;
+  }
+  pinnedStateEl.classList.add('hidden');
+  pinnedListEl.classList.remove('hidden');
+  for (const m of pinnedState.items) {
+    const li = document.createElement('li');
+    li.className = 'pinned-item' + (m.username === me ? ' mine' : '');
+    li.dataset.id = String(m.id);
+    const body = m.text ? escapeHtmlPinned(m.text) : '';
+    const mediaTag = pinnedMediaTag(m);
+    const bodyHtml = body
+      ? '<div class="pinned-body-text">' + body + '</div>'
+      : (mediaTag ? '<div class="pinned-media-tag">' + mediaTag + '</div>' : '');
+    li.innerHTML =
+      '<div class="pinned-meta">' +
+        '<span class="pinned-author">' + escapeHtmlPinned(m.username) + '</span>' +
+        '<span class="pinned-time">' + escapeHtmlPinned(formatPinnedTime(m.time)) + '</span>' +
+      '</div>' +
+      bodyHtml +
+      '<div class="pinned-meta">' +
+        '<span class="pinned-pinby">di-pin oleh ' + escapeHtmlPinned(m.pinnedBy || '-') + '</span>' +
+        '<span class="pinned-actions">' +
+          '<button type="button" data-action="jump">Buka</button>' +
+          '<button type="button" data-action="unpin">Lepas</button>' +
+        '</span>' +
+      '</div>';
+    li.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      const action = btn && btn.dataset.action;
+      if (action === 'unpin') {
+        e.stopPropagation();
+        togglePin(m.id);
+        return;
+      }
+      closePinnedModal();
+      jumpToMessage(m.id);
+    });
+    pinnedListEl.appendChild(li);
+  }
+}
+
+async function refreshPinnedList() {
+  const peer = pinnedState.peer;
+  if (!peer) return;
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  pinnedState.loading = true;
+  try {
+    const res = await fetch('/pinned/' + encodeURIComponent(peer), {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    pinnedState.items = Array.isArray(data.items) ? data.items : [];
+    for (const m of pinnedState.items) {
+      if (m && m.id) pinnedById[m.id] = true;
+      renderPinnedBadgeFor(m.id);
+    }
+    renderPinnedList();
+  } catch (err) {
+    if (pinnedStateEl) {
+      pinnedStateEl.textContent = 'Gagal memuat: ' + (err.message || err);
+      pinnedStateEl.classList.remove('hidden');
+    }
+    if (pinnedListEl) pinnedListEl.classList.add('hidden');
+  } finally {
+    pinnedState.loading = false;
+  }
+}
+
+async function openPinnedModal() {
+  if (!pinnedModal) return;
+  const peer = pinnedPeerFor();
+  if (!peer) return;
+  pinnedState.peer = peer;
+  if (pinnedPeerLabel) pinnedPeerLabel.textContent = peer;
+  if (pinnedStateEl) {
+    pinnedStateEl.textContent = 'Memuat…';
+    pinnedStateEl.classList.remove('hidden');
+  }
+  if (pinnedListEl) pinnedListEl.classList.add('hidden');
+  pinnedModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  await refreshPinnedList();
+}
+
+function closePinnedModal() {
+  if (!pinnedModal) return;
+  pinnedModal.classList.add('hidden');
+  pinnedState.peer = null;
+  document.body.style.overflow = '';
+}
+
+if (pinnedBtn) pinnedBtn.addEventListener('click', openPinnedModal);
+if (pinnedCloseBtn) pinnedCloseBtn.addEventListener('click', closePinnedModal);
+if (pinnedModal) pinnedModal.addEventListener('click', (e) => {
+  if (e.target === pinnedModal) closePinnedModal();
+});
+
+
+const searchBtn = document.getElementById('search-btn');
+const searchModal = document.getElementById('search-modal');
+const searchCloseBtn = document.getElementById('search-close');
+const searchPeerLabel = document.getElementById('search-peer-label');
+const searchInput = document.getElementById('search-input');
+const searchClearBtn = document.getElementById('search-clear');
+const searchStateEl = document.getElementById('search-state');
+const searchListEl = document.getElementById('search-list');
+const searchLoadMoreBtn = document.getElementById('search-load-more');
+
+const searchState = {
+  peer: null,
+  q: '',
+  items: [],
+  hasMore: false,
+  loading: false,
+  reqId: 0,
+  timer: null,
+};
+
+function updateSearchBtn() {
+  if (!searchBtn) return;
+  if (me) searchBtn.classList.remove('hidden');
+  else searchBtn.classList.add('hidden');
+}
+
+function searchPeerFor() {
+  return isHub() ? currentPeer : me;
+}
+
+function escapeHtmlSearch(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function highlightHit(text, q) {
+  const safe = escapeHtmlSearch(text);
+  const term = q.trim();
+  if (!term) return safe;
+  const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(' + escapedTerm + ')', 'ig');
+  return safe.replace(re, '<span class="search-hit">$1</span>');
+}
+
+function formatSearchTime(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('id-ID', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch (_) { return ''; }
+}
+
+function renderSearchList() {
+  if (!searchListEl || !searchStateEl || !searchLoadMoreBtn) return;
+  searchListEl.innerHTML = '';
+  if (!searchState.q) {
+    searchStateEl.textContent = 'Ketik untuk mulai mencari.';
+    searchStateEl.classList.remove('hidden');
+    searchListEl.classList.add('hidden');
+    searchLoadMoreBtn.classList.add('hidden');
+    return;
+  }
+  if (searchState.loading && !searchState.items.length) {
+    searchStateEl.textContent = 'Mencari…';
+    searchStateEl.classList.remove('hidden');
+    searchListEl.classList.add('hidden');
+    searchLoadMoreBtn.classList.add('hidden');
+    return;
+  }
+  if (!searchState.items.length) {
+    searchStateEl.textContent = 'Nggak ada yang cocok.';
+    searchStateEl.classList.remove('hidden');
+    searchListEl.classList.add('hidden');
+    searchLoadMoreBtn.classList.add('hidden');
+    return;
+  }
+  searchStateEl.classList.add('hidden');
+  searchListEl.classList.remove('hidden');
+  for (const m of searchState.items) {
+    const li = document.createElement('li');
+    li.className = 'search-item' + (m.username === me ? ' mine' : '');
+    li.dataset.id = String(m.id);
+    li.innerHTML =
+      '<div class="search-item-meta">' +
+        '<span class="search-item-author">' + escapeHtmlSearch(m.username) + '</span>' +
+        '<span class="search-item-time">' + escapeHtmlSearch(formatSearchTime(m.time)) + '</span>' +
+      '</div>' +
+      '<div class="search-item-text">' + highlightHit(m.text || '', searchState.q) + '</div>';
+    li.addEventListener('click', () => {
+      closeSearchModal();
+      jumpToMessage(m.id);
+    });
+    searchListEl.appendChild(li);
+  }
+  if (searchState.hasMore) searchLoadMoreBtn.classList.remove('hidden');
+  else searchLoadMoreBtn.classList.add('hidden');
+}
+
+async function runSearch(append) {
+  const peer = searchState.peer;
+  const q = searchState.q;
+  if (!peer || !q) { searchState.items = []; searchState.hasMore = false; renderSearchList(); return; }
+  const token = localStorage.getItem('token');
+  if (!token) return;
+  const reqId = ++searchState.reqId;
+  searchState.loading = true;
+  if (!append) renderSearchList();
+  const params = new URLSearchParams({ peer, q });
+  if (append && searchState.items.length) {
+    params.set('before', String(searchState.items[searchState.items.length - 1].id));
+  }
+  try {
+    const res = await fetch('/search?' + params.toString(), {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (reqId !== searchState.reqId) return;
+    if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    const items = Array.isArray(data.items) ? data.items : [];
+    searchState.items = append ? searchState.items.concat(items) : items;
+    searchState.hasMore = !!data.hasMore;
+    renderSearchList();
+  } catch (err) {
+    if (reqId !== searchState.reqId) return;
+    if (searchStateEl) {
+      searchStateEl.textContent = 'Gagal mencari: ' + (err.message || err);
+      searchStateEl.classList.remove('hidden');
+    }
+    if (searchListEl) searchListEl.classList.add('hidden');
+    if (searchLoadMoreBtn) searchLoadMoreBtn.classList.add('hidden');
+  } finally {
+    if (reqId === searchState.reqId) searchState.loading = false;
+  }
+}
+
+function scheduleSearch() {
+  if (searchState.timer) clearTimeout(searchState.timer);
+  searchState.timer = setTimeout(() => {
+    searchState.timer = null;
+    runSearch(false);
+  }, 220);
+}
+
+function openSearchModal() {
+  if (!searchModal) return;
+  const peer = searchPeerFor();
+  if (!peer) return;
+  searchState.peer = peer;
+  searchState.q = '';
+  searchState.items = [];
+  searchState.hasMore = false;
+  if (searchInput) searchInput.value = '';
+  if (searchClearBtn) searchClearBtn.classList.add('hidden');
+  if (searchPeerLabel) searchPeerLabel.textContent = peer;
+  renderSearchList();
+  searchModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => { if (searchInput) searchInput.focus(); }, 50);
+}
+
+function closeSearchModal() {
+  if (!searchModal) return;
+  searchModal.classList.add('hidden');
+  searchState.peer = null;
+  searchState.q = '';
+  searchState.items = [];
+  searchState.hasMore = false;
+  searchState.reqId++;
+  if (searchState.timer) { clearTimeout(searchState.timer); searchState.timer = null; }
+  document.body.style.overflow = '';
+}
+
+if (searchBtn) searchBtn.addEventListener('click', openSearchModal);
+if (searchCloseBtn) searchCloseBtn.addEventListener('click', closeSearchModal);
+if (searchModal) searchModal.addEventListener('click', (e) => {
+  if (e.target === searchModal) closeSearchModal();
+});
+if (searchInput) {
+  searchInput.addEventListener('input', () => {
+    searchState.q = searchInput.value.trim();
+    if (searchClearBtn) searchClearBtn.classList.toggle('hidden', !searchInput.value);
+    scheduleSearch();
+  });
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeSearchModal(); }
+  });
+}
+if (searchClearBtn) searchClearBtn.addEventListener('click', () => {
+  if (!searchInput) return;
+  searchInput.value = '';
+  searchState.q = '';
+  searchClearBtn.classList.add('hidden');
+  searchState.items = [];
+  searchState.hasMore = false;
+  renderSearchList();
+  searchInput.focus();
+});
+if (searchLoadMoreBtn) searchLoadMoreBtn.addEventListener('click', () => runSearch(true));
+
+
 const clearHistoryBtn = document.getElementById('clear-history-btn');
 const clearHistoryModal = document.getElementById('clear-history-modal');
 const clearHistoryPeerEl = document.getElementById('clear-history-peer');
@@ -5799,11 +6242,13 @@ function showServerMismatchBanner() {
     targetEl.textContent = (opt && opt.display) || (active && active.display) || activeKey;
   }
   banner.classList.remove('hidden');
+  if (chatView) chatView.classList.add('hidden');
 }
 
 function hideServerMismatchBanner() {
   const banner = document.getElementById('server-mismatch-banner');
   if (banner) banner.classList.add('hidden');
+  if (chatView && localStorage.getItem('token')) chatView.classList.remove('hidden');
 }
 
 function attemptRedirectToActive() {
@@ -5838,10 +6283,6 @@ function hideServerInfo() {
 const serverMismatchGoBtn = document.getElementById('server-mismatch-banner-go');
 if (serverMismatchGoBtn) {
   serverMismatchGoBtn.addEventListener('click', () => { attemptRedirectToActive(); });
-}
-const serverMismatchCloseBtn = document.getElementById('server-mismatch-banner-close');
-if (serverMismatchCloseBtn) {
-  serverMismatchCloseBtn.addEventListener('click', hideServerMismatchBanner);
 }
 
 if (serverPickerBtn) serverPickerBtn.addEventListener('click', openServerPickerModal);

@@ -210,6 +210,15 @@ async function initDb() {
   `);
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_message_reactions_msg ON message_reactions (message_id)`);
   await db.execute(`
+    CREATE TABLE IF NOT EXISTS pinned_messages (
+      message_id INTEGER PRIMARY KEY,
+      peer TEXT NOT NULL,
+      pinned_by TEXT NOT NULL,
+      time TEXT NOT NULL
+    )
+  `);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_pinned_messages_peer ON pinned_messages (peer, message_id)`);
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS app_kv (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -665,6 +674,28 @@ async function attachReactions(messages) {
   return messages;
 }
 
+async function getPinnedIdSet(ids) {
+  const set = new Set();
+  if (!ids.length) return set;
+  const placeholders = ids.map(() => '?').join(',');
+  const result = await db.execute({
+    sql: `SELECT message_id FROM pinned_messages WHERE message_id IN (${placeholders})`,
+    args: ids,
+  });
+  for (const r of result.rows) set.add(Number(r.message_id));
+  return set;
+}
+
+async function attachPinned(messages) {
+  const ids = messages.filter((m) => m && m.id).map((m) => m.id);
+  if (!ids.length) return messages;
+  const set = await getPinnedIdSet(ids);
+  for (const m of messages) {
+    m.pinned = set.has(m.id);
+  }
+  return messages;
+}
+
 async function getMessageById(id) {
   const result = await db.execute({
     sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
@@ -677,6 +708,7 @@ async function getMessageById(id) {
   if (!result.rows.length) return null;
   const msg = mapRow(result.rows[0]);
   await attachReactions([msg]);
+  await attachPinned([msg]);
   return msg;
 }
 
@@ -698,6 +730,7 @@ async function getHistory(peer, limit = 50, beforeId = null) {
   const result = await db.execute({ sql, args });
   const messages = result.rows.reverse().map(mapRow);
   await attachReactions(messages);
+  await attachPinned(messages);
   return messages;
 }
 
@@ -1167,6 +1200,10 @@ app.delete('/history/:peer', async (req, res) => {
             WHERE message_id IN (SELECT id FROM messages WHERE peer = ?)`,
       args: [peer],
     });
+    await db.execute({
+      sql: 'DELETE FROM pinned_messages WHERE peer = ?',
+      args: [peer],
+    });
     const del = await db.execute({
       sql: 'DELETE FROM messages WHERE peer = ?',
       args: [peer],
@@ -1352,6 +1389,100 @@ app.delete('/journal/:peer/:id', async (req, res) => {
     res.json({ ok: true, id, peer });
   } catch (err) {
     console.error('journal delete error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+function resolveThreadPeer(username, requested) {
+  const p = typeof requested === 'string' ? requested.trim() : '';
+  if (!p || p === HUB_USER || !users.has(p)) return null;
+  if (username !== HUB_USER && username !== p) return null;
+  return p;
+}
+
+async function getPinnedForPeer(peer) {
+  const result = await db.execute({
+    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
+                 p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent,
+                 pin.pinned_by, pin.time AS pinned_at
+            FROM pinned_messages pin
+            JOIN messages m ON m.id = pin.message_id
+            LEFT JOIN messages p ON m.reply_to_id = p.id
+           WHERE pin.peer = ?
+        ORDER BY pin.time DESC`,
+    args: [peer],
+  });
+  const messages = result.rows.map((r) => {
+    const m = mapRow(r);
+    m.pinned = true;
+    m.pinnedBy = String(r.pinned_by);
+    m.pinnedAt = String(r.pinned_at);
+    return m;
+  });
+  await attachReactions(messages);
+  return messages;
+}
+
+const SEARCH_LIMIT_DEFAULT = 30;
+const SEARCH_LIMIT_MAX = 100;
+const SEARCH_QUERY_MAX = 200;
+
+app.get('/search', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const peer = resolvePeer(username, req.query.peer);
+  if (!peer) return res.status(400).json({ ok: false, error: 'Invalid peer' });
+  const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!rawQ) return res.json({ ok: true, peer, q: '', items: [], hasMore: false });
+  if (rawQ.length > SEARCH_QUERY_MAX) return res.status(400).json({ ok: false, error: 'Query too long' });
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Math.min(
+    SEARCH_LIMIT_MAX,
+    Math.max(1, Number.isFinite(parsedLimit) ? parsedLimit : SEARCH_LIMIT_DEFAULT)
+  );
+  const before = parseInt(req.query.before, 10);
+  const unsentFilter = username === HUB_USER ? '' : ' AND unsent = 0';
+  const like = '%' + rawQ.replace(/[\\%_]/g, (c) => '\\' + c) + '%';
+  const args = [peer, like];
+  let where = 'peer = ? AND text IS NOT NULL AND text LIKE ? ESCAPE \'\\\'' + unsentFilter;
+  if (Number.isFinite(before) && before > 0) {
+    where += ' AND id < ?';
+    args.push(before);
+  }
+  args.push(limit);
+  try {
+    const result = await db.execute({
+      sql: `SELECT id, username, text, time, unsent
+              FROM messages
+             WHERE ${where}
+          ORDER BY id DESC
+             LIMIT ?`,
+      args,
+    });
+    const items = result.rows.map((r) => ({
+      id: Number(r.id),
+      username: String(r.username),
+      text: r.text == null ? '' : String(r.text),
+      time: String(r.time),
+      unsent: !!Number(r.unsent || 0),
+    }));
+    res.json({ ok: true, peer, q: rawQ, items, hasMore: items.length === limit });
+  } catch (err) {
+    console.error('search error:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.get('/pinned/:peer', async (req, res) => {
+  const username = authFromReq(req);
+  if (!username) return res.status(401).json({ ok: false });
+  const peer = resolveThreadPeer(username, req.params.peer);
+  if (!peer) return res.status(400).json({ ok: false, error: 'Invalid peer' });
+  try {
+    const items = await getPinnedForPeer(peer);
+    res.json({ ok: true, peer, items });
+  } catch (err) {
+    console.error('pinned list error:', err.message);
     res.status(500).json({ ok: false });
   }
 });
@@ -2337,6 +2468,13 @@ io.on('connection', async (socket) => {
           args: [id],
         });
       }
+      const pinDel = await db.execute({
+        sql: 'DELETE FROM pinned_messages WHERE message_id = ?',
+        args: [id],
+      });
+      if (Number(pinDel.rowsAffected || 0) > 0) {
+        emitToThread(msg.peer, 'pin:update', { id, peer: msg.peer, pinned: false, actor: username });
+      }
       emitToThread(msg.peer, 'unsend', { id, peer: msg.peer });
       if (typeof ack === 'function') ack({ ok: true, id, peer: msg.peer });
     } catch (e) {
@@ -2886,6 +3024,51 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ ok: true, added });
     } catch (e) {
       console.error('reaction error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
+    }
+  });
+
+  socket.on('pin:toggle', async (payload, ack) => {
+    const id = Number(payload && payload.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      if (typeof ack === 'function') ack({ error: 'Invalid payload' });
+      return;
+    }
+    try {
+      const msg = await getMessageById(id);
+      if (!msg) {
+        if (typeof ack === 'function') ack({ error: 'Not found' });
+        return;
+      }
+      if (msg.unsent) {
+        if (typeof ack === 'function') ack({ error: 'Cannot pin unsent' });
+        return;
+      }
+      const peer = msg.peer;
+      const allowed = username === HUB_USER || username === peer;
+      if (!allowed) {
+        if (typeof ack === 'function') ack({ error: 'Forbidden' });
+        return;
+      }
+      const existing = await db.execute({
+        sql: 'SELECT 1 FROM pinned_messages WHERE message_id = ? LIMIT 1',
+        args: [id],
+      });
+      let pinned;
+      if (existing.rows.length) {
+        await db.execute({ sql: 'DELETE FROM pinned_messages WHERE message_id = ?', args: [id] });
+        pinned = false;
+      } else {
+        await db.execute({
+          sql: 'INSERT INTO pinned_messages (message_id, peer, pinned_by, time) VALUES (?, ?, ?, ?)',
+          args: [id, peer, username, new Date().toISOString()],
+        });
+        pinned = true;
+      }
+      emitToThread(peer, 'pin:update', { id, peer, pinned, actor: username });
+      if (typeof ack === 'function') ack({ ok: true, pinned });
+    } catch (e) {
+      console.error('pin error:', e.message);
       if (typeof ack === 'function') ack({ error: e.message });
     }
   });
