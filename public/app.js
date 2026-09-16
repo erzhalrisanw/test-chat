@@ -74,6 +74,24 @@ function outboxDelete(id) {
     });
   }).catch(function() {});
 }
+function outboxGet(id) {
+  if (!id) return Promise.resolve(null);
+  return openOutboxDb().then(function(db) {
+    return new Promise(function(resolve) {
+      var tx = db.transaction(OUTBOX_STORE, 'readonly');
+      var req = tx.objectStore(OUTBOX_STORE).get(id);
+      req.onsuccess = function() { resolve(req.result || null); };
+      req.onerror = function() { resolve(null); };
+    });
+  }).catch(function() { return null; });
+}
+function outboxUpdate(id, patch) {
+  if (!id) return Promise.resolve();
+  return outboxGet(id).then(function(rec) {
+    if (!rec) return;
+    return outboxAdd(Object.assign({}, rec, patch, { id: id }));
+  });
+}
 function outboxListForPeer(user, peer) {
   return openOutboxDb().then(function(db) {
     return new Promise(function(resolve) {
@@ -98,23 +116,31 @@ function restoreOutboxForCurrentPeer() {
     records.forEach(function(rec) {
       tempIdCounter++;
       var tempId = tempIdCounter;
+      var textForBubble = rec.kind === 'text' ? (rec.text || '') : (rec.caption || '');
       var msg = {
-        text: rec.caption || '',
+        text: textForBubble,
         replyToId: rec.replyToId,
         replyTo: rec.replyTo,
         _pending: true,
         _tempId: tempId,
         _outboxId: rec.id,
+        _failed: !!rec.failed,
+        _errorMsg: rec.errorMsg || '',
         id: null,
         username: me,
         time: rec.time,
         peer: peer,
       };
       if (rec.kind === 'image') msg.image = rec.dataUrl;
+      else if (rec.kind === 'audio') msg.audio = rec.dataUrl;
+      else if (rec.kind === 'sticker') msg.sticker = rec.stickerUrl;
       else if (rec.kind === 'video' && rec.blob) {
         try { msg.video = URL.createObjectURL(rec.blob); } catch (_) {}
       }
       addMessage(msg);
+      if (rec.failed) {
+        markPendingFailed(tempId, rec.errorMsg || 'Belum terkirim', { skipOutbox: true });
+      }
     });
     if (records.length) messagesEl.scrollTop = messagesEl.scrollHeight;
   });
@@ -128,6 +154,37 @@ function cancelPendingBubble(div) {
     try { URL.revokeObjectURL(vid.src); } catch (_) {}
   }
   if (div.parentNode) div.parentNode.removeChild(div);
+}
+function resendPendingBubble(div) {
+  if (!div) return;
+  var outboxId = div.dataset.outboxId;
+  if (!outboxId) return;
+  outboxGet(outboxId).then(function(rec) {
+    if (!rec) return;
+    var vid = div.querySelector('video.chat-vid');
+    if (vid && vid.src && vid.src.indexOf('blob:') === 0) {
+      try { URL.revokeObjectURL(vid.src); } catch (_) {}
+    }
+    if (div.parentNode) div.parentNode.removeChild(div);
+    outboxUpdate(outboxId, { failed: false, errorMsg: '' });
+    if (rec.kind === 'video' && rec.blob) {
+      var pv = { blob: rec.blob };
+      try { pv.previewUrl = URL.createObjectURL(rec.blob); } catch (_) { pv.previewUrl = ''; }
+      queueVideoUpload(pv, rec.caption || '', rec.replyToId || null, rec.replyTo || null, outboxId);
+    } else {
+      var eventName = rec.kind === 'text' ? 'message' : rec.kind;
+      queueMessage(eventName, {
+        text: rec.text || '',
+        caption: rec.caption || '',
+        dataUrl: rec.dataUrl || '',
+        name: rec.name || '',
+        stickerUrl: rec.stickerUrl || '',
+        replyToId: rec.replyToId || null,
+        replyTo: rec.replyTo || null,
+        autoSayang: !!rec.autoSayang,
+      }, outboxId);
+    }
+  });
 }
 
 const VIEW_ONCE_MARKER = '\u2063\u200B\u2063\u200B';
@@ -989,37 +1046,15 @@ document.addEventListener('click', (e) => {
 
 function sendSticker(name) {
   if (!name || !socket) return;
-  const payload = { name, peer: currentPeer };
-  if (replyTarget) payload.replyToId = replyTarget.id;
   const replyToSnapshot = replyTarget;
   clearReply();
   const manifestEntry = stickerManifest.find((s) => s.name === name);
   const pendingUrl = '/stickers/' + (manifestEntry && manifestEntry.file ? manifestEntry.file : name + '.svg');
-  tempIdCounter++;
-  const tempId = tempIdCounter;
-  const pendingMsg = {
-    sticker: pendingUrl,
-    _pending: true,
-    _tempId: tempId,
-    id: null,
-    username: me,
-    time: new Date().toISOString(),
+  queueMessage('sticker', {
+    name: name,
+    stickerUrl: pendingUrl,
     replyToId: replyToSnapshot ? replyToSnapshot.id : null,
     replyTo: replyToSnapshot || null,
-  };
-  addMessage(pendingMsg);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  if (!socket.connected) {
-    pendingQueue.push({ _type: 'sticker', name, peer: currentPeer, replyToId: payload.replyToId, _tempId: tempId, _pending: true });
-    return;
-  }
-  socket.emit('sticker', { ...payload, clientId: tempId }, (ack) => {
-    if (ack && ack.id) {
-      updatePendingToSent(tempId, ack.id);
-      lastIncomingId = Math.max(lastIncomingId, ack.id);
-    } else if (ack && ack.error) {
-      markPendingFailed(tempId, ack.error);
-    }
   });
 }
 
@@ -1727,7 +1762,7 @@ if (pingBtn) {
   });
 }
 
-const REACTION_EMOJIS = ['❤️', '🥰', '😂', '😮', '😢', '🙏', '👍', '👎', '🔥', '🎉'];
+const REACTION_EMOJIS = ['❤️', '🥰', '😘', '🤗', '😊', '😂', '😮', '😢', '🙏', '👍', '👎', '🔥', '🎉'];
 const reactionsById = {};
 const pinnedById = {};
 let openReactionPickerEl = null;
@@ -3010,8 +3045,9 @@ function attachMsgMenu(div, opts) {
   const textEl = div.querySelector('.msg-text');
   const canCopy = !!(textEl && !hideContent && !isUnsent && textEl.textContent.trim());
   const canCancel = !!(isPending && username === me);
+  const canResendPending = !!(isPending && username === me && div.dataset.outboxId);
   const canPin = id && !hideContent && !isUnsent && !isPending;
-  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend && !canCancel && !canPin) return;
+  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend && !canCancel && !canResendPending && !canPin) return;
   const items = [];
   if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
   if (canCopy) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="copy"><span class="msg-menu-icon">📋</span><span class="msg-menu-label">Salin</span></button>');
@@ -3020,6 +3056,7 @@ function attachMsgMenu(div, opts) {
     const pinned = isPinned(id);
     items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="pin"><span class="msg-menu-icon">📌</span><span class="msg-menu-label">' + (pinned ? 'Lepas pin' : 'Pin pesan') + '</span></button>');
   }
+  if (canResendPending) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="resend-pending"><span class="msg-menu-icon">↻</span><span class="msg-menu-label">Kirim ulang</span></button>');
   if (canUnsend) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="unsend"><span class="msg-menu-icon">🚫</span><span class="msg-menu-label">Tarik pesan</span></button>');
   if (canResend) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="resend"><span class="msg-menu-icon">↻</span><span class="msg-menu-label">Kirim ulang</span></button>');
   if (canCancel) items.push('<button class="msg-menu-item msg-menu-item-danger" type="button" role="menuitem" data-action="cancel"><span class="msg-menu-icon">🗑</span><span class="msg-menu-label">Batalkan</span></button>');
@@ -3066,6 +3103,8 @@ function attachMsgMenu(div, opts) {
         requestUnsend(currentId);
       } else if (action === 'resend' && currentId) {
         requestResend(currentId);
+      } else if (action === 'resend-pending') {
+        resendPendingBubble(div);
       } else if (action === 'copy') {
         const t = div.querySelector('.msg-text');
         if (t) copyTextToClipboard(t.textContent);
@@ -3695,6 +3734,7 @@ function showPendingLocally(msgData) {
   if (msgData._type === 'image') pendingMsg.image = msgData.dataUrl;
   else if (msgData._type === 'video') pendingMsg.video = msgData.dataUrl;
   else if (msgData._type === 'audio') pendingMsg.audio = msgData.dataUrl;
+  else if (msgData._type === 'sticker') pendingMsg.sticker = msgData.stickerUrl;
   addMessage(pendingMsg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
   return tempId;
@@ -3714,9 +3754,10 @@ function updatePendingToSent(tempId, realId) {
   attachMsgMenu(el, { id: realId, username: me, isUnsent: false, hideContent: false });
 }
 
-function markPendingFailed(tempId, errorMsg) {
+function markPendingFailed(tempId, errorMsg, opts) {
   var el = messagesEl.querySelector('.msg[data-temp-id="' + tempId + '"]');
   if (!el) return;
+  el.dataset.failed = '1';
   var tick = el.querySelector('.tick');
   if (tick) {
     tick.className = 'tick failed';
@@ -3728,6 +3769,27 @@ function markPendingFailed(tempId, errorMsg) {
   if (status) {
     status.classList.add('failed');
     status.textContent = 'Failed: ' + (errorMsg || 'Upload error');
+  }
+  var outboxId = el.dataset.outboxId;
+  if (outboxId && !(opts && opts.skipOutbox)) {
+    outboxUpdate(outboxId, { failed: true, errorMsg: errorMsg || '' });
+  }
+}
+function markPendingRetrying(tempId) {
+  var el = messagesEl.querySelector('.msg[data-temp-id="' + tempId + '"]');
+  if (!el) return;
+  delete el.dataset.failed;
+  var tick = el.querySelector('.tick');
+  if (tick) {
+    tick.className = 'tick pending';
+    tick.setAttribute('aria-label', 'pending');
+    tick.removeAttribute('title');
+    tick.textContent = '🕐';
+  }
+  var status = el.querySelector('.upload-status');
+  if (status && status.classList.contains('failed')) {
+    status.classList.remove('failed');
+    status.textContent = '';
   }
 }
 
@@ -3750,9 +3812,8 @@ function emitWithAck(msgData) {
         lastIncomingId = Math.max(lastIncomingId, ack.id);
         if (msgData._outboxId) outboxDelete(msgData._outboxId);
       } else if (ack && ack.error) {
-        // Server menolak (validasi/ukuran): tandai gagal, jangan re-queue
+        // Server menolak (validasi/ukuran): tandai gagal, biarkan outbox agar bisa Kirim ulang manual
         markPendingFailed(tempId, ack.error);
-        if (msgData._outboxId) outboxDelete(msgData._outboxId);
       } else {
         // Tidak ada ack info: anggap perlu retry saat reconnect
         if (!pendingQueue.some(function(p) { return p._tempId === tempId; })) {
@@ -3767,11 +3828,13 @@ function emitWithAck(msgData) {
   }
 }
 
-function queueMessage(eventName, msgData) {
+function queueMessage(eventName, msgData, reuseOutboxId) {
   var data = {};
   if (msgData.dataUrl) data.dataUrl = msgData.dataUrl;
   if (msgData.text) data.text = msgData.text;
   if (msgData.caption) data.caption = msgData.caption;
+  if (msgData.name) data.name = msgData.name;
+  if (msgData.stickerUrl) data.stickerUrl = msgData.stickerUrl;
   if (msgData.replyToId) data.replyToId = msgData.replyToId;
   if (msgData.replyTo) data.replyTo = msgData.replyTo;
   if (msgData.autoSayang) data.autoSayang = true;
@@ -3779,20 +3842,26 @@ function queueMessage(eventName, msgData) {
   data._tempId = null;
   data._pending = true;
   data._type = eventName;
-  if (eventName === 'image' && data.dataUrl) {
-    data._outboxId = newOutboxId();
-    outboxAdd({
-      id: data._outboxId,
-      user: me,
-      peer: currentPeer,
-      kind: 'image',
-      dataUrl: data.dataUrl,
-      caption: data.caption || '',
-      replyToId: data.replyToId || null,
-      replyTo: data.replyTo || null,
-      time: new Date().toISOString(),
-    });
-  }
+  var kind = eventName === 'message' ? 'text' : eventName;
+  var recordTime = new Date().toISOString();
+  data._outboxId = reuseOutboxId || newOutboxId();
+  outboxAdd({
+    id: data._outboxId,
+    user: me,
+    peer: currentPeer,
+    kind: kind,
+    text: data.text || '',
+    dataUrl: data.dataUrl || '',
+    caption: data.caption || '',
+    name: data.name || '',
+    stickerUrl: data.stickerUrl || '',
+    replyToId: data.replyToId || null,
+    replyTo: data.replyTo || null,
+    autoSayang: !!data.autoSayang,
+    time: recordTime,
+    failed: false,
+    errorMsg: '',
+  });
   var tempId = showPendingLocally(data);
   data._tempId = tempId;
   emitWithAck(data);
@@ -3836,11 +3905,11 @@ function clearUploadStatus(tempId) {
   if (status && status.parentNode) status.parentNode.removeChild(status);
 }
 
-async function queueVideoUpload(pv, caption, replyToId, replyTo) {
+async function queueVideoUpload(pv, caption, replyToId, replyTo, reuseOutboxId) {
   tempIdCounter++;
   var tempId = tempIdCounter;
   var capturedPeer = currentPeer;
-  var outboxId = newOutboxId();
+  var outboxId = reuseOutboxId || newOutboxId();
   var pendingMsg = {
     text: caption || '',
     replyToId: replyToId || null,
@@ -3865,6 +3934,8 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
     replyToId: replyToId || null,
     replyTo: replyTo || null,
     time: pendingMsg.time,
+    failed: false,
+    errorMsg: '',
   });
   messagesEl.scrollTop = messagesEl.scrollHeight;
   var willCompress = canCaptureVideoStream() && !!window.MediaRecorder;
@@ -3882,7 +3953,6 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
 
     if (!socket || !socket.connected) {
       markPendingFailed(tempId, 'Disconnected');
-      outboxDelete(outboxId);
       return;
     }
     var payload = { url: publicUrl, clientId: tempId };
@@ -3897,15 +3967,12 @@ async function queueVideoUpload(pv, caption, replyToId, replyTo) {
         outboxDelete(outboxId);
       } else if (ack && ack.error) {
         markPendingFailed(tempId, ack.error);
-        outboxDelete(outboxId);
       } else {
         markPendingFailed(tempId, 'No response from server');
-        outboxDelete(outboxId);
       }
     });
   } catch (err) {
     markPendingFailed(tempId, (err && err.message) || 'Upload failed');
-    outboxDelete(outboxId);
   }
 }
 
