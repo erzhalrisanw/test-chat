@@ -363,10 +363,19 @@ function formatLastSeen(iso) {
   const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
   if (diffSec < 45) return 'baru saja';
   if (diffSec < 3600) return Math.max(1, Math.floor(diffSec / 60)) + ' menit lalu';
-  if (diffSec < 86400) return Math.floor(diffSec / 3600) + ' jam lalu';
-  if (diffSec < 7 * 86400) return Math.floor(diffSec / 86400) + ' hari lalu';
   const d = new Date(iso);
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  const now = new Date();
+  const time = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'hari ini ' + time;
+  if (d.toDateString() === yesterday.toDateString()) return 'kemarin ' + time;
+  const dateStr = d.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+  return dateStr + ' ' + time;
 }
 
 const avatarState = {};
