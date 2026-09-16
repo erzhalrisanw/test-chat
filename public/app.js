@@ -358,24 +358,16 @@ function sendTypingStop() {
 
 function formatLastSeen(iso) {
   if (!iso) return '';
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return '';
-  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (diffSec < 45) return 'baru saja';
-  if (diffSec < 3600) return Math.max(1, Math.floor(diffSec / 60)) + ' menit lalu';
-  const d = new Date(iso);
+  const then = new Date(iso);
+  if (!Number.isFinite(then.getTime())) return '';
   const now = new Date();
-  const time = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === now.toDateString()) return 'hari ini ' + time;
-  if (d.toDateString() === yesterday.toDateString()) return 'kemarin ' + time;
-  const dateStr = d.toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
-  });
-  return dateStr + ' ' + time;
+  const time = then.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const key = (d) => d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+  if (key(then) === key(now)) return time;
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (key(then) === key(yest)) return 'Kemarin ' + time;
+  return then.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 const avatarState = {};
