@@ -4883,7 +4883,12 @@ async function submitEditJournal(id, value, errEl, btn) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    const idx = journalState.entries.findIndex((e) => e.id === id);
+    if (idx !== -1) {
+      journalState.entries[idx] = Object.assign({}, journalState.entries[idx], data.item || { body });
+    }
     journalState.editingId = null;
+    renderJournalList();
   } catch (err) {
     errEl.textContent = 'Gagal: ' + (err.message || err);
     errEl.classList.remove('hidden');
