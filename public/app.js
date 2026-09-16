@@ -361,6 +361,11 @@ function formatLastSeen(iso) {
   const then = new Date(iso);
   if (!Number.isFinite(then.getTime())) return '';
   const now = new Date();
+  const diffMs = now.getTime() - then.getTime();
+  if (diffMs < 60 * 60 * 1000) {
+    const mins = Math.max(0, Math.floor(diffMs / 60000));
+    return mins <= 0 ? 'Baru saja' : mins + ' menit lalu';
+  }
   const time = then.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false });
   const key = (d) => d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
   if (key(then) === key(now)) return time;
