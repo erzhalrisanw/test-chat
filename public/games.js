@@ -1661,14 +1661,22 @@
     const actions = document.createElement('div');
     actions.className = 'remi-actions';
 
-    // Mini chat panel (peer mode only)
-    const chatPanel = document.createElement('div');
-    chatPanel.className = 'remi-chat hidden';
+    // Chat FAB + modal popup (peer mode only)
+    const chatFab = document.createElement('button');
+    chatFab.type = 'button';
+    chatFab.className = 'remi-chat-fab hidden';
+    chatFab.innerHTML = '<span class="remi-chat-fab-icon">💬</span><span class="remi-chat-badge hidden">0</span>';
+    chatFab.setAttribute('aria-label', 'Buka chat');
+
+    const chatModal = document.createElement('div');
+    chatModal.className = 'remi-chat-modal hidden';
+    const chatBackdrop = document.createElement('div');
+    chatBackdrop.className = 'remi-chat-backdrop';
+    const chatCard = document.createElement('div');
+    chatCard.className = 'remi-chat-card';
     const chatHeader = document.createElement('div');
     chatHeader.className = 'remi-chat-header';
-    chatHeader.innerHTML = '<span class="remi-chat-title">💬 Chat</span><span class="remi-chat-badge hidden">0</span>';
-    const chatBody = document.createElement('div');
-    chatBody.className = 'remi-chat-body';
+    chatHeader.innerHTML = '<span class="remi-chat-title">💬 Chat</span><button type="button" class="remi-chat-close" aria-label="Tutup chat">✕</button>';
     const chatLog = document.createElement('div');
     chatLog.className = 'remi-chat-log';
     const chatForm = document.createElement('form');
@@ -1684,10 +1692,11 @@
     chatSend.textContent = 'Kirim';
     chatForm.appendChild(chatInput);
     chatForm.appendChild(chatSend);
-    chatBody.appendChild(chatLog);
-    chatBody.appendChild(chatForm);
-    chatPanel.appendChild(chatHeader);
-    chatPanel.appendChild(chatBody);
+    chatCard.appendChild(chatHeader);
+    chatCard.appendChild(chatLog);
+    chatCard.appendChild(chatForm);
+    chatModal.appendChild(chatBackdrop);
+    chatModal.appendChild(chatCard);
 
     wrap.appendChild(topRow);
     wrap.appendChild(oppMeldsEl);
@@ -1699,7 +1708,8 @@
     wrap.appendChild(meMeldsEl);
     wrap.appendChild(meHandEl);
     wrap.appendChild(actions);
-    wrap.appendChild(chatPanel);
+    wrap.appendChild(chatFab);
+    wrap.appendChild(chatModal);
     rootEl.innerHTML = '';
     rootEl.appendChild(wrap);
 
@@ -2070,21 +2080,37 @@
     stockBlock.querySelector('[data-role=stock]').addEventListener('click', () => { if (!btnDrawStock.disabled) drawStock(); });
     discardBlock.querySelector('[data-role=discard]').addEventListener('click', () => { if (!btnDrawDiscard.disabled) drawDiscard(); });
 
-    // ==== Chat panel wiring ====
+    // ==== Chat popup wiring ====
     let chatUnread = 0;
-    const chatBadge = chatHeader.querySelector('.remi-chat-badge');
+    let chatOpen = false;
+    const fabBadge = chatFab.querySelector('.remi-chat-badge');
     function updateChatVisibility() {
       const showChat = activeMode === 'peer' && !!peer;
-      chatPanel.classList.toggle('hidden', !showChat);
+      chatFab.classList.toggle('hidden', !showChat);
+      if (!showChat && chatOpen) closeChat();
     }
     function updateChatBadge() {
-      if (chatUnread > 0) {
-        chatBadge.textContent = chatUnread > 99 ? '99+' : String(chatUnread);
-        chatBadge.classList.remove('hidden');
+      if (chatUnread > 0 && !chatOpen) {
+        fabBadge.textContent = chatUnread > 99 ? '99+' : String(chatUnread);
+        fabBadge.classList.remove('hidden');
       } else {
-        chatBadge.classList.add('hidden');
+        fabBadge.classList.add('hidden');
       }
     }
+    function openChat() {
+      chatOpen = true;
+      chatModal.classList.remove('hidden');
+      chatUnread = 0;
+      updateChatBadge();
+      setTimeout(() => { chatLog.scrollTop = chatLog.scrollHeight; chatInput.focus(); }, 40);
+    }
+    function closeChat() {
+      chatOpen = false;
+      chatModal.classList.add('hidden');
+    }
+    chatFab.addEventListener('click', openChat);
+    chatBackdrop.addEventListener('click', closeChat);
+    chatHeader.querySelector('.remi-chat-close').addEventListener('click', closeChat);
     function appendChatLine(m) {
       const line = document.createElement('div');
       line.className = 'remi-chat-line' + (m.username === me ? ' me' : ' them');
@@ -2098,18 +2124,14 @@
       line.appendChild(text);
       chatLog.appendChild(line);
       while (chatLog.childElementCount > 100) chatLog.removeChild(chatLog.firstChild);
-      chatLog.scrollTop = chatLog.scrollHeight;
+      if (chatOpen) chatLog.scrollTop = chatLog.scrollHeight;
     }
-    chatLog.addEventListener('scroll', () => {
-      const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 24;
-      if (atBottom && chatUnread > 0) { chatUnread = 0; updateChatBadge(); }
-    });
     function onChatMessage(m) {
       if (!m || typeof m.text !== 'string' || !m.text) return;
       if (activeMode !== 'peer' || !peer) return;
       if (m.peer && m.peer !== peer) return;
       appendChatLine(m);
-      if (m.username !== me) {
+      if (m.username !== me && !chatOpen) {
         chatUnread += 1;
         updateChatBadge();
       }

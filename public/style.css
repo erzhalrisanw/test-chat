@@ -5763,44 +5763,99 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   .remi-opp-hand .remi-card-wrap { margin-left: -18px; }
 }
 
-/* Mini chat inside Remi game */
-.remi-chat {
-  background: linear-gradient(180deg, #063823, #052d1c);
-  border-top: 1px solid rgba(0,0,0,0.3);
+/* Chat FAB + modal for Remi game */
+.remi-chat-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(180deg, #4caf50, #388e3c);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  cursor: pointer;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.remi-chat-fab.hidden { display: none; }
+.remi-chat-fab-icon { font-size: 22px; line-height: 1; }
+.remi-chat-fab .remi-chat-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  background: #e74c3c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  border: 2px solid #052d1c;
+}
+.remi-chat-badge.hidden { display: none; }
+
+.remi-chat-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.remi-chat-modal.hidden { display: none; }
+.remi-chat-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+}
+.remi-chat-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  max-height: min(70vh, 520px);
+  background: linear-gradient(180deg, #0a5a3a, #063823);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
 }
-.remi-chat.hidden { display: none; }
 .remi-chat-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 14px 4px;
+  padding: 10px 14px;
   color: #fff;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 14px;
+  background: rgba(0,0,0,0.25);
 }
 .remi-chat-title { flex: 1; text-align: left; }
-.remi-chat-badge {
-  background: #e74c3c;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-  padding: 1px 7px;
-  border-radius: 10px;
-  min-width: 18px;
-  text-align: center;
+.remi-chat-close {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
-.remi-chat-badge.hidden { display: none; }
-.remi-chat-body {
-  display: flex;
-  flex-direction: column;
-}
+.remi-chat-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
 .remi-chat-log {
+  flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  max-height: 110px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
