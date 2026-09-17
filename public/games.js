@@ -1661,6 +1661,34 @@
     const actions = document.createElement('div');
     actions.className = 'remi-actions';
 
+    // Mini chat panel (peer mode only)
+    const chatPanel = document.createElement('div');
+    chatPanel.className = 'remi-chat hidden';
+    const chatHeader = document.createElement('div');
+    chatHeader.className = 'remi-chat-header';
+    chatHeader.innerHTML = '<span class="remi-chat-title">💬 Chat</span><span class="remi-chat-badge hidden">0</span>';
+    const chatBody = document.createElement('div');
+    chatBody.className = 'remi-chat-body';
+    const chatLog = document.createElement('div');
+    chatLog.className = 'remi-chat-log';
+    const chatForm = document.createElement('form');
+    chatForm.className = 'remi-chat-form';
+    const chatInput = document.createElement('input');
+    chatInput.type = 'text';
+    chatInput.className = 'remi-chat-input';
+    chatInput.placeholder = 'Ketik pesan…';
+    chatInput.maxLength = 500;
+    const chatSend = document.createElement('button');
+    chatSend.type = 'submit';
+    chatSend.className = 'remi-chat-send';
+    chatSend.textContent = 'Kirim';
+    chatForm.appendChild(chatInput);
+    chatForm.appendChild(chatSend);
+    chatBody.appendChild(chatLog);
+    chatBody.appendChild(chatForm);
+    chatPanel.appendChild(chatHeader);
+    chatPanel.appendChild(chatBody);
+
     wrap.appendChild(topRow);
     wrap.appendChild(oppMeldsEl);
     wrap.appendChild(oppHandEl);
@@ -1671,6 +1699,7 @@
     wrap.appendChild(meMeldsEl);
     wrap.appendChild(meHandEl);
     wrap.appendChild(actions);
+    wrap.appendChild(chatPanel);
     rootEl.innerHTML = '';
     rootEl.appendChild(wrap);
 
@@ -1940,6 +1969,9 @@
       const canDraw = isMyTurn() && s && s.phase === 'draw' && !s.winner;
       btnDrawStock.disabled = !canDraw || (s && s.stockCount === 0);
       btnDrawDiscard.disabled = !canDraw || !s || !s.discardTop;
+
+      updateChatVisibility();
+      updateChatBadge();
     }
 
     function canMeldNow() {
@@ -2038,6 +2070,60 @@
     stockBlock.querySelector('[data-role=stock]').addEventListener('click', () => { if (!btnDrawStock.disabled) drawStock(); });
     discardBlock.querySelector('[data-role=discard]').addEventListener('click', () => { if (!btnDrawDiscard.disabled) drawDiscard(); });
 
+    // ==== Chat panel wiring ====
+    let chatUnread = 0;
+    const chatBadge = chatHeader.querySelector('.remi-chat-badge');
+    function updateChatVisibility() {
+      const showChat = activeMode === 'peer' && !!peer;
+      chatPanel.classList.toggle('hidden', !showChat);
+    }
+    function updateChatBadge() {
+      if (chatUnread > 0) {
+        chatBadge.textContent = chatUnread > 99 ? '99+' : String(chatUnread);
+        chatBadge.classList.remove('hidden');
+      } else {
+        chatBadge.classList.add('hidden');
+      }
+    }
+    function appendChatLine(m) {
+      const line = document.createElement('div');
+      line.className = 'remi-chat-line' + (m.username === me ? ' me' : ' them');
+      const name = document.createElement('span');
+      name.className = 'remi-chat-name';
+      name.textContent = m.username === me ? 'Kamu' : m.username;
+      const text = document.createElement('span');
+      text.className = 'remi-chat-text';
+      text.textContent = m.text || '';
+      line.appendChild(name);
+      line.appendChild(text);
+      chatLog.appendChild(line);
+      while (chatLog.childElementCount > 100) chatLog.removeChild(chatLog.firstChild);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+    chatLog.addEventListener('scroll', () => {
+      const atBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight < 24;
+      if (atBottom && chatUnread > 0) { chatUnread = 0; updateChatBadge(); }
+    });
+    function onChatMessage(m) {
+      if (!m || typeof m.text !== 'string' || !m.text) return;
+      if (activeMode !== 'peer' || !peer) return;
+      if (m.peer && m.peer !== peer) return;
+      appendChatLine(m);
+      if (m.username !== me) {
+        chatUnread += 1;
+        updateChatBadge();
+      }
+    }
+    chatForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      if (activeMode !== 'peer' || !peer) return;
+      sharedSocket.emit('message', { text, peer });
+      chatInput.value = '';
+    });
+    sharedSocket.on('message', onChatMessage);
+
     let hintTimer = null;
     function flashHint(msg) {
       hintEl.textContent = msg;
@@ -2085,6 +2171,7 @@
 
     return function cleanup() {
       sharedSocket.off('remi:state', onState);
+      sharedSocket.off('message', onChatMessage);
       if (hintTimer) clearTimeout(hintTimer);
     };
   }

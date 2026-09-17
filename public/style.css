@@ -5762,3 +5762,103 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   .remi-btn { font-size: 11.5px; padding: 6px 10px; }
   .remi-opp-hand .remi-card-wrap { margin-left: -18px; }
 }
+
+/* Mini chat inside Remi game */
+.remi-chat {
+  background: linear-gradient(180deg, #063823, #052d1c);
+  border-top: 1px solid rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+}
+.remi-chat.hidden { display: none; }
+.remi-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 4px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+.remi-chat-title { flex: 1; text-align: left; }
+.remi-chat-badge {
+  background: #e74c3c;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+.remi-chat-badge.hidden { display: none; }
+.remi-chat-body {
+  display: flex;
+  flex-direction: column;
+}
+.remi-chat-log {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: 110px;
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.remi-chat-line {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  max-width: 78%;
+  font-size: 12.5px;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+.remi-chat-line.me {
+  align-self: flex-end;
+  background: linear-gradient(180deg, #2f7a4f, #276840);
+  color: #fff;
+}
+.remi-chat-line.them {
+  align-self: flex-start;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+}
+.remi-chat-name {
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0.75;
+  letter-spacing: 0.3px;
+}
+.remi-chat-text { line-height: 1.35; }
+.remi-chat-form {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px 10px;
+  border-top: 1px solid rgba(0,0,0,0.25);
+}
+.remi-chat-input {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(0,0,0,0.3);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+}
+.remi-chat-input::placeholder { color: rgba(255,255,255,0.4); }
+.remi-chat-input:focus { border-color: rgba(240,196,25,0.6); }
+.remi-chat-send {
+  padding: 7px 14px;
+  border-radius: 16px;
+  border: none;
+  background: linear-gradient(180deg, #4caf50, #388e3c);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.remi-chat-send:hover { filter: brightness(1.1); }
