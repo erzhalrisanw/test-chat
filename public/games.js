@@ -43,6 +43,7 @@
     'racing':    { title: 'Racing',      mount: mountRacing },
     'tictactoe': { title: 'Tic-Tac-Toe', mount: mountTicTacToe },
     'snakeladder': { title: 'Ular Tangga', mount: mountSnakeLadder },
+    'remi':      { title: 'Remi Joker',  mount: mountRemi },
   };
 
   function styleVar(name, fallback) {
@@ -1557,6 +1558,534 @@
       if (hintTimer) clearTimeout(hintTimer);
       if (animTimer) { clearInterval(animTimer); animTimer = null; }
       if (walkTimer) { clearTimeout(walkTimer); walkTimer = null; }
+    };
+  }
+
+  // ============ Remi Joker ============
+  function mountRemi(rootEl) {
+    if (!sharedSocket) {
+      rootEl.innerHTML = '<div class="remi-wrap"><div class="remi-status">Koneksi belum siap. Coba lagi sebentar.</div></div>';
+      hintEl.textContent = '';
+      return function () {};
+    }
+    const me = (getMeFn && getMeFn()) || localStorage.getItem('username') || '';
+    const meIsHub = me === HUB_USER;
+    const peer = meIsHub
+      ? (getPartnerFn ? getPartnerFn() : localStorage.getItem('activePeer'))
+      : me;
+    // Bot mode does not require a peer
+
+    scoreEl.textContent = '0';
+    bestWrap.classList.add('hidden');
+    movesWrap.classList.add('hidden');
+    hintEl.textContent = 'Susun 7 kartu jadi kombinasi SET / URUT. Joker bebas.';
+
+    const FACE = new Set(['J','Q','K']);
+    const PIP_LAYOUTS = {
+      '2':  [[50,10,false],[50,90,true]],
+      '3':  [[50,10,false],[50,50,false],[50,90,true]],
+      '4':  [[20,10,false],[80,10,false],[20,90,true],[80,90,true]],
+      '5':  [[20,10,false],[80,10,false],[50,50,false],[20,90,true],[80,90,true]],
+      '6':  [[20,10,false],[80,10,false],[20,50,false],[80,50,false],[20,90,true],[80,90,true]],
+      '7':  [[20,10,false],[80,10,false],[50,30,false],[20,50,false],[80,50,false],[20,90,true],[80,90,true]],
+      '8':  [[20,10,false],[80,10,false],[50,30,false],[20,50,false],[80,50,false],[50,70,true],[20,90,true],[80,90,true]],
+      '9':  [[20,10,false],[80,10,false],[20,36,false],[80,36,false],[50,50,false],[20,64,true],[80,64,true],[20,90,true],[80,90,true]],
+      '10': [[20,10,false],[80,10,false],[50,25,false],[20,40,false],[80,40,false],[20,60,true],[80,60,true],[50,75,true],[20,90,true],[80,90,true]],
+    };
+
+    const wrap = document.createElement('div');
+    wrap.className = 'remi-wrap';
+
+    // Top: opponent
+    const topRow = document.createElement('div');
+    topRow.className = 'remi-top';
+    const oppName = document.createElement('div');
+    oppName.className = 'remi-name';
+    const oppPoin = document.createElement('div');
+    oppPoin.className = 'remi-poin';
+    oppPoin.innerHTML = 'Poin: <span>0</span>';
+    topRow.appendChild(oppName);
+    topRow.appendChild(oppPoin);
+    const oppHandEl = document.createElement('div');
+    oppHandEl.className = 'remi-opp-hand';
+    const oppMeldsEl = document.createElement('div');
+    oppMeldsEl.className = 'remi-melds opp';
+
+    // Center piles
+    const center = document.createElement('div');
+    center.className = 'remi-center';
+    const stockBlock = document.createElement('div');
+    stockBlock.className = 'remi-pile-block';
+    stockBlock.innerHTML = '<div class="remi-pile-label">Dek<br>Kartu</div><div><div class="remi-pile-stack" data-role="stock"></div><div class="remi-sisa">Sisa: <span data-role="stock-count">0</span></div></div>';
+    const discardBlock = document.createElement('div');
+    discardBlock.className = 'remi-pile-block right';
+    discardBlock.innerHTML = '<div><div class="remi-pile-stack" data-role="discard"></div><div class="remi-sisa" style="visibility:hidden">.</div></div><div class="remi-pile-label">Kartu<br>Buangan</div>';
+    center.appendChild(stockBlock);
+    center.appendChild(discardBlock);
+
+    // Draw buttons
+    const drawRow = document.createElement('div');
+    drawRow.className = 'remi-draw-row';
+    const btnDrawStock = document.createElement('button');
+    btnDrawStock.type = 'button';
+    btnDrawStock.className = 'remi-btn';
+    btnDrawStock.textContent = 'Ambil dari Dek';
+    const btnDrawDiscard = document.createElement('button');
+    btnDrawDiscard.type = 'button';
+    btnDrawDiscard.className = 'remi-btn';
+    btnDrawDiscard.textContent = 'Ambil dari Buangan';
+    drawRow.appendChild(btnDrawStock);
+    drawRow.appendChild(btnDrawDiscard);
+
+    // Status
+    const statusEl = document.createElement('div');
+    statusEl.className = 'remi-status';
+
+    // Player
+    const playerHeader = document.createElement('div');
+    playerHeader.className = 'remi-player-header';
+    const meLabel = document.createElement('div');
+    meLabel.className = 'remi-name';
+    meLabel.textContent = 'Kartu Kamu';
+    const mePoin = document.createElement('div');
+    mePoin.className = 'remi-poin';
+    mePoin.innerHTML = 'Poin: <span>0</span>';
+    playerHeader.appendChild(meLabel);
+    playerHeader.appendChild(mePoin);
+    const meMeldsEl = document.createElement('div');
+    meMeldsEl.className = 'remi-melds me';
+    const meHandEl = document.createElement('div');
+    meHandEl.className = 'remi-me-hand';
+
+    // Bottom actions
+    const actions = document.createElement('div');
+    actions.className = 'remi-actions';
+
+    wrap.appendChild(topRow);
+    wrap.appendChild(oppMeldsEl);
+    wrap.appendChild(oppHandEl);
+    wrap.appendChild(center);
+    wrap.appendChild(drawRow);
+    wrap.appendChild(statusEl);
+    wrap.appendChild(playerHeader);
+    wrap.appendChild(meMeldsEl);
+    wrap.appendChild(meHandEl);
+    wrap.appendChild(actions);
+    rootEl.innerHTML = '';
+    rootEl.appendChild(wrap);
+
+    let currentSession = null;
+    let activeMode = null; // 'peer' | 'bot' | null
+    const selectedIds = new Set();
+    function ctxPayload(extra) {
+      const base = Object.assign({}, extra || {});
+      base.mode = activeMode || 'peer';
+      if (base.mode === 'peer') base.peer = peer;
+      return base;
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    }
+
+    function makeCardBack() {
+      const el = document.createElement('div');
+      el.className = 'remi-card back';
+      return el;
+    }
+    function makeCard(card, opts) {
+      opts = opts || {};
+      const el = document.createElement('div');
+      el.className = 'remi-card';
+      if (card.rank === 'JOKER') {
+        el.classList.add('joker');
+        el.innerHTML = '<div class="rc-corner top"><span class="rc-rank">JKR</span></div><div class="rc-face-center">🃏</div><div class="rc-corner bot"><span class="rc-rank">JKR</span></div>';
+      } else {
+        const isRed = card.suit === '♥' || card.suit === '♦';
+        el.classList.add(isRed ? 'red' : 'black');
+        const corners = '<div class="rc-corner top"><span class="rc-rank">' + card.rank + '</span><span class="rc-suit">' + card.suit + '</span></div><div class="rc-corner bot"><span class="rc-rank">' + card.rank + '</span><span class="rc-suit">' + card.suit + '</span></div>';
+        if (FACE.has(card.rank)) {
+          el.classList.add('face');
+          el.innerHTML = corners + '<div class="rc-face-center"><div class="rc-face-letter">' + card.rank + '</div><div class="rc-face-suit">' + card.suit + '</div></div>';
+        } else if (card.rank === 'A') {
+          el.classList.add('ace');
+          el.innerHTML = corners + '<div class="rc-pips"><div class="rc-pip big-ace" style="top:50%;left:50%;">' + card.suit + '</div></div>';
+        } else {
+          const layout = PIP_LAYOUTS[card.rank] || [];
+          const pipHtml = layout.map((p) => '<div class="rc-pip' + (p[2] ? ' flip' : '') + '" style="left:' + p[0] + '%;top:' + p[1] + '%;">' + card.suit + '</div>').join('');
+          el.innerHTML = corners + '<div class="rc-pips">' + pipHtml + '</div>';
+        }
+      }
+      if (opts.meldKind) {
+        el.classList.add(opts.meldKind === 'set' ? 'melded-set' : 'melded-run');
+        const lbl = document.createElement('div');
+        lbl.className = 'rc-meld-label';
+        lbl.textContent = opts.meldKind === 'set' ? 'SET' : 'URUT';
+        el.appendChild(lbl);
+      }
+      if (opts.selectable) {
+        el.classList.add('selectable');
+        if (selectedIds.has(card.id)) el.classList.add('selected');
+        el.addEventListener('click', () => {
+          if (!isMyTurn() || (currentSession && currentSession.winner)) return;
+          if (selectedIds.has(card.id)) selectedIds.delete(card.id);
+          else selectedIds.add(card.id);
+          render();
+        });
+      }
+      return el;
+    }
+
+    function makeMeldGroup(meld) {
+      const grp = document.createElement('div');
+      grp.className = 'remi-meld-group ' + (meld.kind === 'set' ? 'set' : 'run');
+      const label = document.createElement('div');
+      label.className = 'remi-meld-tag';
+      label.textContent = meld.kind === 'set' ? 'SET' : 'URUT';
+      grp.appendChild(label);
+      const row = document.createElement('div');
+      row.className = 'remi-meld-cards';
+      for (const c of meld.cards) {
+        const w = document.createElement('div');
+        w.className = 'remi-card-wrap';
+        w.appendChild(makeCard(c, {}));
+        row.appendChild(w);
+      }
+      grp.appendChild(row);
+      return grp;
+    }
+
+    function isMyTurn() {
+      return currentSession && currentSession.status === 'active' && currentSession.turn === me;
+    }
+
+    // Local meld validation (matches server logic)
+    const RANK_VAL = { A:1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,J:11,Q:12,K:13 };
+    function isValidSet(cards) {
+      if (cards.length < 3 || cards.length > 4) return false;
+      const nonJ = cards.filter(c => c.rank !== 'JOKER');
+      if (nonJ.length === 0) return true;
+      const rank = nonJ[0].rank;
+      if (!nonJ.every(c => c.rank === rank)) return false;
+      const suits = new Set(nonJ.map(c => c.suit));
+      return suits.size === nonJ.length;
+    }
+    function isValidRun(cards) {
+      if (cards.length < 3) return false;
+      const nonJ = cards.filter(c => c.rank !== 'JOKER');
+      const jokers = cards.length - nonJ.length;
+      if (nonJ.length === 0) return cards.length >= 3;
+      const suit = nonJ[0].suit;
+      if (!nonJ.every(c => c.suit === suit)) return false;
+      const values = nonJ.map(c => RANK_VAL[c.rank]).sort((a,b) => a-b);
+      for (let i = 1; i < values.length; i++) if (values[i] === values[i-1]) return false;
+      const span = values[values.length-1] - values[0] + 1;
+      if (span > cards.length) return false;
+      let gapsInside = 0;
+      for (let i = 1; i < values.length; i++) gapsInside += (values[i] - values[i-1] - 1);
+      const ext = cards.length - span;
+      if (gapsInside + ext > jokers) return false;
+      const minStart = Math.max(1, values[values.length-1] - cards.length + 1);
+      const maxStart = Math.min(values[0], 13 - cards.length + 1);
+      return minStart <= maxStart;
+    }
+    function meldKindOf(cards) {
+      if (isValidSet(cards)) return 'set';
+      if (isValidRun(cards)) return 'run';
+      return null;
+    }
+
+    function selectedCards() {
+      const s = currentSession;
+      if (!s) return [];
+      return (s.myHand || []).filter(c => selectedIds.has(c.id));
+    }
+
+    function render() {
+      const s = currentSession;
+
+      // Names & points
+      if (s) {
+        const other = me === s.inviter ? s.opponent : s.inviter;
+        const label = other === 'Bot' ? '🤖 Bot' : other;
+        oppName.textContent = 'Lawan: ' + label;
+        oppPoin.querySelector('span').textContent = s.oppPoints || 0;
+        mePoin.querySelector('span').textContent = s.myPoints || 0;
+        meLabel.textContent = 'Kartu Kamu (' + me + ')';
+      } else {
+        oppName.textContent = 'Lawan: —';
+        oppPoin.querySelector('span').textContent = '0';
+        mePoin.querySelector('span').textContent = '0';
+        meLabel.textContent = 'Kartu Kamu';
+      }
+
+      // Opponent melds (grouped) + unmelded hand
+      oppHandEl.innerHTML = '';
+      oppMeldsEl.innerHTML = '';
+      if (s) {
+        const other = me === s.inviter ? s.opponent : s.inviter;
+        const oppMelds = (s.melds && s.melds[other]) || [];
+        const oppMeldIds = new Set();
+        for (const mld of oppMelds) for (const c of mld.cards) oppMeldIds.add(c.id);
+        for (const mld of oppMelds) oppMeldsEl.appendChild(makeMeldGroup(mld));
+
+        const revealed = s.status === 'done' && s.oppHand ? s.oppHand : null;
+        const looseCount = revealed
+          ? revealed.filter(c => !oppMeldIds.has(c.id)).length
+          : Math.max(0, (s.oppCount || 0) - oppMeldIds.size);
+        const looseList = revealed ? revealed.filter(c => !oppMeldIds.has(c.id)) : null;
+        for (let i = 0; i < looseCount; i++) {
+          const w = document.createElement('div');
+          w.className = 'remi-card-wrap';
+          const mid = (looseCount - 1) / 2;
+          const angle = (i - mid) * 4;
+          w.style.transform = 'rotate(' + angle + 'deg) translateY(' + Math.abs(i - mid) * 2 + 'px)';
+          if (looseList) w.appendChild(makeCard(looseList[i], {}));
+          else w.appendChild(makeCardBack());
+          oppHandEl.appendChild(w);
+        }
+      }
+
+      // Stock + discard
+      const stockEl = stockBlock.querySelector('[data-role=stock]');
+      stockEl.innerHTML = '';
+      const stockCount = s ? s.stockCount : 0;
+      if (stockCount > 0) {
+        const layers = Math.min(3, stockCount);
+        for (let i = 0; i < layers; i++) stockEl.appendChild(makeCardBack());
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'remi-empty-pile';
+        empty.textContent = '∅';
+        stockEl.appendChild(empty);
+      }
+      stockBlock.querySelector('[data-role=stock-count]').textContent = stockCount;
+
+      const discardEl = discardBlock.querySelector('[data-role=discard]');
+      discardEl.innerHTML = '';
+      if (s && s.discardTop) {
+        discardEl.appendChild(makeCard(s.discardTop, {}));
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'remi-empty-pile';
+        empty.textContent = '∅';
+        discardEl.appendChild(empty);
+      }
+
+      // My melds (grouped) + unmelded hand
+      meMeldsEl.innerHTML = '';
+      meHandEl.innerHTML = '';
+      const myHand = s ? (s.myHand || []) : [];
+      const myMelds = s ? ((s.melds && s.melds[me]) || []) : [];
+      const meldedIds = new Set();
+      for (const mld of myMelds) for (const c of mld.cards) meldedIds.add(c.id);
+      for (const mld of myMelds) meMeldsEl.appendChild(makeMeldGroup(mld));
+      for (const c of myHand) {
+        if (meldedIds.has(c.id)) continue;
+        const w = document.createElement('div');
+        w.className = 'remi-card-wrap';
+        w.appendChild(makeCard(c, { selectable: true }));
+        meHandEl.appendChild(w);
+      }
+
+      // Status text
+      if (!s) {
+        statusEl.textContent = peer
+          ? 'Pilih mode: main lawan bot atau ajak peer.'
+          : 'Belum ada peer aktif — kamu bisa main lawan bot.';
+      } else if (s.status === 'pending') {
+        if (me === s.inviter) statusEl.innerHTML = 'Menunggu <b>' + esc(s.opponent) + '</b> menerima undangan…';
+        else if (me === s.opponent) statusEl.innerHTML = '<b>' + esc(s.inviter) + '</b> mengajak main. Terima?';
+      } else if (s.status === 'active') {
+        if (isMyTurn()) {
+          statusEl.textContent = s.phase === 'draw'
+            ? 'Giliran kamu — ambil kartu dari dek atau buangan.'
+            : 'Pilih kartu buat susun kombinasi, atau buang 1 kartu buat selesai giliran.';
+        } else {
+          const other = me === s.inviter ? s.opponent : s.inviter;
+          statusEl.textContent = 'Giliran ' + other + ', tunggu ya…';
+        }
+      } else if (s.status === 'done') {
+        const winnerLabel = s.winner === 'Bot' ? '🤖 Bot' : esc(s.winner);
+        if (s.resigned) {
+          statusEl.innerHTML = s.winner === me
+            ? 'Kamu menang, lawan menyerah 🏳️'
+            : '<b>' + winnerLabel + '</b> menang (kamu menyerah).';
+        } else {
+          statusEl.innerHTML = s.winner === me
+            ? '🎉 Remi! Kamu menang!'
+            : '<b>' + winnerLabel + '</b> sudah Remi. Kamu kalah.';
+        }
+      }
+
+      // Buttons
+      actions.innerHTML = '';
+      if (!s) {
+        addBtn('Main lawan Bot 🤖', 'primary', inviteBot);
+        if (peer) addBtn('Undang peer', 'gold', invitePeer);
+      } else if (s.status === 'pending') {
+        if (me === s.inviter) addBtn('Batalkan', 'secondary', decline);
+        else if (me === s.opponent) { addBtn('Terima', 'primary', accept); addBtn('Tolak', 'secondary', decline); }
+      } else if (s.status === 'active') {
+        addBtn('Susun Kombinasi', 'gold', doMeld, !canMeldNow());
+        addBtn('Buang & Selesai Giliran', 'primary', doDiscard, !canDiscardNow());
+        addBtn('Urutkan', 'ghost', sortMyHand);
+        addBtn('Menyerah', 'secondary', leave);
+      } else if (s.status === 'done') {
+        addBtn('Main lagi', 'primary', rematch);
+        addBtn('Tutup', 'secondary', leave);
+      }
+
+      // Draw buttons state
+      const canDraw = isMyTurn() && s && s.phase === 'draw' && !s.winner;
+      btnDrawStock.disabled = !canDraw || (s && s.stockCount === 0);
+      btnDrawDiscard.disabled = !canDraw || !s || !s.discardTop;
+    }
+
+    function canMeldNow() {
+      const s = currentSession;
+      if (!isMyTurn() || !s || s.phase !== 'discard') return false;
+      const sel = selectedCards();
+      if (sel.length < 3) return false;
+      // Filter out already-melded
+      const meldedIds = new Set();
+      for (const m of (s.melds[me] || [])) for (const c of m.cards) meldedIds.add(c.id);
+      if (sel.some(c => meldedIds.has(c.id))) return false;
+      return meldKindOf(sel) !== null;
+    }
+    function canDiscardNow() {
+      const s = currentSession;
+      if (!isMyTurn() || !s || s.phase !== 'discard') return false;
+      if (selectedIds.size !== 1) return false;
+      const id = Array.from(selectedIds)[0];
+      const meldedIds = new Set();
+      for (const m of (s.melds[me] || [])) for (const c of m.cards) meldedIds.add(c.id);
+      return !meldedIds.has(id);
+    }
+
+    function addBtn(label, variant, handler, disabled) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'remi-btn' + (variant ? ' ' + variant : '');
+      b.textContent = label;
+      if (disabled) b.disabled = true;
+      b.addEventListener('click', handler);
+      actions.appendChild(b);
+    }
+
+    // Sort local hand view
+    const SUIT_ORDER = { '♠': 0, '♥': 1, '♦': 2, '♣': 3 };
+    function sortMyHand() {
+      const s = currentSession;
+      if (!s || !s.myHand) return;
+      s.myHand.sort((a, b) => {
+        if (a.rank === 'JOKER' && b.rank !== 'JOKER') return 1;
+        if (b.rank === 'JOKER' && a.rank !== 'JOKER') return -1;
+        if (a.rank === 'JOKER' && b.rank === 'JOKER') return 0;
+        if (a.suit !== b.suit) return SUIT_ORDER[a.suit] - SUIT_ORDER[b.suit];
+        return RANK_VAL[a.rank] - RANK_VAL[b.rank];
+      });
+      render();
+    }
+
+    // Actions to server
+    function invitePeer() {
+      if (!peer) { flashHint('Belum ada peer aktif.'); return; }
+      activeMode = 'peer';
+      sharedSocket.emit('remi:invite', ctxPayload(), (resp) => { if (resp && resp.error) flashHint(resp.error); });
+    }
+    function inviteBot() {
+      activeMode = 'bot';
+      sharedSocket.emit('remi:invite', ctxPayload(), (resp) => { if (resp && resp.error) flashHint(resp.error); });
+    }
+    function accept() {
+      sharedSocket.emit('remi:accept', ctxPayload(), (resp) => { if (resp && resp.error) flashHint(resp.error); });
+    }
+    function decline() {
+      sharedSocket.emit('remi:decline', ctxPayload(), (resp) => { if (resp && resp.error) flashHint(resp.error); });
+    }
+    function drawStock() {
+      sharedSocket.emit('remi:draw', ctxPayload({ source: 'stock' }), (resp) => { if (resp && resp.error) flashHint(resp.error); });
+    }
+    function drawDiscard() {
+      sharedSocket.emit('remi:draw', ctxPayload({ source: 'discard' }), (resp) => { if (resp && resp.error) flashHint(resp.error); });
+    }
+    function doMeld() {
+      if (!canMeldNow()) return;
+      const ids = Array.from(selectedIds);
+      sharedSocket.emit('remi:meld', ctxPayload({ ids }), (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+        else selectedIds.clear();
+      });
+    }
+    function doDiscard() {
+      if (!canDiscardNow()) return;
+      const id = Array.from(selectedIds)[0];
+      sharedSocket.emit('remi:discard', ctxPayload({ id }), (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+        else selectedIds.clear();
+      });
+    }
+    function rematch() {
+      sharedSocket.emit('remi:rematch', ctxPayload(), (resp) => { if (resp && resp.error) flashHint(resp.error); });
+    }
+    function leave() {
+      sharedSocket.emit('remi:leave', ctxPayload(), () => {});
+    }
+
+    btnDrawStock.addEventListener('click', drawStock);
+    btnDrawDiscard.addEventListener('click', drawDiscard);
+    stockBlock.querySelector('[data-role=stock]').addEventListener('click', () => { if (!btnDrawStock.disabled) drawStock(); });
+    discardBlock.querySelector('[data-role=discard]').addEventListener('click', () => { if (!btnDrawDiscard.disabled) drawDiscard(); });
+
+    let hintTimer = null;
+    function flashHint(msg) {
+      hintEl.textContent = msg;
+      if (hintTimer) clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => { hintEl.textContent = 'Susun 7 kartu jadi kombinasi SET / URUT. Joker bebas.'; }, 2500);
+    }
+
+    function onState(payload) {
+      if (!payload) return;
+      const pMode = payload.mode || 'peer';
+      // Only accept state that matches our mode context. If no activeMode yet
+      // and it's a session for us, adopt that mode.
+      if (pMode === 'peer') {
+        if (payload.peer !== peer) return;
+      } else if (pMode === 'bot') {
+        // Bot session state — only care if we're in bot mode or unset and session exists
+        if (activeMode && activeMode !== 'bot') return;
+      }
+      if (payload.session) activeMode = pMode;
+      else if (activeMode === pMode) activeMode = null;
+      currentSession = payload.session || null;
+      if (!currentSession || currentSession.status !== 'active' || currentSession.turn !== me) {
+        selectedIds.clear();
+      }
+      render();
+    }
+    sharedSocket.on('remi:state', onState);
+    // Prefer active bot session; fallback to peer session if any.
+    sharedSocket.emit('remi:sync', { mode: 'bot' }, (botResp) => {
+      if (botResp && botResp.ok && botResp.session) {
+        activeMode = 'bot';
+        currentSession = botResp.session;
+        render();
+        return;
+      }
+      if (!peer) { render(); return; }
+      sharedSocket.emit('remi:sync', { mode: 'peer', peer }, (resp) => {
+        if (resp && resp.ok && resp.session) {
+          activeMode = 'peer';
+          currentSession = resp.session;
+        }
+        render();
+      });
+    });
+
+    return function cleanup() {
+      sharedSocket.off('remi:state', onState);
+      if (hintTimer) clearTimeout(hintTimer);
     };
   }
 

@@ -5371,3 +5371,394 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   box-shadow: 0 2px 0 0 var(--toon-ink);
 }
 .search-load-more:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
+
+/* ============ Remi Joker ============ */
+.remi-wrap {
+  padding: 8px 6px 12px;
+  background: linear-gradient(145deg, #6b3d1e 0%, #4a2810 30%, #6b3d1e 70%, #3d1f0a 100%);
+  border-radius: 16px;
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.55), 0 8px 24px rgba(0,0,0,0.5);
+  position: relative;
+}
+.remi-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(0,0,0,0.35);
+  pointer-events: none;
+}
+.remi-wrap > * { position: relative; }
+.remi-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 14px 4px;
+  gap: 10px;
+  background: radial-gradient(ellipse at center top, #1a7a50, #0d5f3f 60%, #084a30);
+  border-radius: 12px 12px 0 0;
+}
+.remi-name {
+  font-weight: 800;
+  font-size: 15px;
+  color: #fff;
+  text-shadow: 1.5px 1.5px 2px rgba(0,0,0,0.65);
+}
+.remi-poin {
+  padding: 4px 10px;
+  background: rgba(0,0,0,0.42);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 7px;
+  font-weight: 700;
+  font-size: 12px;
+  color: #f0d879;
+}
+.remi-opp-hand {
+  background: linear-gradient(180deg, #0d5f3f, #0a4a30);
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  min-height: 88px;
+  padding: 4px 4px 6px;
+  perspective: 800px;
+}
+.remi-opp-hand .remi-card-wrap {
+  margin-left: -22px;
+  transform-origin: 50% 130%;
+}
+.remi-opp-hand .remi-card-wrap:first-child { margin-left: 0; }
+.remi-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 8px 8px;
+  background: linear-gradient(180deg, #0a4a30, #084a30);
+  flex-wrap: wrap;
+}
+.remi-pile-block {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.remi-pile-label {
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+  text-shadow: 1.5px 1.5px 2px rgba(0,0,0,0.6);
+  line-height: 1.15;
+  text-align: right;
+}
+.remi-pile-block.right .remi-pile-label { text-align: left; }
+.remi-pile-stack {
+  position: relative;
+  width: 62px;
+  height: 92px;
+}
+.remi-pile-stack .remi-card { position: absolute; top: 0; left: 0; }
+.remi-pile-stack .remi-card:nth-child(2) { top: -3px; left: -3px; }
+.remi-pile-stack .remi-card:nth-child(3) { top: -6px; left: -6px; }
+.remi-sisa {
+  text-align: center;
+  margin-top: 5px;
+  background: rgba(0,0,0,0.4);
+  color: #fff;
+  padding: 3px 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 62px;
+}
+.remi-draw-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 4px 6px 8px;
+  background: linear-gradient(180deg, #084a30, #073d28);
+  flex-wrap: wrap;
+}
+.remi-status {
+  text-align: center;
+  background: rgba(0,0,0,0.55);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  min-height: 34px;
+  line-height: 1.4;
+}
+.remi-player-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px 4px;
+  background: linear-gradient(180deg, #084a30, #0a4a30);
+}
+.remi-me-hand {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px 4px 8px;
+  background: radial-gradient(ellipse at center bottom, #1a7a50, #0d5f3f 60%, #084a30);
+  min-height: 100px;
+}
+.remi-actions {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px 4px;
+  flex-wrap: wrap;
+  background: linear-gradient(180deg, #084a30, #0a4a30);
+  border-radius: 0 0 12px 12px;
+}
+
+.remi-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 12.5px;
+  border: 1px solid rgba(255,255,255,0.3);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+  white-space: nowrap;
+}
+.remi-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,255,255,0.1));
+  transform: translateY(-1px);
+}
+.remi-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.remi-btn.primary {
+  background: linear-gradient(180deg, #4caf50, #388e3c);
+  border-color: #2e7d32;
+}
+.remi-btn.gold {
+  background: linear-gradient(180deg, #f0c419, #d4a017);
+  color: #1a1a1a;
+  border-color: #b8890a;
+}
+.remi-btn.secondary { background: linear-gradient(180deg, #e74c3c, #c0392b); border-color: #a53125; }
+.remi-btn.ghost {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+  border-color: rgba(255,255,255,0.28);
+}
+
+/* Card visuals */
+.remi-card-wrap { display: inline-block; }
+.remi-card {
+  width: 60px;
+  height: 88px;
+  background: #fefefe;
+  border-radius: 6px;
+  position: relative;
+  display: inline-block;
+  box-shadow: 1.5px 2px 4px rgba(0,0,0,0.5);
+  cursor: pointer;
+  transition: transform 0.18s;
+  user-select: none;
+  border: 1.5px solid #202020;
+  overflow: hidden;
+  font-family: 'Georgia', serif;
+}
+.remi-card.selectable:hover { transform: translateY(-10px); }
+.remi-card.selected {
+  transform: translateY(-14px);
+  box-shadow: 0 0 10px rgba(240,196,25,0.9), 2px 3px 6px rgba(0,0,0,0.5);
+  outline: 2px solid #f0c419;
+  outline-offset: -2px;
+}
+.remi-card.melded-set { outline: 2px solid #f0c419; outline-offset: -2px; }
+.remi-card.melded-run { outline: 2px solid #4caf50; outline-offset: -2px; }
+
+.remi-melds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  justify-content: flex-start;
+  background: linear-gradient(180deg, #0a5a3a, #0a4a30);
+  border-top: 1px solid rgba(0,0,0,0.2);
+  border-bottom: 1px solid rgba(0,0,0,0.2);
+  min-height: 0;
+}
+.remi-melds:empty { display: none; }
+.remi-meld-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.25);
+}
+.remi-meld-group.set { border: 2px solid #f0c419; }
+.remi-meld-group.run { border: 2px solid #4caf50; }
+.remi-meld-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  color: #1a1a1a;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.remi-meld-group.set .remi-meld-tag { background: #f0c419; }
+.remi-meld-group.run .remi-meld-tag { background: #4caf50; color: #fff; }
+.remi-meld-cards {
+  display: flex;
+  gap: 0;
+}
+.remi-meld-cards .remi-card-wrap { margin-left: -28px; }
+.remi-meld-cards .remi-card-wrap:first-child { margin-left: 0; }
+.remi-meld-cards .remi-card {
+  width: 44px;
+  height: 64px;
+  cursor: default;
+}
+.remi-meld-cards .rc-corner { font-size: 8px; padding: 2px 3px; line-height: 1; }
+.remi-meld-cards .rc-corner .rc-rank { font-size: 9px; }
+.remi-meld-cards .rc-corner .rc-suit { font-size: 8px; }
+.remi-meld-cards .rc-pip { font-size: 10px; }
+.remi-meld-cards .rc-face-center { font-size: 14px; }
+.remi-meld-cards .rc-face-letter { font-size: 18px; }
+.remi-meld-cards .rc-face-suit { font-size: 12px; }
+.remi-meld-cards .rc-pip.big-ace { font-size: 22px; }
+.rc-meld-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.85);
+  color: #fff;
+  text-align: center;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 1px;
+  letter-spacing: 0.4px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.remi-card.melded-set .rc-meld-label { border-top: 2px solid #f0c419; }
+.remi-card.melded-run .rc-meld-label { border-top: 2px solid #4caf50; }
+.remi-card.red { color: #c1121f; }
+.remi-card.black { color: #0a0a0a; }
+.rc-corner {
+  position: absolute;
+  font-family: 'Arial Black', Arial, sans-serif;
+  font-weight: 900;
+  text-align: center;
+  line-height: 1;
+}
+.rc-corner .rc-rank { display: block; font-size: 12px; }
+.rc-corner .rc-suit { display: block; font-size: 10px; margin-top: 1px; }
+.rc-corner.top { top: 3px; left: 4px; }
+.rc-corner.bot { bottom: 3px; right: 4px; transform: rotate(180deg); }
+.rc-pips {
+  position: absolute;
+  top: 12%;
+  left: 22%;
+  right: 22%;
+  bottom: 12%;
+}
+.rc-pip {
+  position: absolute;
+  font-size: 11px;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  font-family: Arial, sans-serif;
+}
+.rc-pip.flip { transform: translate(-50%, -50%) rotate(180deg); }
+.rc-pip.big-ace { font-size: 32px; }
+
+.remi-card.face .rc-face-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.remi-card.face .rc-face-letter {
+  font-family: 'Georgia', serif;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1;
+  font-style: italic;
+}
+.remi-card.face .rc-face-suit { font-size: 14px; line-height: 1; }
+
+.remi-card.back {
+  background: repeating-linear-gradient(45deg, #163a70 0 5px, #1e4a8a 5px 10px), #163a70;
+  border-color: #0a2340;
+  cursor: default;
+}
+.remi-card.back::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1.5px solid rgba(255,255,255,0.25);
+  border-radius: 3px;
+}
+.remi-card.back::after {
+  content: '♠';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 26px;
+  color: rgba(255,255,255,0.5);
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+}
+
+.remi-card.joker {
+  background: linear-gradient(135deg, #ff5e62 0%, #ff9966 45%, #feca57 100%);
+  border-color: #8b3a0e;
+}
+.remi-card.joker .rc-corner {
+  color: #fff;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.6);
+  font-size: 10px;
+}
+.remi-card.joker .rc-face-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 34px;
+  text-shadow: 1px 2px 3px rgba(0,0,0,0.5);
+}
+
+.remi-empty-pile {
+  width: 60px;
+  height: 88px;
+  border: 2px dashed rgba(255,255,255,0.25);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.35);
+  font-size: 20px;
+}
+
+@media (max-width: 480px) {
+  .remi-card { width: 46px; height: 68px; }
+  .rc-corner .rc-rank { font-size: 10px; }
+  .rc-corner .rc-suit { font-size: 8px; }
+  .rc-pip { font-size: 9px; }
+  .rc-pip.big-ace { font-size: 24px; }
+  .remi-card.face .rc-face-letter { font-size: 20px; }
+  .remi-card.face .rc-face-suit { font-size: 12px; }
+  .remi-card.joker .rc-face-center { font-size: 26px; }
+  .remi-card.back::after { font-size: 20px; }
+  .remi-pile-stack { width: 48px; height: 72px; }
+  .remi-empty-pile { width: 48px; height: 72px; }
+  .remi-pile-label { font-size: 12px; }
+  .remi-sisa { font-size: 10px; min-width: 48px; }
+  .remi-name { font-size: 13px; }
+  .remi-btn { font-size: 11.5px; padding: 6px 10px; }
+  .remi-opp-hand .remi-card-wrap { margin-left: -18px; }
+}

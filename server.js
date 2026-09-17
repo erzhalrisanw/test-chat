@@ -1921,6 +1921,323 @@ const activeCalls = new Map();
 const lastPingAt = new Map();
 const tttSessions = new Map();
 const snlSessions = new Map();
+const remiSessions = new Map();
+const remiBotSessions = new Map();
+const REMI_BOT = 'Bot';
+
+const REMI_SUITS = ['♠', '♥', '♦', '♣'];
+const REMI_SUIT_ORDER = { '♠': 0, '♥': 1, '♦': 2, '♣': 3 };
+const REMI_RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const REMI_RANK_VAL = { A:1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,J:11,Q:12,K:13 };
+const REMI_POINTS = { A:1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,J:10,Q:10,K:10,JOKER:20 };
+const REMI_HAND_SIZE = 7;
+
+function remiBuildDeck() {
+  const d = [];
+  let id = 0;
+  for (const s of REMI_SUITS) for (const r of REMI_RANKS) d.push({ id: id++, rank: r, suit: s });
+  d.push({ id: id++, rank: 'JOKER', suit: null });
+  d.push({ id: id++, rank: 'JOKER', suit: null });
+  return d;
+}
+function remiShuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+function remiSortHand(hand) {
+  hand.sort((a, b) => {
+    if (a.rank === 'JOKER' && b.rank !== 'JOKER') return 1;
+    if (b.rank === 'JOKER' && a.rank !== 'JOKER') return -1;
+    if (a.rank === 'JOKER' && b.rank === 'JOKER') return 0;
+    if (a.suit !== b.suit) return REMI_SUIT_ORDER[a.suit] - REMI_SUIT_ORDER[b.suit];
+    return REMI_RANK_VAL[a.rank] - REMI_RANK_VAL[b.rank];
+  });
+}
+function remiIsValidSet(cards) {
+  if (cards.length < 3 || cards.length > 4) return false;
+  const nonJ = cards.filter(c => c.rank !== 'JOKER');
+  if (nonJ.length === 0) return true;
+  const rank = nonJ[0].rank;
+  if (!nonJ.every(c => c.rank === rank)) return false;
+  const suits = new Set(nonJ.map(c => c.suit));
+  return suits.size === nonJ.length;
+}
+function remiIsValidRun(cards) {
+  if (cards.length < 3) return false;
+  const nonJ = cards.filter(c => c.rank !== 'JOKER');
+  const jokers = cards.length - nonJ.length;
+  if (nonJ.length === 0) return cards.length >= 3;
+  const suit = nonJ[0].suit;
+  if (!nonJ.every(c => c.suit === suit)) return false;
+  const values = nonJ.map(c => REMI_RANK_VAL[c.rank]).sort((a, b) => a - b);
+  for (let i = 1; i < values.length; i++) if (values[i] === values[i - 1]) return false;
+  const span = values[values.length - 1] - values[0] + 1;
+  if (span > cards.length) return false;
+  let gapsInside = 0;
+  for (let i = 1; i < values.length; i++) gapsInside += (values[i] - values[i - 1] - 1);
+  const extension = cards.length - span;
+  if (gapsInside + extension > jokers) return false;
+  const totalNeeded = cards.length;
+  const minStart = Math.max(1, values[values.length - 1] - totalNeeded + 1);
+  const maxStart = Math.min(values[0], 13 - totalNeeded + 1);
+  return minStart <= maxStart;
+}
+function remiMeldKind(cards) {
+  if (remiIsValidSet(cards)) return 'set';
+  if (remiIsValidRun(cards)) return 'run';
+  return null;
+}
+function remiKCombs(n, k) {
+  const out = []; const combo = [];
+  (function recur(start, rem) {
+    if (rem === 0) { out.push(combo.slice()); return; }
+    for (let i = start; i <= n - rem; i++) { combo.push(i); recur(i + 1, rem - 1); combo.pop(); }
+  })(0, k);
+  return out;
+}
+function remiCanPartition(cards) {
+  if (cards.length === 0) return true;
+  if (cards.length < 3) return false;
+  if (remiMeldKind(cards) !== null) return true;
+  for (const size of [3, 4]) {
+    if (size > cards.length) continue;
+    const combos = remiKCombs(cards.length, size);
+    for (const combo of combos) {
+      const grp = combo.map(i => cards[i]);
+      if (remiMeldKind(grp) === null) continue;
+      const cs = new Set(combo);
+      const rest = cards.filter((_, i) => !cs.has(i));
+      if (remiCanPartition(rest)) return true;
+    }
+  }
+  return false;
+}
+function remiCanWinAuto(hand, melds) {
+  if (hand.length !== REMI_HAND_SIZE) return false;
+  if (!melds.every(m => remiMeldKind(m.cards) !== null)) return false;
+  const meldedIds = new Set();
+  for (const m of melds) for (const c of m.cards) meldedIds.add(c.id);
+  const remaining = hand.filter(c => !meldedIds.has(c.id));
+  return remiCanPartition(remaining);
+}
+function remiMeldPoints(melds) {
+  let total = 0;
+  for (const m of melds) for (const c of m.cards) total += (REMI_POINTS[c.rank] || 0);
+  return total;
+}
+function remiNewSession(peer, inviter, opponent) {
+  const deck = remiShuffle(remiBuildDeck());
+  const hInv = deck.splice(0, REMI_HAND_SIZE);
+  const hOpp = deck.splice(0, REMI_HAND_SIZE);
+  remiSortHand(hInv); remiSortHand(hOpp);
+  return {
+    peer, status: 'pending', inviter, opponent,
+    deck, discardPile: [deck.pop()],
+    hands: { [inviter]: hInv, [opponent]: hOpp },
+    melds: { [inviter]: [], [opponent]: [] },
+    turn: inviter, phase: 'draw',
+    winner: null, resigned: null,
+    startedAt: new Date().toISOString(),
+  };
+}
+function remiPublicState(session, forUser) {
+  if (!session) return null;
+  const other = forUser === session.inviter ? session.opponent : session.inviter;
+  return {
+    peer: session.peer,
+    status: session.status,
+    inviter: session.inviter,
+    opponent: session.opponent,
+    myHand: session.hands[forUser] || [],
+    oppCount: (session.hands[other] || []).length,
+    melds: session.melds,
+    discardTop: session.discardPile[session.discardPile.length - 1] || null,
+    stockCount: session.deck.length,
+    turn: session.turn,
+    phase: session.phase,
+    winner: session.winner,
+    resigned: session.resigned,
+    myPoints: remiMeldPoints(session.melds[forUser] || []),
+    oppPoints: remiMeldPoints(session.melds[other] || []),
+    startedAt: session.startedAt,
+    // Reveal opponent's hand at end
+    oppHand: session.status === 'done' ? (session.hands[other] || []) : null,
+  };
+}
+function emitRemiState(session, extra) {
+  if (!session) return;
+  const isBot = session.opponent === REMI_BOT;
+  const mode = isBot ? 'bot' : 'peer';
+  const base = { peer: session.peer, mode };
+  const stateInv = remiPublicState(session, session.inviter);
+  io.to(userRoom(session.inviter)).emit('remi:state', Object.assign({}, base, { session: stateInv }, extra || {}));
+  if (!isBot) {
+    const stateOpp = remiPublicState(session, session.opponent);
+    io.to(userRoom(session.opponent)).emit('remi:state', Object.assign({}, base, { session: stateOpp }, extra || {}));
+  }
+}
+function emitRemiCleared(target, reason, by, mode) {
+  const payload = { session: null, reason, by, mode: mode || 'peer' };
+  if (mode === 'bot') {
+    payload.peer = 'bot';
+    io.to(userRoom(target)).emit('remi:state', payload);
+  } else {
+    payload.peer = target;
+    io.to(userRoom(HUB_USER)).to(userRoom(target)).emit('remi:state', payload);
+  }
+}
+
+// ---- Bot AI ----
+function remiCardConnects(card, hand, meldedIds) {
+  if (card.rank === 'JOKER') return true;
+  return hand.some(c => {
+    if (meldedIds.has(c.id)) return false;
+    if (c.rank === 'JOKER') return false;
+    if (c.rank === card.rank) return true;
+    if (c.suit === card.suit) return Math.abs(REMI_RANK_VAL[c.rank] - REMI_RANK_VAL[card.rank]) <= 2;
+    return false;
+  });
+}
+function remiBotAutoMeld(session) {
+  const hand = session.hands[REMI_BOT];
+  const melds = session.melds[REMI_BOT];
+  let progress = true;
+  let safety = 6;
+  while (progress && safety-- > 0) {
+    progress = false;
+    const meldedIds = new Set();
+    for (const m of melds) for (const c of m.cards) meldedIds.add(c.id);
+    const avail = hand.filter(c => !meldedIds.has(c.id));
+    // Prefer set
+    const byRank = {};
+    for (const c of avail) {
+      if (c.rank === 'JOKER') continue;
+      (byRank[c.rank] = byRank[c.rank] || []).push(c);
+    }
+    for (const rank in byRank) {
+      if (byRank[rank].length >= 3) {
+        const set = byRank[rank].slice(0, Math.min(4, byRank[rank].length));
+        if (remiMeldKind(set) === 'set') {
+          melds.push({ kind: 'set', cards: set });
+          progress = true;
+          break;
+        }
+      }
+    }
+    if (progress) continue;
+    // Try run
+    const bySuit = {};
+    for (const c of avail) {
+      if (c.rank === 'JOKER') continue;
+      (bySuit[c.suit] = bySuit[c.suit] || []).push(c);
+    }
+    for (const suit in bySuit) {
+      const cards = bySuit[suit].slice().sort((a, b) => REMI_RANK_VAL[a.rank] - REMI_RANK_VAL[b.rank]);
+      for (let start = 0; start < cards.length; start++) {
+        for (let end = cards.length; end - start >= 3; end--) {
+          const grp = cards.slice(start, end);
+          if (remiMeldKind(grp) === 'run') {
+            melds.push({ kind: 'run', cards: grp });
+            progress = true;
+            break;
+          }
+        }
+        if (progress) break;
+      }
+      if (progress) break;
+    }
+  }
+}
+function remiBotPickWorst(discardable, hand) {
+  let worst = null, worstScore = Infinity;
+  for (const card of discardable) {
+    if (card.rank === 'JOKER') continue;
+    let score = 0;
+    for (const c of hand) {
+      if (c === card) continue;
+      if (c.rank === 'JOKER') { score += 2; continue; }
+      if (c.rank === card.rank) score += 3;
+      else if (c.suit === card.suit) {
+        const diff = Math.abs(REMI_RANK_VAL[c.rank] - REMI_RANK_VAL[card.rank]);
+        if (diff <= 2) score += (3 - diff);
+      }
+    }
+    if (score < worstScore) { worstScore = score; worst = card; }
+  }
+  return worst || discardable.find(c => c.rank !== 'JOKER') || discardable[0] || null;
+}
+function remiRunBotTurn(session) {
+  if (!session || session.status !== 'active' || session.turn !== REMI_BOT) return;
+  const hand = session.hands[REMI_BOT];
+  const melds = session.melds[REMI_BOT];
+  // Draw
+  const meldedIds = new Set();
+  for (const m of melds) for (const c of m.cards) meldedIds.add(c.id);
+  const topDiscard = session.discardPile[session.discardPile.length - 1];
+  const shouldTake = topDiscard && remiCardConnects(topDiscard, hand, meldedIds);
+  if (shouldTake) {
+    hand.push(session.discardPile.pop());
+  } else if (session.deck.length > 0) {
+    hand.push(session.deck.pop());
+  } else if (session.discardPile.length > 0) {
+    hand.push(session.discardPile.pop());
+  }
+  // Meld
+  remiBotAutoMeld(session);
+  // Discard
+  const meldedIds2 = new Set();
+  for (const m of melds) for (const c of m.cards) meldedIds2.add(c.id);
+  const discardable = hand.filter(c => !meldedIds2.has(c.id));
+  let toDiscard;
+  if (discardable.length === 0) {
+    toDiscard = hand[hand.length - 1];
+  } else {
+    toDiscard = remiBotPickWorst(discardable, hand);
+  }
+  if (toDiscard) {
+    const idx = hand.findIndex(c => c.id === toDiscard.id);
+    if (idx >= 0) {
+      hand.splice(idx, 1);
+      session.discardPile.push(toDiscard);
+    }
+  }
+  // Check win
+  if (hand.length === REMI_HAND_SIZE && remiCanWinAuto(hand, melds)) {
+    session.status = 'done';
+    session.winner = REMI_BOT;
+  } else {
+    if (session.deck.length === 0 && session.discardPile.length > 1) {
+      const top = session.discardPile.pop();
+      session.deck = remiShuffle(session.discardPile);
+      session.discardPile = [top];
+    }
+    session.turn = session.inviter;
+    session.phase = 'draw';
+  }
+}
+function remiSessionOf(username, payload) {
+  const mode = (payload && payload.mode === 'bot') ? 'bot' : 'peer';
+  if (mode === 'bot') {
+    return {
+      mode,
+      peerKey: 'bot',
+      session: remiBotSessions.get(username),
+      set: (s) => remiBotSessions.set(username, s),
+      del: () => remiBotSessions.delete(username),
+    };
+  }
+  const peer = resolvePeer(username, payload && payload.peer);
+  return {
+    mode,
+    peerKey: peer,
+    session: peer ? remiSessions.get(peer) : null,
+    set: (s) => peer && remiSessions.set(peer, s),
+    del: () => peer && remiSessions.delete(peer),
+  };
+}
 
 const SNL_LADDERS = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
 const SNL_SNAKES = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
@@ -2947,6 +3264,288 @@ io.on('connection', async (socket) => {
     } else {
       snlSessions.delete(peer);
       emitToThread(peer, 'snakeladder:state', { peer, session: null, reason: 'left', by: username });
+    }
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  // ============ Remi Joker ============
+  socket.on('remi:sync', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'peer' && !ctx.peerKey) {
+      if (typeof ack === 'function') ack({ error: 'Invalid peer' });
+      return;
+    }
+    const session = ctx.session || null;
+    if (typeof ack === 'function') ack({ ok: true, session: remiPublicState(session, username), mode: ctx.mode });
+  });
+
+  socket.on('remi:invite', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'bot') {
+      const existing = ctx.session;
+      if (existing && existing.status !== 'done') {
+        if (typeof ack === 'function') ack({ error: 'Sesi bot masih aktif' });
+        return;
+      }
+      const session = remiNewSession('bot', username, REMI_BOT);
+      session.status = 'active';
+      ctx.set(session);
+      emitRemiState(session);
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    if (!ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const existing = ctx.session;
+    if (existing && existing.status !== 'done') {
+      if (typeof ack === 'function') ack({ error: 'Sesi masih aktif' });
+      return;
+    }
+    const opponent = recipientOf(username, ctx.peerKey);
+    const session = remiNewSession(ctx.peerKey, username, opponent);
+    ctx.set(session);
+    emitRemiState(session);
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('remi:accept', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'bot') {
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    if (!ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = ctx.session;
+    if (!session || session.status !== 'pending') {
+      if (typeof ack === 'function') ack({ error: 'Tidak ada undangan' });
+      return;
+    }
+    if (username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan penerima undangan' });
+      return;
+    }
+    session.status = 'active';
+    session.startedAt = new Date().toISOString();
+    emitRemiState(session);
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('remi:decline', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'bot') {
+      if (ctx.session) {
+        ctx.del();
+        emitRemiCleared(username, 'declined', username, 'bot');
+      }
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    if (!ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = ctx.session;
+    if (!session || session.status !== 'pending') {
+      if (typeof ack === 'function') ack({ error: 'Tidak ada undangan' });
+      return;
+    }
+    if (username !== session.opponent && username !== session.inviter) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    ctx.del();
+    emitRemiCleared(ctx.peerKey, 'declined', username, 'peer');
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('remi:draw', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'peer' && !ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = ctx.session;
+    if (!session || session.status !== 'active') {
+      if (typeof ack === 'function') ack({ error: 'Game belum aktif' });
+      return;
+    }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    if (session.turn !== username) {
+      if (typeof ack === 'function') ack({ error: 'Belum giliran kamu' });
+      return;
+    }
+    if (session.phase !== 'draw') {
+      if (typeof ack === 'function') ack({ error: 'Sudah ambil kartu' });
+      return;
+    }
+    const source = payload && payload.source;
+    if (source === 'stock') {
+      if (session.deck.length === 0) {
+        if (typeof ack === 'function') ack({ error: 'Dek kosong' });
+        return;
+      }
+      session.hands[username].push(session.deck.pop());
+    } else if (source === 'discard') {
+      if (session.discardPile.length === 0) {
+        if (typeof ack === 'function') ack({ error: 'Buangan kosong' });
+        return;
+      }
+      session.hands[username].push(session.discardPile.pop());
+    } else {
+      if (typeof ack === 'function') ack({ error: 'Sumber tidak valid' });
+      return;
+    }
+    session.phase = 'discard';
+    emitRemiState(session);
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('remi:meld', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'peer' && !ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = ctx.session;
+    if (!session || session.status !== 'active') {
+      if (typeof ack === 'function') ack({ error: 'Game belum aktif' });
+      return;
+    }
+    if (session.turn !== username) {
+      if (typeof ack === 'function') ack({ error: 'Belum giliran kamu' });
+      return;
+    }
+    if (session.phase !== 'discard') {
+      if (typeof ack === 'function') ack({ error: 'Ambil kartu dulu' });
+      return;
+    }
+    const ids = Array.isArray(payload && payload.ids) ? payload.ids.map(Number) : [];
+    if (ids.length < 3) {
+      if (typeof ack === 'function') ack({ error: 'Minimal 3 kartu' });
+      return;
+    }
+    const hand = session.hands[username];
+    const melds = session.melds[username];
+    const alreadyMelded = new Set();
+    for (const m of melds) for (const c of m.cards) alreadyMelded.add(c.id);
+    const chosen = hand.filter(c => ids.includes(c.id) && !alreadyMelded.has(c.id));
+    if (chosen.length !== ids.length) {
+      if (typeof ack === 'function') ack({ error: 'Kartu tidak valid' });
+      return;
+    }
+    const kind = remiMeldKind(chosen);
+    if (!kind) {
+      if (typeof ack === 'function') ack({ error: 'Bukan kombinasi valid' });
+      return;
+    }
+    melds.push({ kind, cards: chosen });
+    emitRemiState(session);
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('remi:discard', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'peer' && !ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = ctx.session;
+    if (!session || session.status !== 'active') {
+      if (typeof ack === 'function') ack({ error: 'Game belum aktif' });
+      return;
+    }
+    if (session.turn !== username) {
+      if (typeof ack === 'function') ack({ error: 'Belum giliran kamu' });
+      return;
+    }
+    if (session.phase !== 'discard') {
+      if (typeof ack === 'function') ack({ error: 'Ambil kartu dulu' });
+      return;
+    }
+    const id = Number(payload && payload.id);
+    const hand = session.hands[username];
+    const melds = session.melds[username];
+    const meldedIds = new Set();
+    for (const m of melds) for (const c of m.cards) meldedIds.add(c.id);
+    if (meldedIds.has(id)) {
+      if (typeof ack === 'function') ack({ error: 'Kartu sudah masuk kombinasi' });
+      return;
+    }
+    const idx = hand.findIndex(c => c.id === id);
+    if (idx < 0) {
+      if (typeof ack === 'function') ack({ error: 'Kartu tidak ada di tangan' });
+      return;
+    }
+    const card = hand.splice(idx, 1)[0];
+    session.discardPile.push(card);
+    // Check win
+    if (hand.length === REMI_HAND_SIZE && remiCanWinAuto(hand, melds)) {
+      session.status = 'done';
+      session.winner = username;
+    } else {
+      // Reshuffle if deck empty
+      if (session.deck.length === 0 && session.discardPile.length > 1) {
+        const top = session.discardPile.pop();
+        session.deck = remiShuffle(session.discardPile);
+        session.discardPile = [top];
+      }
+      session.turn = username === session.inviter ? session.opponent : session.inviter;
+      session.phase = 'draw';
+    }
+    emitRemiState(session);
+    if (typeof ack === 'function') ack({ ok: true });
+    // Trigger bot turn
+    if (ctx.mode === 'bot' && session.status === 'active' && session.turn === REMI_BOT) {
+      setTimeout(() => {
+        if (remiBotSessions.get(username) !== session) return;
+        remiRunBotTurn(session);
+        emitRemiState(session);
+      }, 900);
+    }
+  });
+
+  socket.on('remi:rematch', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'peer' && !ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = ctx.session;
+    if (!session || session.status !== 'done') {
+      if (typeof ack === 'function') ack({ error: 'Belum ada sesi selesai' });
+      return;
+    }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    if (ctx.mode === 'bot') {
+      const next = remiNewSession('bot', username, REMI_BOT);
+      next.status = 'active';
+      ctx.set(next);
+      emitRemiState(next);
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    const newInviter = username;
+    const newOpponent = newInviter === session.inviter ? session.opponent : session.inviter;
+    const next = remiNewSession(ctx.peerKey, newInviter, newOpponent);
+    next.status = 'active';
+    ctx.set(next);
+    emitRemiState(next);
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('remi:leave', (payload, ack) => {
+    const ctx = remiSessionOf(username, payload);
+    if (ctx.mode === 'peer' && !ctx.peerKey) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = ctx.session;
+    if (!session) { if (typeof ack === 'function') ack({ ok: true }); return; }
+    if (username !== session.inviter && username !== session.opponent) {
+      if (typeof ack === 'function') ack({ error: 'Bukan peserta' });
+      return;
+    }
+    if (ctx.mode === 'bot') {
+      ctx.del();
+      emitRemiCleared(username, 'left', username, 'bot');
+      if (typeof ack === 'function') ack({ ok: true });
+      return;
+    }
+    if (session.status === 'active') {
+      session.status = 'done';
+      session.winner = username === session.inviter ? session.opponent : session.inviter;
+      session.resigned = username;
+      emitRemiState(session, { reason: 'resigned', by: username });
+    } else {
+      ctx.del();
+      emitRemiCleared(ctx.peerKey, 'left', username, 'peer');
     }
     if (typeof ack === 'function') ack({ ok: true });
   });
