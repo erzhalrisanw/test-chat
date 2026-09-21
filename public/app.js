@@ -20,6 +20,32 @@ const previewViewOnceBtn = document.getElementById('preview-view-once');
 const previewEditBtn = document.getElementById('preview-edit');
 const recViewOnceBtn = document.getElementById('rec-view-once');
 
+(function setupVisualViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const root = document.documentElement;
+  let raf = 0;
+  const apply = () => {
+    raf = 0;
+    root.style.setProperty('--vvh', vv.height + 'px');
+  };
+  const schedule = () => { if (!raf) raf = requestAnimationFrame(apply); };
+  vv.addEventListener('resize', schedule);
+  vv.addEventListener('scroll', schedule);
+  apply();
+  const stickToBottom = () => {
+    if (!messagesEl) return;
+    const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 120;
+    if (nearBottom) requestAnimationFrame(() => { messagesEl.scrollTop = messagesEl.scrollHeight; });
+  };
+  vv.addEventListener('resize', stickToBottom);
+  document.addEventListener('focusin', (e) => {
+    if (e.target && (e.target.id === 'msg' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT')) {
+      setTimeout(stickToBottom, 250);
+    }
+  });
+})();
+
 let pendingImage = null;
 let pendingVideo = null;
 let pendingViewOnce = false;
