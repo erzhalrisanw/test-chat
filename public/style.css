@@ -4757,6 +4757,13 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   font-size: 18px;
   line-height: 1;
 }
+#chat-view header #refresh-btn.spinning {
+  animation: refresh-spin .6s linear;
+}
+@keyframes refresh-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 #header-menu {
   position: absolute;
   top: calc(100% + 6px);

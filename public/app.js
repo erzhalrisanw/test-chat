@@ -2382,6 +2382,7 @@ function startChat(token, username) {
   updateJournalBtn();
   updatePinnedBtn();
   updateSearchBtn();
+  updateRefreshBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
   if (pingBtn) pingBtn.classList.remove('hidden');
   renderMeAvatar();
@@ -5189,6 +5190,21 @@ function updateSearchBtn() {
   if (!searchBtn) return;
   if (me) searchBtn.classList.remove('hidden');
   else searchBtn.classList.add('hidden');
+}
+
+const refreshBtn = document.getElementById('refresh-btn');
+function updateRefreshBtn() {
+  if (!refreshBtn) return;
+  if (me && currentPeer) refreshBtn.classList.remove('hidden');
+  else refreshBtn.classList.add('hidden');
+}
+if (refreshBtn) {
+  refreshBtn.addEventListener('click', () => {
+    if (!currentPeer) return;
+    refreshBtn.classList.add('spinning');
+    setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+    reloadCurrentPeer();
+  });
 }
 
 function searchPeerFor() {
