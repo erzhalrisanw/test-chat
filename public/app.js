@@ -2912,7 +2912,7 @@ function buildMessageNodes(msg) {
     }
   }
   const unsentTag = (isUnsent && !hideContent) ? '<span class="unsent-tag" title="Pesan ditarik oleh pengirim">ditarik</span>' : '';
-  const meta = '<div class="meta">' + escapeHtml(username) + ' • ' + t + tick + unsentTag + '</div>';
+  const meta = '<div class="meta">' + t + tick + unsentTag + '</div>';
   let quote = '';
   if (replyTo && !hideContent) {
     const replyHide = !!(replyTo.unsent && !isHub());
@@ -2977,7 +2977,7 @@ function buildMessageNodes(msg) {
       body = body ? body + aud : aud;
     }
   }
-  div.innerHTML = meta + quote + body;
+  div.innerHTML = quote + body + meta;
   const voEl = div.querySelector('.view-once-bubble');
   if (voEl && isViewOnce) {
     const isMine = username === me;
