@@ -1235,7 +1235,7 @@ app.delete('/history/:peer', async (req, res) => {
   }
 });
 
-const JOURNAL_BODY_MAX = 4000;
+const JOURNAL_BODY_MAX = 100000;
 const JOURNAL_PAGE_DEFAULT = 30;
 const JOURNAL_PAGE_MAX = 100;
 

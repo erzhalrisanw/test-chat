@@ -4046,8 +4046,10 @@ msgInput.addEventListener('input', function() {
     sendTypingStart();
   }
 });
+var isDesktopChat = !window.matchMedia('(pointer: coarse)').matches;
 msgInput.addEventListener('keydown', function(e) {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+  var sendCombo = (e.ctrlKey || e.metaKey) || (isDesktopChat && !e.shiftKey && !e.altKey);
+  if (e.key === 'Enter' && !e.isComposing && sendCombo) {
     e.preventDefault();
     if (typeof chatForm.requestSubmit === 'function') chatForm.requestSubmit();
     else chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -4073,6 +4075,7 @@ chatForm.addEventListener('submit', function(e) {
     msgInput.value = '';
     saveDraft(currentPeer, '');
     autoResizeMsgInput();
+    msgInput.focus();
     return;
   }
   if (pendingImage) {
@@ -4083,6 +4086,7 @@ chatForm.addEventListener('submit', function(e) {
     msgInput.value = '';
     saveDraft(currentPeer, '');
     autoResizeMsgInput();
+    msgInput.focus();
     return;
   }
   if (!text) return;
@@ -4099,6 +4103,7 @@ chatForm.addEventListener('submit', function(e) {
   saveDraft(currentPeer, '');
   autoResizeMsgInput();
   clearReply();
+  msgInput.focus();
 });
 
 fileInput.addEventListener('change', async function() {

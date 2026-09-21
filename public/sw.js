@@ -1,4 +1,4 @@
-const CACHE_STATIC = 'chat-static-v5';
+const CACHE_STATIC = 'chat-static-v6';
 const CACHE_STICKERS = 'chat-stickers-v1';
 
 const STATIC_ASSETS = [

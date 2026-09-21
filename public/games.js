@@ -1681,11 +1681,19 @@
     chatLog.className = 'remi-chat-log';
     const chatForm = document.createElement('form');
     chatForm.className = 'remi-chat-form';
-    const chatInput = document.createElement('input');
-    chatInput.type = 'text';
+    const chatInput = document.createElement('textarea');
     chatInput.className = 'remi-chat-input';
     chatInput.placeholder = 'Ketik pesan…';
     chatInput.maxLength = 500;
+    chatInput.rows = 1;
+    const isDesktopChat = !window.matchMedia('(pointer: coarse)').matches;
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && isDesktopChat) {
+        e.preventDefault();
+        if (typeof chatForm.requestSubmit === 'function') chatForm.requestSubmit();
+        else chatForm.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
     const chatSend = document.createElement('button');
     chatSend.type = 'submit';
     chatSend.className = 'remi-chat-send';
@@ -2143,6 +2151,7 @@
       if (activeMode !== 'peer' || !peer) return;
       sharedSocket.emit('message', { text, peer });
       chatInput.value = '';
+      chatInput.focus();
     });
     sharedSocket.on('message', onChatMessage);
 
