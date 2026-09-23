@@ -4743,12 +4743,33 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   font-size: 13px;
   line-height: 1.2;
 }
-#chat-view header #refresh-btn.spinning {
-  animation: refresh-spin .6s linear;
+#pull-refresh {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: var(--toon-cream);
+  border: 2px solid var(--toon-ink);
+  border-radius: 50%;
+  box-shadow: 0 2px 0 0 var(--toon-ink);
+  pointer-events: none;
+  z-index: 5;
+  transform: translate(-50%, 0);
 }
-@keyframes refresh-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+#pull-refresh.hidden { display: none; }
+#pull-refresh.ready { background: var(--toon-pink); }
+#pull-refresh.spinning {
+  opacity: 1 !important;
+  animation: pull-refresh-spin .6s linear;
+}
+@keyframes pull-refresh-spin {
+  from { transform: translate(-50%, -42px) rotate(0deg); }
+  to { transform: translate(-50%, -42px) rotate(360deg); }
 }
 #header-menu {
   position: absolute;

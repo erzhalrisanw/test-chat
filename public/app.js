@@ -2382,7 +2382,6 @@ function startChat(token, username) {
   updateJournalBtn();
   updatePinnedBtn();
   updateSearchBtn();
-  updateRefreshBtn();
   if (gameBtn) gameBtn.classList.remove('hidden');
   if (pingBtn) pingBtn.classList.remove('hidden');
   renderMeAvatar();
@@ -5192,20 +5191,63 @@ function updateSearchBtn() {
   else searchBtn.classList.add('hidden');
 }
 
-const refreshBtn = document.getElementById('refresh-btn');
-function updateRefreshBtn() {
-  if (!refreshBtn) return;
-  if (me && currentPeer) refreshBtn.classList.remove('hidden');
-  else refreshBtn.classList.add('hidden');
+// Pull-up-to-refresh: when the thread is already scrolled to the bottom,
+// dragging further up reloads the current chat room.
+const pullRefreshEl = document.getElementById('pull-refresh');
+const PULL_REFRESH_THRESHOLD = 70;
+const pullState = { active: false, startX: 0, startY: 0, dist: 0 };
+function messagesAtBottom() {
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= 2;
 }
-if (refreshBtn) {
-  refreshBtn.addEventListener('click', () => {
-    if (!currentPeer) return;
-    refreshBtn.classList.add('spinning');
-    setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+function setPullProgress(dist) {
+  if (!pullRefreshEl) return;
+  const ready = dist >= PULL_REFRESH_THRESHOLD;
+  pullRefreshEl.classList.toggle('hidden', dist <= 0);
+  pullRefreshEl.classList.toggle('ready', ready);
+  pullRefreshEl.style.transform = `translate(-50%, ${-Math.min(dist, PULL_REFRESH_THRESHOLD * 1.4) * 0.6}px) rotate(${dist * 3}deg)`;
+  pullRefreshEl.style.opacity = String(Math.min(1, dist / PULL_REFRESH_THRESHOLD));
+}
+messagesEl.addEventListener('touchstart', (e) => {
+  pullState.active = !!currentPeer && e.touches.length === 1 && messagesAtBottom();
+  pullState.dist = 0;
+  if (!pullState.active) return;
+  pullState.startX = e.touches[0].clientX;
+  pullState.startY = e.touches[0].clientY;
+}, { passive: true });
+messagesEl.addEventListener('touchmove', (e) => {
+  if (!pullState.active) return;
+  const t = e.touches[0];
+  const dy = pullState.startY - t.clientY;
+  const dx = Math.abs(t.clientX - pullState.startX);
+  if (e.touches.length > 1 || dy < 0 || dx > Math.abs(dy)) {
+    pullState.active = false;
+    pullState.dist = 0;
+    setPullProgress(0);
+    return;
+  }
+  pullState.dist = dy;
+  setPullProgress(dy);
+}, { passive: true });
+function endPull() {
+  if (!pullState.active) return;
+  const trigger = pullState.dist >= PULL_REFRESH_THRESHOLD;
+  pullState.active = false;
+  pullState.dist = 0;
+  if (trigger && currentPeer) {
+    if (pullRefreshEl) {
+      pullRefreshEl.classList.add('spinning');
+      setTimeout(() => {
+        pullRefreshEl.classList.remove('spinning');
+        setPullProgress(0);
+      }, 600);
+    }
     reloadCurrentPeer();
-  });
+  } else {
+    setPullProgress(0);
+  }
 }
+messagesEl.addEventListener('touchend', endPull);
+messagesEl.addEventListener('touchcancel', endPull);
 
 function searchPeerFor() {
   return isHub() ? currentPeer : me;
