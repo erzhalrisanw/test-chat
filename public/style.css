@@ -752,10 +752,16 @@ position: relative;
 z-index: 60;
 }
 #chat-form { position: relative; z-index: 60; }
+/* Left and right groups share the leftover width equally so the panic
+   button between them sits at the center of the header when there's room. */
+#chat-view header .header-left,
+#chat-view header .right { flex: 1 1 0; }
+#chat-view header #panic-btn:not(.birthday-mode) { flex: none; margin: 0 10px; }
 #chat-view header .right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; }
 @media (max-width: 640px) {
   #chat-view header { padding: 6px 8px; gap: 4px; }
   #chat-view header .right { gap: 3px; flex-wrap: nowrap; }
+  #chat-view header #panic-btn:not(.birthday-mode) { margin: 0 6px; }
   #peer-switcher-label { max-width: 60px; }
   .header-me-name { font-size: 12px; padding: 0 3px; }
   #partner-avatar { font-size: 22px; }
