@@ -804,6 +804,7 @@ function showMessagesLoading() {
 }
 function hideMessagesLoading() {
   if (messagesLoadingEl) messagesLoadingEl.classList.add('hidden');
+  finishPullRefresh();
 }
 
 function resetThreadView() {
@@ -5191,63 +5192,151 @@ function updateSearchBtn() {
   else searchBtn.classList.add('hidden');
 }
 
-// Pull-up-to-refresh: when the thread is already scrolled to the bottom,
-// dragging further up reloads the current chat room.
+// Pull-up-to-refresh: once the thread is at the bottom, dragging further up
+// (or scrolling past the end with a wheel/trackpad) stretches the list like a
+// rubber band; letting go past the threshold reloads the chat room.
+const messagesWrapEl = messagesEl.parentElement;
 const pullRefreshEl = document.getElementById('pull-refresh');
-const PULL_REFRESH_THRESHOLD = 70;
-const pullState = { active: false, startX: 0, startY: 0, dist: 0 };
+const pullRefreshLabel = pullRefreshEl && pullRefreshEl.querySelector('.pull-refresh-label');
+const PULL_THRESHOLD = 64;
+const PULL_MAX = 110;
+const PULL_LOADING_OFFSET = 52;
+const pull = {
+  tracking: false,
+  pulling: false,
+  startX: 0,
+  startY: 0,
+  lastY: 0,
+  originY: 0,
+  offset: 0,
+  loading: false,
+  settleTimer: null,
+  finishTimer: null,
+  wheelRaw: 0,
+  wheelTimer: null,
+  atBottomSince: 0,
+};
 function messagesAtBottom() {
-  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= 2;
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= 4;
 }
-function setPullProgress(dist) {
-  if (!pullRefreshEl) return;
-  const ready = dist >= PULL_REFRESH_THRESHOLD;
-  pullRefreshEl.classList.toggle('hidden', dist <= 0);
-  pullRefreshEl.classList.toggle('ready', ready);
-  pullRefreshEl.style.transform = `translate(-50%, ${-Math.min(dist, PULL_REFRESH_THRESHOLD * 1.4) * 0.6}px) rotate(${dist * 3}deg)`;
-  pullRefreshEl.style.opacity = String(Math.min(1, dist / PULL_REFRESH_THRESHOLD));
+function pullOffsetFor(raw) {
+  return PULL_MAX * (1 - Math.exp(-raw / (PULL_MAX * 1.1)));
 }
+function setPullOffset(offset, settle) {
+  clearTimeout(pull.settleTimer);
+  pull.offset = offset;
+  messagesWrapEl.classList.toggle('pull-settling', !!settle);
+  if (offset > 0 || pull.loading) messagesWrapEl.classList.add('pulling');
+  messagesWrapEl.style.setProperty('--pull', offset + 'px');
+  messagesWrapEl.style.setProperty('--pull-progress', String(Math.min(1, offset / PULL_THRESHOLD)));
+  if (pullRefreshEl && !pull.loading) {
+    const ready = offset >= PULL_THRESHOLD;
+    pullRefreshEl.classList.toggle('ready', ready);
+    if (pullRefreshLabel) pullRefreshLabel.textContent = ready ? 'Lepas untuk refresh' : 'Tarik untuk refresh';
+  }
+  if (offset <= 0 && !pull.loading) {
+    pull.settleTimer = setTimeout(() => {
+      messagesWrapEl.classList.remove('pulling', 'pull-settling');
+    }, settle ? 260 : 0);
+  }
+}
+function releasePull() {
+  pull.pulling = false;
+  if (pull.loading) return;
+  if (pull.offset >= PULL_THRESHOLD && currentPeer) startPullRefresh();
+  else setPullOffset(0, true);
+}
+function startPullRefresh() {
+  pull.loading = true;
+  if (pullRefreshEl) {
+    pullRefreshEl.classList.remove('ready');
+    pullRefreshEl.classList.add('loading');
+  }
+  if (pullRefreshLabel) pullRefreshLabel.textContent = 'Memuat ulang...';
+  setPullOffset(PULL_LOADING_OFFSET, true);
+  setTimeout(() => {
+    reloadCurrentPeer();
+    clearTimeout(pull.finishTimer);
+    pull.finishTimer = setTimeout(finishPullRefresh, 8000);
+  }, 350);
+}
+function finishPullRefresh() {
+  if (!pull.loading) return;
+  clearTimeout(pull.finishTimer);
+  pull.loading = false;
+  if (pullRefreshEl) pullRefreshEl.classList.remove('loading');
+  setPullOffset(0, true);
+}
+messagesEl.addEventListener('scroll', () => {
+  if (messagesAtBottom()) {
+    if (!pull.atBottomSince) pull.atBottomSince = Date.now();
+  } else {
+    pull.atBottomSince = 0;
+  }
+}, { passive: true });
 messagesEl.addEventListener('touchstart', (e) => {
-  pullState.active = !!currentPeer && e.touches.length === 1 && messagesAtBottom();
-  pullState.dist = 0;
-  if (!pullState.active) return;
-  pullState.startX = e.touches[0].clientX;
-  pullState.startY = e.touches[0].clientY;
+  pull.tracking = !pull.loading && !!currentPeer && e.touches.length === 1;
+  pull.pulling = false;
+  if (!pull.tracking) return;
+  const t = e.touches[0];
+  pull.startX = t.clientX;
+  pull.startY = t.clientY;
+  pull.lastY = t.clientY;
 }, { passive: true });
 messagesEl.addEventListener('touchmove', (e) => {
-  if (!pullState.active) return;
-  const t = e.touches[0];
-  const dy = pullState.startY - t.clientY;
-  const dx = Math.abs(t.clientX - pullState.startX);
-  if (e.touches.length > 1 || dy < 0 || dx > Math.abs(dy)) {
-    pullState.active = false;
-    pullState.dist = 0;
-    setPullProgress(0);
+  if (!pull.tracking) return;
+  if (e.touches.length > 1) {
+    pull.tracking = false;
+    if (pull.pulling) releasePull();
     return;
   }
-  pullState.dist = dy;
-  setPullProgress(dy);
-}, { passive: true });
-function endPull() {
-  if (!pullState.active) return;
-  const trigger = pullState.dist >= PULL_REFRESH_THRESHOLD;
-  pullState.active = false;
-  pullState.dist = 0;
-  if (trigger && currentPeer) {
-    if (pullRefreshEl) {
-      pullRefreshEl.classList.add('spinning');
-      setTimeout(() => {
-        pullRefreshEl.classList.remove('spinning');
-        setPullProgress(0);
-      }, 600);
-    }
-    reloadCurrentPeer();
-  } else {
-    setPullProgress(0);
+  const t = e.touches[0];
+  if (!pull.pulling) {
+    const movingUp = t.clientY < pull.lastY;
+    const vertical = Math.abs(t.clientX - pull.startX) < Math.abs(t.clientY - pull.startY);
+    const prevY = pull.lastY;
+    pull.lastY = t.clientY;
+    if (!movingUp || !vertical || !messagesAtBottom()) return;
+    pull.pulling = true;
+    pull.originY = prevY;
   }
+  const raw = pull.originY - t.clientY;
+  if (raw <= 0) {
+    pull.pulling = false;
+    pull.lastY = t.clientY;
+    setPullOffset(0, false);
+    return;
+  }
+  if (e.cancelable) e.preventDefault();
+  setPullOffset(pullOffsetFor(raw), false);
+}, { passive: false });
+function endPullTouch() {
+  pull.tracking = false;
+  if (pull.pulling) releasePull();
 }
-messagesEl.addEventListener('touchend', endPull);
-messagesEl.addEventListener('touchcancel', endPull);
+messagesEl.addEventListener('touchend', endPullTouch);
+messagesEl.addEventListener('touchcancel', endPullTouch);
+messagesEl.addEventListener('wheel', (e) => {
+  if (pull.loading || !currentPeer) return;
+  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+  // Only count wheel input that starts after the list has settled at the
+  // bottom, so momentum from scrolling down doesn't trigger a refresh.
+  if (dy <= 0 || !messagesAtBottom() || !pull.atBottomSince || Date.now() - pull.atBottomSince < 400) {
+    if (pull.wheelRaw) {
+      clearTimeout(pull.wheelTimer);
+      pull.wheelRaw = 0;
+      setPullOffset(0, true);
+    }
+    return;
+  }
+  pull.wheelRaw += dy * 0.5;
+  setPullOffset(pullOffsetFor(pull.wheelRaw), false);
+  clearTimeout(pull.wheelTimer);
+  pull.wheelTimer = setTimeout(() => {
+    pull.wheelRaw = 0;
+    releasePull();
+  }, 180);
+}, { passive: true });
 
 function searchPeerFor() {
   return isHub() ? currentPeer : me;
