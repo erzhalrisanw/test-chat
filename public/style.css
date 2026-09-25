@@ -5670,6 +5670,8 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   min-height: 0;
 }
 .remi-melds:empty { display: none; }
+
+.remi-hand-row { display: contents; }
 .remi-meld-group {
   display: flex;
   flex-direction: column;
@@ -5894,6 +5896,28 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   .remi-me-hand { min-height: 52px; padding: 2px 2px 3px; gap: 1px; }
 
   .remi-actions { padding: 3px 4px 4px; gap: 4px; }
+
+  /* Side-by-side melds + hand on mobile so sets don't push layout off-screen */
+  .remi-hand-row {
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: stretch;
+    gap: 3px;
+  }
+  .remi-hand-row > .remi-opp-hand,
+  .remi-hand-row > .remi-me-hand {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .remi-hand-row > .remi-melds {
+    flex: 0 1 45%;
+    max-width: 55%;
+    min-width: 0;
+    padding: 2px 4px;
+  }
+  .remi-hand-row > .remi-melds:empty { display: none; }
+  /* Keep hand fan/wrap centered within its slot when melds present */
+  .remi-hand-row > .remi-me-hand { flex-wrap: wrap; align-content: flex-start; }
 }
 
 /* Chat FAB + modal for Remi game */

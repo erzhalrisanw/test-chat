@@ -1706,15 +1706,23 @@
     chatModal.appendChild(chatBackdrop);
     chatModal.appendChild(chatCard);
 
+    const oppRow = document.createElement('div');
+    oppRow.className = 'remi-hand-row opp';
+    oppRow.appendChild(oppMeldsEl);
+    oppRow.appendChild(oppHandEl);
+
+    const meRow = document.createElement('div');
+    meRow.className = 'remi-hand-row me';
+    meRow.appendChild(meMeldsEl);
+    meRow.appendChild(meHandEl);
+
     wrap.appendChild(topRow);
-    wrap.appendChild(oppMeldsEl);
-    wrap.appendChild(oppHandEl);
+    wrap.appendChild(oppRow);
     wrap.appendChild(center);
     wrap.appendChild(drawRow);
     wrap.appendChild(statusEl);
     wrap.appendChild(playerHeader);
-    wrap.appendChild(meMeldsEl);
-    wrap.appendChild(meHandEl);
+    wrap.appendChild(meRow);
     wrap.appendChild(actions);
     wrap.appendChild(chatFab);
     wrap.appendChild(chatModal);
