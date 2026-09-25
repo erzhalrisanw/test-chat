@@ -5848,42 +5848,52 @@ text-shadow: 0 1px 0 rgba(var(--ink-rgb),.35);
   .remi-card.joker .rc-face-center { font-size: 24px; }
   .remi-card.back::after { font-size: 20px; }
 
-  .remi-opp-hand { min-height: 60px; padding: 2px 2px 4px; }
-  .remi-opp-hand .remi-card-wrap { margin-left: -22px; }
+  .remi-opp-hand { min-height: 46px; padding: 2px 2px 3px; }
+  .remi-opp-hand .remi-card-wrap { margin-left: -24px; }
 
-  .remi-center { gap: 10px; padding: 6px 4px 4px; }
-  .remi-pile-stack { width: 40px; height: 58px; }
-  .remi-empty-pile { width: 40px; height: 58px; font-size: 16px; }
-  .remi-pile-label { font-size: 11px; }
-  .remi-sisa { font-size: 9px; min-width: 40px; padding: 2px 4px; margin-top: 3px; }
-  .remi-pile-block { gap: 6px; }
+  .remi-center { gap: 8px; padding: 4px 4px 4px; }
+  .remi-pile-stack { width: 36px; height: 52px; }
+  .remi-empty-pile { width: 36px; height: 52px; font-size: 14px; }
+  .remi-pile-label { font-size: 10px; }
+  .remi-sisa { font-size: 9px; min-width: 36px; padding: 1px 4px; margin-top: 2px; }
+  .remi-pile-block { gap: 5px; }
 
-  .remi-draw-row { gap: 6px; padding: 3px 4px 4px; }
-  .remi-btn { font-size: 10.5px; padding: 5px 10px; border-radius: 12px; }
+  .remi-draw-row { gap: 6px; padding: 2px 4px 3px; }
+  .remi-btn { font-size: 10.5px; padding: 4px 10px; border-radius: 12px; }
 
-  .remi-status { min-height: 22px; padding: 4px 10px; font-size: 11px; line-height: 1.3; }
+  .remi-status { min-height: 20px; padding: 3px 10px; font-size: 11px; line-height: 1.25; }
 
-  .remi-player-header { padding: 4px 8px 2px; }
+  .remi-player-header { padding: 3px 8px 2px; }
 
-  .remi-melds { padding: 3px 6px; gap: 4px; }
+  .remi-melds {
+    padding: 2px 6px;
+    gap: 4px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .remi-melds::-webkit-scrollbar { display: none; }
+  .remi-melds > * { flex-shrink: 0; }
   .remi-meld-group { padding: 2px 4px; gap: 1px; }
   .remi-meld-tag { font-size: 8px; padding: 0 5px; letter-spacing: 0.3px; border-radius: 5px; }
-  .remi-meld-cards .remi-card { width: 32px; height: 46px; border-radius: 3px; }
-  .remi-meld-cards .remi-card-wrap { margin-left: -14px; }
+  .remi-meld-cards .remi-card { width: 28px; height: 40px; border-radius: 3px; }
+  .remi-meld-cards .remi-card-wrap { margin-left: -12px; }
   .remi-meld-cards .rc-corner .rc-rank { font-size: 8px; }
-  .remi-meld-cards .rc-corner .rc-suit { font-size: 12px; margin-top: 1px; }
+  .remi-meld-cards .rc-corner .rc-suit { font-size: 11px; margin-top: 0; }
   .remi-meld-cards .rc-corner.top { top: 1px; left: 2px; }
   .remi-meld-cards .rc-corner.bot { bottom: 1px; right: 2px; }
-  .remi-meld-cards .rc-pips { top: 25%; bottom: 25%; left: 32%; right: 32%; }
-  .remi-meld-cards .rc-pip { font-size: 7px; }
-  .remi-meld-cards .rc-face-center { font-size: 12px; }
-  .remi-meld-cards .rc-face-letter { font-size: 14px; }
-  .remi-meld-cards .rc-face-suit { font-size: 11px; }
-  .remi-meld-cards .rc-pip.big-ace { font-size: 20px; }
+  .remi-meld-cards .rc-pips { top: 25%; bottom: 25%; left: 30%; right: 30%; }
+  .remi-meld-cards .rc-pip { font-size: 6px; }
+  .remi-meld-cards .rc-face-center { font-size: 11px; }
+  .remi-meld-cards .rc-face-letter { font-size: 12px; }
+  .remi-meld-cards .rc-face-suit { font-size: 10px; }
+  .remi-meld-cards .rc-pip.big-ace { font-size: 18px; }
 
-  .remi-me-hand { min-height: 62px; padding: 3px 2px 4px; gap: 1px; }
+  .remi-me-hand { min-height: 52px; padding: 2px 2px 3px; gap: 1px; }
 
-  .remi-actions { padding: 4px 4px 4px; gap: 4px; }
+  .remi-actions { padding: 3px 4px 4px; gap: 4px; }
 }
 
 /* Chat FAB + modal for Remi game */
