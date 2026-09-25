@@ -4118,11 +4118,12 @@ chatForm.addEventListener('submit', function(e) {
   }
   if (!text) return;
   var autoSayang = false;
-  if (me === 'turki') {
-    var quirked = applyTurkiSayangQuirk(text);
-    text = quirked.text;
-    autoSayang = quirked.auto;
-  }
+  // Auto-sayang quirk untuk turki dinonaktifkan sementara — aktifkan kembali dengan meng-uncomment blok di bawah.
+  // if (me === 'turki') {
+  //   var quirked = applyTurkiSayangQuirk(text);
+  //   text = quirked.text;
+  //   autoSayang = quirked.auto;
+  // }
   var msgPayload = { text: text, replyToId: replyToId, replyTo: replyToSnap };
   if (autoSayang) msgPayload.autoSayang = true;
   queueMessage('message', msgPayload);
