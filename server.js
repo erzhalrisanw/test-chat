@@ -2538,6 +2538,14 @@ io.on('connection', async (socket) => {
       replyToId = Number(payload.replyToId) || null;
       autoSayang = !!payload.autoSayang && username === 'turki';
     }
+    // Auto-sayang quirk dinonaktifkan: client lama (app.js dari cache browser) masih bisa
+    // mengirim teks yang sudah ditambah "sayang" + flag autoSayang. Kembalikan teks aslinya.
+    if (autoSayang && typeof text === 'string') {
+      text = /\s+sayang\.\.\s*$/i.test(text)
+        ? text.replace(/\s+sayang\.\.\s*$/i, '')
+        : text.replace(/\s+sayang(\s*[.!?…]+\s*)$/i, '$1');
+      autoSayang = false;
+    }
     if (typeof text !== 'string' || !text.trim()) {
       if (typeof ack === 'function') ack({ error: 'No text' });
       return;
