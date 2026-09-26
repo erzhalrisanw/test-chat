@@ -169,6 +169,14 @@
       </div>
       <button id="reply-cancel" type="button" title="Cancel reply">✕</button>
     </div>
+    <div id="edit-preview" class="reply-preview edit-preview hidden">
+      <div class="reply-preview-bar"></div>
+      <div class="reply-preview-content">
+        <div class="reply-preview-user">Edit pesan</div>
+        <div class="reply-preview-text" id="edit-preview-text"></div>
+      </div>
+      <button id="edit-cancel" type="button" title="Batal edit">✕</button>
+    </div>
     <form id="chat-form">
       <div class="attach-wrap">
         <button type="button" id="attach-menu-btn" class="attach-btn" title="Attach" aria-haspopup="true" aria-expanded="false">⋮</button>
@@ -559,34 +567,42 @@
       <div id="pe-sticker-layer"></div>
     </div>
     <div id="pe-tool-panel" class="pe-tool-panel hidden">
-      <div id="pe-pen-panel" class="hidden">
-        <div class="pe-swatches">
-          <button type="button" class="pe-swatch" data-color="#ff2d2d" style="background:#ff2d2d"></button>
-          <button type="button" class="pe-swatch" data-color="#ffb400" style="background:#ffb400"></button>
-          <button type="button" class="pe-swatch" data-color="#2ecc71" style="background:#2ecc71"></button>
-          <button type="button" class="pe-swatch" data-color="#3498db" style="background:#3498db"></button>
-          <button type="button" class="pe-swatch" data-color="#000000" style="background:#000000"></button>
-          <button type="button" class="pe-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+      <div class="pe-tool-sheet" role="dialog" aria-label="Opsi edit">
+        <div class="pe-tool-sheet-head">
+          <span id="pe-tool-title" class="pe-tool-title">Opsi</span>
+          <button type="button" id="pe-tool-close" class="pe-tool-close" aria-label="Kembali">← Kembali</button>
         </div>
-        <div class="pe-sizes">
-          <button type="button" class="pe-size" data-size="3">•</button>
-          <button type="button" class="pe-size" data-size="6">●</button>
-          <button type="button" class="pe-size" data-size="12">⬤</button>
+        <div class="pe-tool-sheet-body">
+          <div id="pe-pen-panel" class="hidden">
+            <div class="pe-swatches">
+              <button type="button" class="pe-swatch" data-color="#ff2d2d" style="background:#ff2d2d"></button>
+              <button type="button" class="pe-swatch" data-color="#ffb400" style="background:#ffb400"></button>
+              <button type="button" class="pe-swatch" data-color="#2ecc71" style="background:#2ecc71"></button>
+              <button type="button" class="pe-swatch" data-color="#3498db" style="background:#3498db"></button>
+              <button type="button" class="pe-swatch" data-color="#000000" style="background:#000000"></button>
+              <button type="button" class="pe-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+            </div>
+            <div class="pe-sizes">
+              <button type="button" class="pe-size" data-size="3">•</button>
+              <button type="button" class="pe-size" data-size="6">●</button>
+              <button type="button" class="pe-size" data-size="12">⬤</button>
+            </div>
+          </div>
+          <div id="pe-crop-panel" class="hidden">
+            <div class="pe-crop-ratios">
+              <button type="button" class="pe-ratio" data-ratio="free">Bebas</button>
+              <button type="button" class="pe-ratio" data-ratio="1:1">1:1</button>
+              <button type="button" class="pe-ratio" data-ratio="4:3">4:3</button>
+            </div>
+            <div class="pe-crop-actions">
+              <button type="button" id="pe-crop-apply" class="pe-panel-btn">Terapkan</button>
+              <button type="button" id="pe-crop-cancel" class="pe-panel-btn secondary">Batal</button>
+            </div>
+          </div>
+          <div id="pe-sticker-panel" class="hidden">
+            <div id="pe-sticker-grid" class="pe-sticker-grid"></div>
+          </div>
         </div>
-      </div>
-      <div id="pe-crop-panel" class="hidden">
-        <div class="pe-crop-ratios">
-          <button type="button" class="pe-ratio" data-ratio="free">Bebas</button>
-          <button type="button" class="pe-ratio" data-ratio="1:1">1:1</button>
-          <button type="button" class="pe-ratio" data-ratio="4:3">4:3</button>
-        </div>
-        <div class="pe-crop-actions">
-          <button type="button" id="pe-crop-apply" class="pe-panel-btn">Terapkan</button>
-          <button type="button" id="pe-crop-cancel" class="pe-panel-btn secondary">Batal</button>
-        </div>
-      </div>
-      <div id="pe-sticker-panel" class="hidden">
-        <div id="pe-sticker-grid" class="pe-sticker-grid"></div>
       </div>
     </div>
     <div class="pe-toolbar">

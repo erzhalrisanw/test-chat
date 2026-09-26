@@ -109,6 +109,12 @@ async function initDb() {
   try {
     await db.execute(`ALTER TABLE messages ADD COLUMN auto_sayang INTEGER NOT NULL DEFAULT 0`);
   } catch (_) {}
+  try {
+    await db.execute(`ALTER TABLE messages ADD COLUMN edited_at TEXT`);
+  } catch (_) {}
+  try {
+    await db.execute(`ALTER TABLE messages ADD COLUMN original_text TEXT`);
+  } catch (_) {}
   await db.execute({
     sql: `UPDATE messages SET peer = CASE WHEN username = ? THEN ? ELSE username END WHERE peer IS NULL`,
     args: [HUB_USER, LEGACY_PEER],
@@ -631,6 +637,8 @@ function mapRow(r) {
     peer: r.peer,
     unsent: !!Number(r.unsent || 0),
   };
+  if (r.edited_at) out.editedAt = r.edited_at;
+  if (r.original_text != null) out.originalText = r.original_text;
   if (Number(r.auto_sayang || 0)) out.autoSayang = true;
   if (r.reply_to_id) {
     const replySticker = isStickerRef(r.reply_image);
@@ -698,7 +706,7 @@ async function attachPinned(messages) {
 
 async function getMessageById(id) {
   const result = await db.execute({
-    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
+    sql: `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang, m.edited_at, m.original_text,
                  p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
           FROM messages m
           LEFT JOIN messages p ON m.reply_to_id = p.id
@@ -714,13 +722,13 @@ async function getMessageById(id) {
 
 async function getHistory(peer, limit = 50, beforeId = null) {
   const sql = beforeId
-    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
+    ? `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang, m.edited_at, m.original_text,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
        WHERE m.peer = ? AND m.id < ?
        ORDER BY m.id DESC LIMIT ?`
-    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang,
+    : `SELECT m.id, m.username, m.text, m.image, m.video, m.audio, m.time, m.reply_to_id, m.peer, m.unsent, m.auto_sayang, m.edited_at, m.original_text,
               p.username AS reply_username, p.text AS reply_text, p.image AS reply_image, p.video AS reply_video, p.audio AS reply_audio, p.unsent AS reply_unsent
        FROM messages m
        LEFT JOIN messages p ON m.reply_to_id = p.id
@@ -2835,6 +2843,50 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ ok: true, id, peer: msg.peer });
     } catch (e) {
       console.error('resend error:', e.message);
+      if (typeof ack === 'function') ack({ error: e.message });
+    }
+  });
+
+  socket.on('edit', async (payload, ack) => {
+    const id = Number(payload && payload.id);
+    const rawText = payload && typeof payload.text === 'string' ? payload.text : '';
+    if (!Number.isFinite(id) || id <= 0) {
+      if (typeof ack === 'function') ack({ error: 'Invalid id' });
+      return;
+    }
+    if (!rawText.trim()) {
+      if (typeof ack === 'function') ack({ error: 'No text' });
+      return;
+    }
+    try {
+      const msg = await getMessageById(id);
+      if (!msg) {
+        if (typeof ack === 'function') ack({ error: 'Not found' });
+        return;
+      }
+      if (msg.username !== username) {
+        if (typeof ack === 'function') ack({ error: 'Forbidden' });
+        return;
+      }
+      if (msg.unsent) {
+        if (typeof ack === 'function') ack({ error: 'Message unsent' });
+        return;
+      }
+      if (msg.image || msg.sticker || msg.video || msg.audio) {
+        if (typeof ack === 'function') ack({ error: 'Only text messages can be edited' });
+        return;
+      }
+      const safe = applyUserTextTransforms(username, rawText.slice(0, 1000));
+      const editedAt = new Date().toISOString();
+      const originalText = msg.originalText != null ? msg.originalText : (msg.text || '');
+      await db.execute({
+        sql: 'UPDATE messages SET text = ?, edited_at = ?, original_text = COALESCE(original_text, ?) WHERE id = ?',
+        args: [safe, editedAt, originalText, id],
+      });
+      emitToThread(msg.peer, 'edit-message', { id, peer: msg.peer, text: safe, editedAt, originalText });
+      if (typeof ack === 'function') ack({ ok: true, id, peer: msg.peer, text: safe, editedAt, originalText });
+    } catch (e) {
+      console.error('edit error:', e.message);
       if (typeof ack === 'function') ack({ error: e.message });
     }
   });

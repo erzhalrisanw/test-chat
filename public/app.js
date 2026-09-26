@@ -2670,6 +2670,15 @@ function startChat(token, username) {
     applyResendToView(payload.message || { id });
   });
 
+  socket.on('edit-message', (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    const id = Number(payload.id);
+    const peer = payload.peer;
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (peer && peer !== currentPeer) return;
+    applyEditToView({ id, text: payload.text || '', editedAt: payload.editedAt, originalText: payload.originalText });
+  });
+
   socket.on('delete-message', (payload) => {
     if (!payload || typeof payload !== 'object') return;
     const id = Number(payload.id);
@@ -2913,7 +2922,13 @@ function buildMessageNodes(msg) {
     }
   }
   const unsentTag = (isUnsent && !hideContent) ? '<span class="unsent-tag" title="Pesan ditarik oleh pengirim">ditarik</span>' : '';
-  const meta = '<div class="meta">' + t + tick + unsentTag + '</div>';
+  const editedTag = (msg.editedAt && !isUnsent && !hideContent)
+    ? '<span class="edited-tag" title="Diedit ' + escapeHtml(new Date(msg.editedAt).toLocaleString()) + '">Edited</span>'
+    : '';
+  const meta = '<div class="meta">' + t + editedTag + tick + unsentTag + '</div>';
+  const editedOriginal = (msg.editedAt && msg.originalText && isHub() && !isUnsent && !hideContent)
+    ? '<div class="edited-original">Asli: ' + escapeHtml(msg.originalText) + '</div>'
+    : '';
   let quote = '';
   if (replyTo && !hideContent) {
     const replyHide = !!(replyTo.unsent && !isHub());
@@ -2978,7 +2993,7 @@ function buildMessageNodes(msg) {
       body = body ? body + aud : aud;
     }
   }
-  div.innerHTML = quote + body + meta;
+  div.innerHTML = quote + body + editedOriginal + meta;
   const voEl = div.querySelector('.view-once-bubble');
   if (voEl && isViewOnce) {
     const isMine = username === me;
@@ -3080,10 +3095,13 @@ function attachMsgMenu(div, opts) {
   const canCancel = !!(isPending && username === me);
   const canResendPending = !!(isPending && username === me && div.dataset.outboxId);
   const canPin = id && !hideContent && !isUnsent && !isPending;
-  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend && !canCancel && !canResendPending && !canPin) return;
+  const hasMedia = !!(div.querySelector('.chat-img, .chat-vid, .chat-aud, .chat-sticker, .view-once-bubble'));
+  const canEdit = !!(id && username === me && !isUnsent && !isPending && textEl && textEl.textContent.trim() && !hasMedia);
+  if (!canReply && !canUnsend && !canForward && !canCopy && !canResend && !canCancel && !canResendPending && !canPin && !canEdit) return;
   const items = [];
   if (canReply) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="reply"><span class="msg-menu-icon">↩</span><span class="msg-menu-label">Balas</span></button>');
   if (canCopy) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="copy"><span class="msg-menu-icon">📋</span><span class="msg-menu-label">Salin</span></button>');
+  if (canEdit) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="edit"><span class="msg-menu-icon">✏️</span><span class="msg-menu-label">Edit pesan</span></button>');
   if (canForward) items.push('<button class="msg-menu-item" type="button" role="menuitem" data-action="forward"><span class="msg-menu-icon">➤</span><span class="msg-menu-label">Teruskan</span></button>');
   if (canPin) {
     const pinned = isPinned(id);
@@ -3145,6 +3163,10 @@ function attachMsgMenu(div, opts) {
         cancelPendingBubble(div);
       } else if (action === 'pin' && currentId) {
         togglePin(currentId);
+      } else if (action === 'edit' && currentId) {
+        const t = div.querySelector('.msg-text');
+        const currentText = t ? t.textContent : '';
+        requestEdit(currentId, currentText);
       }
     });
   });
@@ -3247,6 +3269,109 @@ function requestResend(id) {
       console.error('resend failed:', resp.error);
       addSystem('Gagal mengirim ulang pesan: ' + resp.error);
     }
+  });
+}
+
+let editingTarget = null;
+const editPreview = document.getElementById('edit-preview');
+const editPreviewText = document.getElementById('edit-preview-text');
+const editCancelBtn = document.getElementById('edit-cancel');
+
+function startEdit(id, currentText) {
+  if (!socket || !id) return;
+  clearReply();
+  editingTarget = { id, originalText: currentText || '' };
+  msgInput.value = currentText || '';
+  saveDraft(currentPeer, msgInput.value);
+  autoResizeMsgInput();
+  if (editPreviewText) editPreviewText.textContent = currentText || '';
+  if (editPreview) editPreview.classList.remove('hidden');
+  msgInput.focus();
+  try {
+    const len = msgInput.value.length;
+    msgInput.setSelectionRange(len, len);
+  } catch (_) {}
+}
+
+function cancelEdit() {
+  editingTarget = null;
+  if (editPreview) editPreview.classList.add('hidden');
+  if (editPreviewText) editPreviewText.textContent = '';
+  msgInput.value = '';
+  saveDraft(currentPeer, '');
+  autoResizeMsgInput();
+}
+
+function submitEdit(text) {
+  if (!editingTarget || !socket) return false;
+  const id = editingTarget.id;
+  const original = editingTarget.originalText || '';
+  const trimmed = (text || '').trim();
+  if (!trimmed) {
+    addSystem('Pesan tidak boleh kosong');
+    return true;
+  }
+  if (trimmed === original.trim()) {
+    cancelEdit();
+    return true;
+  }
+  socket.emit('edit', { id, text: trimmed }, (resp) => {
+    if (resp && resp.error) {
+      console.error('edit failed:', resp.error);
+      addSystem('Gagal mengedit pesan: ' + resp.error);
+    }
+  });
+  cancelEdit();
+  return true;
+}
+
+function requestEdit(id, currentText) {
+  startEdit(id, currentText);
+}
+
+if (editCancelBtn) editCancelBtn.addEventListener('click', cancelEdit);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && editingTarget) cancelEdit();
+});
+
+function applyEditToView(payload) {
+  const id = Number(payload && payload.id);
+  if (!Number.isFinite(id) || id <= 0) return;
+  const targetId = String(id);
+  const el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+  if (el) {
+    const textEl = el.querySelector('.msg-text');
+    if (textEl) textEl.innerHTML = renderMsgTextHtml(payload.text || '', { text: payload.text || '' });
+    const meta = el.querySelector('.meta');
+    if (meta && payload.editedAt) {
+      let tag = meta.querySelector('.edited-tag');
+      if (!tag) {
+        tag = document.createElement('span');
+        tag.className = 'edited-tag';
+        const tick = meta.querySelector('.tick');
+        if (tick) meta.insertBefore(tag, tick);
+        else meta.appendChild(tag);
+      }
+      tag.textContent = 'Edited';
+      tag.title = 'Diedit ' + new Date(payload.editedAt).toLocaleString();
+    }
+    if (isHub()) {
+      let orig = el.querySelector('.edited-original');
+      const originalText = payload.originalText || '';
+      if (originalText) {
+        if (!orig) {
+          orig = document.createElement('div');
+          orig.className = 'edited-original';
+          const meta2 = el.querySelector('.meta');
+          if (meta2) el.insertBefore(orig, meta2);
+          else el.appendChild(orig);
+        }
+        orig.textContent = 'Asli: ' + originalText;
+      }
+    }
+  }
+  messagesEl.querySelectorAll('.reply-quote[data-target="' + targetId + '"] .reply-quote-text').forEach((quoteText) => {
+    quoteText.textContent = payload.text || '';
   });
 }
 
@@ -3407,6 +3532,7 @@ async function jumpToMessage(targetId) {
 }
 
 function setReplyTarget(target) {
+  if (editingTarget) cancelEdit();
   replyTarget = target;
   replyPreviewUser.textContent = target.username || '';
   replyPreviewText.textContent = replySnippet(target);
@@ -4089,6 +4215,10 @@ chatForm.addEventListener('submit', function(e) {
   if (!socket) return;
   sendTypingStop();
   var text = msgInput.value.trim();
+  if (editingTarget) {
+    submitEdit(text);
+    return;
+  }
   var replyToId = replyTarget ? replyTarget.id : null;
   var replyToSnap = replyTarget ? Object.assign({}, replyTarget) : null;
   var isVO = pendingViewOnce;

@@ -16,6 +16,8 @@
   const toolUndo = document.getElementById('pe-tool-undo');
   const toolReset = document.getElementById('pe-tool-reset');
   const toolPanel = document.getElementById('pe-tool-panel');
+  const toolTitle = document.getElementById('pe-tool-title');
+  const toolClose = document.getElementById('pe-tool-close');
   const penPanel = document.getElementById('pe-pen-panel');
   const cropPanel = document.getElementById('pe-crop-panel');
   const stickerPanel = document.getElementById('pe-sticker-panel');
@@ -144,18 +146,21 @@
       toolPen.classList.add('active');
       penPanel.classList.remove('hidden');
       toolPanel.classList.remove('hidden');
+      if (toolTitle) toolTitle.textContent = 'Coret';
       canvas.style.cursor = 'crosshair';
       renderPenSelection();
     } else if (tool === 'crop') {
       toolCrop.classList.add('active');
       cropPanel.classList.remove('hidden');
       toolPanel.classList.remove('hidden');
+      if (toolTitle) toolTitle.textContent = 'Crop';
       cropOverlay.classList.remove('hidden');
       initCropRect();
     } else if (tool === 'sticker') {
       toolSticker.classList.add('active');
       stickerPanel.classList.remove('hidden');
       toolPanel.classList.remove('hidden');
+      if (toolTitle) toolTitle.textContent = 'Stiker';
       renderStickerGrid();
     }
   }
@@ -370,6 +375,11 @@
   cropCancel.addEventListener('click', () => setTool(null));
 
   // ---- Stickers ----
+  const STICKER_ALLOW = new Set([
+    'happy', 'laugh', 'wink', 'kiss', 'cool', 'love',
+    'sad', 'cry', 'angry', 'surprised', 'sleep', 'sick',
+    'heart', 'broken',
+  ]);
   async function ensureStickerCatalog() {
     if (stickerCatalog.length) return stickerCatalog;
     if (stickerCatalogPromise) return stickerCatalogPromise;
@@ -378,6 +388,7 @@
       .then((data) => {
         const list = (data && data.stickers) || [];
         stickerCatalog = list.filter((s) => {
+          if (!STICKER_ALLOW.has(s.name)) return false;
           if (!Array.isArray(s.users) || !s.users.length) return true;
           return currentMe && s.users.indexOf(currentMe) >= 0;
         });
@@ -518,6 +529,7 @@
   toolCrop.addEventListener('click', () => setTool(currentTool === 'crop' ? null : 'crop'));
   toolPen.addEventListener('click', () => setTool(currentTool === 'pen' ? null : 'pen'));
   toolSticker.addEventListener('click', () => setTool(currentTool === 'sticker' ? null : 'sticker'));
+  if (toolClose) toolClose.addEventListener('click', () => setTool(null));
   toolUndo.addEventListener('click', () => popHistory());
   toolReset.addEventListener('click', async () => {
     if (!originalDataUrl) return;
