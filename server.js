@@ -70,6 +70,7 @@ const LEGACY_PEER = 'mutatio';
 const SERVER_OPTIONS = {
   'chat00': { url: 'https://test-chat-ewz1.onrender.com', display: 'bit.ly/chat00' },
   'test-doang': { url: 'https://test-doang.onrender.com', display: 'bit.ly/test-doang' },
+  'test-doang-1': { url: 'https://test-doang1.onrender.com', display: 'bit.ly/test-doang-1' },
 };
 const DEFAULT_ACTIVE_SERVER = 'chat00';
 const ACTIVE_SERVER_KV = 'active_server';

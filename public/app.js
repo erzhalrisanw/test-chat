@@ -277,6 +277,8 @@ function applyContentProtection(username) {
 
   document.addEventListener('contextmenu', function(e) {
     if (!contentProtectionActive) return;
+    const t = e.target;
+    if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || (t.isContentEditable))) return;
     e.preventDefault();
   }, true);
   document.addEventListener('dragstart', function(e) {
@@ -3910,7 +3912,12 @@ function updatePendingToSent(tempId, realId) {
     tick.setAttribute('aria-label', 'sent');
     tick.innerHTML = '<svg viewBox="0 0 18 12" width="16" height="12" aria-hidden="true"><path d="M1 6.5 L4.5 10 L11 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 6.5 L9.5 10 L17 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
   }
-  attachMsgMenu(el, { id: realId, username: me, isUnsent: false, hideContent: false });
+  delete el.dataset.outboxId;
+  var oldBtn = el.querySelector('.msg-menu-btn');
+  var oldMenu = el.querySelector('.msg-menu');
+  if (oldBtn) oldBtn.remove();
+  if (oldMenu) oldMenu.remove();
+  attachMsgMenu(el, { id: realId, username: me, isUnsent: false, hideContent: false, isPending: false });
 }
 
 function markPendingFailed(tempId, errorMsg, opts) {
@@ -6372,6 +6379,7 @@ const serverPickerPeersListEl = document.getElementById('server-picker-peers-lis
 const SERVER_INFO_FALLBACK = [
   { key: 'chat00', host: 'test-chat-ewz1.onrender.com', display: 'bit.ly/chat00' },
   { key: 'test-doang', host: 'test-doang.onrender.com', display: 'bit.ly/test-doang' },
+  { key: 'test-doang-1', host: 'test-doang1.onrender.com', display: 'bit.ly/test-doang-1' },
 ];
 
 function detectServerKeyFromHost() {
