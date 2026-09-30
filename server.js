@@ -1500,9 +1500,32 @@ function serverOptionsPayload() {
   return Object.entries(SERVER_OPTIONS).map(([key, v]) => ({ key, display: v.display }));
 }
 
+const ACTIVE_SERVER_CACHE_TTL_MS = 10_000;
+let activeServerCache = { key: null, expiresAt: 0 };
+
 async function getActiveServerKey() {
+  const now = Date.now();
+  if (activeServerCache.key && activeServerCache.expiresAt > now) {
+    return activeServerCache.key;
+  }
   const stored = await getAppKv(ACTIVE_SERVER_KV);
-  return SERVER_OPTIONS[stored] ? stored : DEFAULT_ACTIVE_SERVER;
+  const key = SERVER_OPTIONS[stored] ? stored : DEFAULT_ACTIVE_SERVER;
+  activeServerCache = { key, expiresAt: now + ACTIVE_SERVER_CACHE_TTL_MS };
+  return key;
+}
+
+async function emitServerRedirectIfNeeded(socket) {
+  try {
+    const activeKey = await getActiveServerKey();
+    if (SERVER_KEY === activeKey) return;
+    const opt = SERVER_OPTIONS[activeKey];
+    if (!opt) return;
+    socket.emit('server:redirect', {
+      activeKey,
+      activeDisplay: opt.display,
+      activeUrl: opt.url,
+    });
+  } catch (_) {}
 }
 
 app.get('/active-server', async (req, res) => {
@@ -1527,6 +1550,7 @@ app.post('/active-server', async (req, res) => {
   const key = req.body && typeof req.body.key === 'string' ? req.body.key : '';
   if (!SERVER_OPTIONS[key]) return res.status(400).json({ ok: false, error: 'Invalid key' });
   await setAppKv(ACTIVE_SERVER_KV, key);
+  activeServerCache = { key, expiresAt: Date.now() + ACTIVE_SERVER_CACHE_TTL_MS };
   res.json({ ok: true, activeKey: key, activeDisplay: SERVER_OPTIONS[key].display });
 });
 
@@ -2442,6 +2466,8 @@ io.on('connection', async (socket) => {
     console.error('peer_server upsert error:', err.message);
   }
 
+  emitServerRedirectIfNeeded(socket);
+
   const initialPeer = defaultPeerFor(username);
   socket.data.activePeer = initialPeer;
   const initialOther = recipientOf(username, initialPeer);
@@ -2504,6 +2530,7 @@ io.on('connection', async (socket) => {
   });
 
   async function handleOutgoing(payload, ack, build) {
+    emitServerRedirectIfNeeded(socket);
     const peer = resolvePeer(username, payload && payload.peer);
     if (!peer) {
       if (typeof ack === 'function') ack({ error: 'Invalid peer' });

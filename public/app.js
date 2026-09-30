@@ -2488,6 +2488,13 @@ function startChat(token, username) {
     renderMeAvatar();
   });
 
+  socket.on('server:redirect', (payload) => {
+    if (!payload || typeof payload.activeKey !== 'string') return;
+    serverInfoState.activeKey = payload.activeKey;
+    if (attemptRedirectToActive()) return;
+    evaluateServerMismatch();
+  });
+
   socket.on('avatar:update', ({ username, avatar }) => {
     if (!username) return;
     avatarState[username] = avatar || null;
