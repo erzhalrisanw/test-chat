@@ -3506,11 +3506,27 @@ function renderDateSeparators() {
 
 function addMessage(msg) {
   const nodes = buildMessageNodes(msg);
-  const key = dayKey(msg.time);
-  const existing = messagesEl.querySelectorAll('.msg[data-day]');
-  const lastDay = existing.length ? existing[existing.length - 1].dataset.day : null;
-  if (lastDay !== key) messagesEl.appendChild(makeDateSeparator(msg.time));
-  nodes.forEach((n) => messagesEl.appendChild(n));
+  const msgId = Number(msg && msg.id);
+  let anchor = null;
+  if (Number.isFinite(msgId) && msgId > 0) {
+    const existingIded = messagesEl.querySelectorAll('.msg[data-id]');
+    for (let i = 0; i < existingIded.length; i++) {
+      const otherId = Number(existingIded[i].dataset.id);
+      if (Number.isFinite(otherId) && otherId > msgId) {
+        anchor = existingIded[i];
+        break;
+      }
+    }
+  }
+  if (anchor) {
+    nodes.forEach((n) => messagesEl.insertBefore(n, anchor));
+  } else {
+    const key = dayKey(msg.time);
+    const existing = messagesEl.querySelectorAll('.msg[data-day]');
+    const lastDay = existing.length ? existing[existing.length - 1].dataset.day : null;
+    if (lastDay !== key) messagesEl.appendChild(makeDateSeparator(msg.time));
+    nodes.forEach((n) => messagesEl.appendChild(n));
+  }
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
