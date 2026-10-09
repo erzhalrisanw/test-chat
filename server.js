@@ -129,6 +129,9 @@ async function initDb() {
       created_at TEXT NOT NULL
     )
   `);
+  try {
+    await db.execute(`ALTER TABLE push_subscriptions ADD COLUMN server_key TEXT`);
+  } catch (_) {}
   await db.execute(`
     CREATE TABLE IF NOT EXISTS user_settings (
       username TEXT PRIMARY KEY,
@@ -514,10 +517,10 @@ function stickersManifestFor(username) {
 
 async function saveSubscription(username, sub) {
   await db.execute({
-    sql: `INSERT INTO push_subscriptions (endpoint, username, subscription, created_at)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(endpoint) DO UPDATE SET username=excluded.username, subscription=excluded.subscription`,
-    args: [sub.endpoint, username, JSON.stringify(sub), new Date().toISOString()],
+    sql: `INSERT INTO push_subscriptions (endpoint, username, subscription, created_at, server_key)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(endpoint) DO UPDATE SET username=excluded.username, subscription=excluded.subscription, server_key=excluded.server_key`,
+    args: [sub.endpoint, username, JSON.stringify(sub), new Date().toISOString(), SERVER_KEY],
   });
 }
 
@@ -528,10 +531,11 @@ async function deleteSubscription(endpoint) {
   });
 }
 
-async function getSubscriptionsFor(username) {
+async function getSubscriptionsFor(username, serverKey) {
   const result = await db.execute({
-    sql: 'SELECT subscription FROM push_subscriptions WHERE username = ?',
-    args: [username],
+    sql: `SELECT subscription FROM push_subscriptions
+          WHERE username = ? AND COALESCE(server_key, ?) = ?`,
+    args: [username, DEFAULT_ACTIVE_SERVER, serverKey],
   });
   return result.rows.map((r) => {
     try { return JSON.parse(r.subscription); } catch { return null; }
@@ -541,7 +545,8 @@ async function getSubscriptionsFor(username) {
 async function sendPushToRecipient(recipient, payload) {
   if (!pushEnabled) return;
   if (!recipient) return;
-  const subs = await getSubscriptionsFor(recipient);
+  const activeKey = await getActiveServerKey();
+  const subs = await getSubscriptionsFor(recipient, activeKey);
   await Promise.all(subs.map(async (sub) => {
     try {
       await webPush.sendNotification(sub, JSON.stringify(payload));

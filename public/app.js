@@ -6158,8 +6158,8 @@ async function startVoiceRecording() {
   var mime = pickAudioMime();
   try {
     audioRecorder = mime
-      ? new MediaRecorder(audioStream, { mimeType: mime, audioBitsPerSecond: 32000 })
-      : new MediaRecorder(audioStream, { audioBitsPerSecond: 32000 });
+      ? new MediaRecorder(audioStream, { mimeType: mime, audioBitsPerSecond: 96000 })
+      : new MediaRecorder(audioStream, { audioBitsPerSecond: 96000 });
   } catch (err) {
     stopAudioStream();
     alert('Cannot record: ' + (err.message || err.name));
