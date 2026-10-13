@@ -2292,8 +2292,8 @@ function remiSessionOf(username, payload) {
   };
 }
 
-const SNL_LADDER_COUNT = 9;
-const SNL_SNAKE_COUNT = 10;
+const SNL_LADDER_COUNT = 6;
+const SNL_SNAKE_COUNT = 6;
 const SNL_LADDER_MIN_RISE = 10;
 const SNL_SNAKE_MIN_DROP = 5;
 
@@ -3627,7 +3627,7 @@ io.on('connection', async (socket) => {
       const r = await db.execute({
         sql: `SELECT id, inviter, opponent, winner, resigned, started_at, finished_at, challenges_enabled,
                      COALESCE(json_array_length(challenge_log), 0) AS log_count
-              FROM snl_games WHERE peer = ? ORDER BY id DESC LIMIT 30`,
+              FROM snl_games WHERE peer = ? ORDER BY id DESC LIMIT 5`,
         args: [peer],
       });
       const games = r.rows.map((row) => ({

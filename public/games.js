@@ -1777,19 +1777,94 @@
     function renderOverlay(s) {
       overlaySvg.innerHTML = '';
       if (!s) return;
-      const drawLine = (from, to, cls) => {
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+      const svgEl = (tag, attrs) => {
+        const el = document.createElementNS(SVG_NS, tag);
+        for (const k in attrs) el.setAttribute(k, String(attrs[k]));
+        return el;
+      };
+
+      const drawLadder = (from, to) => {
         const a = cellCenter(from);
         const b = cellCenter(to);
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', String(a.x));
-        line.setAttribute('y1', String(a.y));
-        line.setAttribute('x2', String(b.x));
-        line.setAttribute('y2', String(b.y));
-        line.setAttribute('class', cls);
-        overlaySvg.appendChild(line);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const nx = -uy, ny = ux;
+        const halfW = 1.5;
+        const g = svgEl('g', { class: 'snl-ladder' });
+        const r1a = { x: a.x + nx * halfW, y: a.y + ny * halfW };
+        const r1b = { x: b.x + nx * halfW, y: b.y + ny * halfW };
+        const r2a = { x: a.x - nx * halfW, y: a.y - ny * halfW };
+        const r2b = { x: b.x - nx * halfW, y: b.y - ny * halfW };
+        g.appendChild(svgEl('line', { x1: r1a.x, y1: r1a.y, x2: r1b.x, y2: r1b.y, class: 'snl-ladder-rail' }));
+        g.appendChild(svgEl('line', { x1: r2a.x, y1: r2a.y, x2: r2b.x, y2: r2b.y, class: 'snl-ladder-rail' }));
+        const nRungs = Math.max(3, Math.round(len / 4));
+        for (let i = 1; i < nRungs; i++) {
+          const t = i / nRungs;
+          const cx = a.x + ux * len * t;
+          const cy = a.y + uy * len * t;
+          g.appendChild(svgEl('line', {
+            x1: cx + nx * halfW, y1: cy + ny * halfW,
+            x2: cx - nx * halfW, y2: cy - ny * halfW,
+            class: 'snl-ladder-rung'
+          }));
+        }
+        overlaySvg.appendChild(g);
       };
-      if (s.ladders) for (const k in s.ladders) drawLine(Number(k), s.ladders[k], 'snl-ladder-line');
-      if (s.snakes) for (const k in s.snakes) drawLine(Number(k), s.snakes[k], 'snl-snake-line');
+
+      const drawSnake = (from, to) => {
+        const a = cellCenter(from);
+        const b = cellCenter(to);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const nx = -uy, ny = ux;
+        const g = svgEl('g', { class: 'snl-snake' });
+        const wiggles = Math.max(2, Math.round(len / 10));
+        const amp = Math.min(2.8, len * 0.09);
+        const steps = Math.max(24, wiggles * 10);
+        let d = '';
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const sx = a.x + ux * len * t;
+          const sy = a.y + uy * len * t;
+          const taper = Math.sin(Math.PI * t);
+          const w = Math.sin(t * Math.PI * wiggles) * amp * taper;
+          const px = sx + nx * w;
+          const py = sy + ny * w;
+          d += (i === 0 ? 'M ' : ' L ') + px.toFixed(2) + ' ' + py.toFixed(2);
+        }
+        g.appendChild(svgEl('path', { d: d, class: 'snl-snake-body-outline' }));
+        g.appendChild(svgEl('path', { d: d, class: 'snl-snake-body' }));
+        g.appendChild(svgEl('path', { d: d, class: 'snl-snake-pattern' }));
+        g.appendChild(svgEl('circle', { cx: a.x, cy: a.y, r: 0.85, class: 'snl-snake-head-dot' }));
+        g.appendChild(svgEl('circle', { cx: a.x + nx * 0.32 - ux * 0.12, cy: a.y + ny * 0.32 - uy * 0.12, r: 0.2, class: 'snl-snake-eye' }));
+        g.appendChild(svgEl('circle', { cx: a.x - nx * 0.32 - ux * 0.12, cy: a.y - ny * 0.32 - uy * 0.12, r: 0.2, class: 'snl-snake-eye' }));
+        const tongueBase = { x: a.x - ux * 1.6, y: a.y - uy * 1.6 };
+        const tongueTip = { x: a.x - ux * 3.6, y: a.y - uy * 3.6 };
+        g.appendChild(svgEl('line', {
+          x1: tongueBase.x, y1: tongueBase.y,
+          x2: tongueTip.x, y2: tongueTip.y,
+          class: 'snl-snake-tongue'
+        }));
+        g.appendChild(svgEl('line', {
+          x1: tongueTip.x, y1: tongueTip.y,
+          x2: tongueTip.x - ux * 0.6 + nx * 0.7, y2: tongueTip.y - uy * 0.6 + ny * 0.7,
+          class: 'snl-snake-tongue'
+        }));
+        g.appendChild(svgEl('line', {
+          x1: tongueTip.x, y1: tongueTip.y,
+          x2: tongueTip.x - ux * 0.6 - nx * 0.7, y2: tongueTip.y - uy * 0.6 - ny * 0.7,
+          class: 'snl-snake-tongue'
+        }));
+        overlaySvg.appendChild(g);
+      };
+
+      if (s.ladders) for (const k in s.ladders) drawLadder(Number(k), s.ladders[k]);
+      if (s.snakes) for (const k in s.snakes) drawSnake(Number(k), s.snakes[k]);
     }
 
     function renderPawns(s) {
@@ -2027,7 +2102,7 @@
           body.textContent = (resp && resp.error) || 'Gagal memuat.';
           return;
         }
-        const games = Array.isArray(resp.games) ? resp.games : [];
+        const games = (Array.isArray(resp.games) ? resp.games : []).slice(0, 5);
         if (games.length === 0) {
           body.textContent = 'Belum ada game selesai.';
           return;
