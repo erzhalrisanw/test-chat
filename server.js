@@ -2292,8 +2292,53 @@ function remiSessionOf(username, payload) {
   };
 }
 
-const SNL_LADDERS = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
-const SNL_SNAKES = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
+const SNL_LADDER_COUNT = 9;
+const SNL_SNAKE_COUNT = 10;
+const SNL_LADDER_MIN_RISE = 10;
+const SNL_SNAKE_MIN_DROP = 5;
+
+function snlGenerateBoard() {
+  const ladders = {};
+  const snakes = {};
+  const used = new Set([1, 100]);
+  const pickFree = () => {
+    const pool = [];
+    for (let i = 2; i < 100; i++) if (!used.has(i)) pool.push(i);
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+  let attempts = 0;
+  while (Object.keys(ladders).length < SNL_LADDER_COUNT && attempts < 400) {
+    attempts++;
+    const from = pickFree();
+    if (from === null) break;
+    const minTo = from + SNL_LADDER_MIN_RISE;
+    if (minTo > 99) continue;
+    const toCandidates = [];
+    for (let i = minTo; i <= 99; i++) if (!used.has(i)) toCandidates.push(i);
+    if (toCandidates.length === 0) continue;
+    const to = toCandidates[Math.floor(Math.random() * toCandidates.length)];
+    ladders[from] = to;
+    used.add(from);
+    used.add(to);
+  }
+  attempts = 0;
+  while (Object.keys(snakes).length < SNL_SNAKE_COUNT && attempts < 400) {
+    attempts++;
+    const from = pickFree();
+    if (from === null) break;
+    const maxTo = from - SNL_SNAKE_MIN_DROP;
+    if (maxTo < 2) continue;
+    const toCandidates = [];
+    for (let i = 2; i <= maxTo; i++) if (!used.has(i)) toCandidates.push(i);
+    if (toCandidates.length === 0) continue;
+    const to = toCandidates[Math.floor(Math.random() * toCandidates.length)];
+    snakes[from] = to;
+    used.add(from);
+    used.add(to);
+  }
+  return { ladders, snakes };
+}
 const SNL_CHALLENGE_PAIR = new Set(['occupatus', 'riz', 'cha']);
 const SNL_MAX_POOL = 40;
 const SNL_MAX_CHALLENGE_LEN = 240;
@@ -2329,6 +2374,7 @@ function snlChallengesEnabled(a, b) {
 
 function snlNewSession(peer, inviter, opponent, carryPool) {
   const enabled = snlChallengesEnabled(inviter, opponent);
+  const board = snlGenerateBoard();
   return {
     peer,
     status: 'pending',
@@ -2340,6 +2386,8 @@ function snlNewSession(peer, inviter, opponent, carryPool) {
     winner: null,
     startedAt: new Date().toISOString(),
     resigned: null,
+    ladders: board.ladders,
+    snakes: board.snakes,
     challengesEnabled: enabled,
     challengePool: enabled ? (Array.isArray(carryPool) ? carryPool.map(snlCloneChallenge) : []) : null,
     ready: enabled ? { [inviter]: false, [opponent]: false } : null,
@@ -2357,8 +2405,10 @@ function snlPickChallengeTiles(session) {
   const approved = pool.filter((c) => c.approvals[session.inviter] && c.approvals[session.opponent]);
   if (approved.length === 0) return {};
   const avoid = new Set([1, 100]);
-  for (const k of Object.keys(SNL_LADDERS)) { avoid.add(Number(k)); avoid.add(Number(SNL_LADDERS[k])); }
-  for (const k of Object.keys(SNL_SNAKES)) { avoid.add(Number(k)); avoid.add(Number(SNL_SNAKES[k])); }
+  const ladders = session.ladders || {};
+  const snakes = session.snakes || {};
+  for (const k of Object.keys(ladders)) { avoid.add(Number(k)); avoid.add(Number(ladders[k])); }
+  for (const k of Object.keys(snakes)) { avoid.add(Number(k)); avoid.add(Number(snakes[k])); }
   const free = [];
   for (let i = 2; i < 100; i++) if (!avoid.has(i)) free.push(i);
   const target = Math.min(SNL_MAX_TILES, free.length, approved.length);
@@ -2424,8 +2474,8 @@ function snlPublicState(session) {
     winner: session.winner,
     startedAt: session.startedAt,
     resigned: session.resigned || null,
-    ladders: SNL_LADDERS,
-    snakes: SNL_SNAKES,
+    ladders: session.ladders ? Object.assign({}, session.ladders) : {},
+    snakes: session.snakes ? Object.assign({}, session.snakes) : {},
     challengesEnabled: !!session.challengesEnabled,
     challengePool: session.challengePool ? session.challengePool.map(snlCloneChallenge) : null,
     ready: session.ready ? Object.assign({}, session.ready) : null,
@@ -3408,12 +3458,14 @@ io.on('connection', async (socket) => {
     if (landed > 100) {
       landed = from;
     } else {
-      if (SNL_LADDERS[landed] !== undefined) {
-        jumped = { kind: 'ladder', from: landed, to: SNL_LADDERS[landed] };
-        landed = SNL_LADDERS[landed];
-      } else if (SNL_SNAKES[landed] !== undefined) {
-        jumped = { kind: 'snake', from: landed, to: SNL_SNAKES[landed] };
-        landed = SNL_SNAKES[landed];
+      const ladders = session.ladders || {};
+      const snakes = session.snakes || {};
+      if (ladders[landed] !== undefined) {
+        jumped = { kind: 'ladder', from: landed, to: ladders[landed] };
+        landed = ladders[landed];
+      } else if (snakes[landed] !== undefined) {
+        jumped = { kind: 'snake', from: landed, to: snakes[landed] };
+        landed = snakes[landed];
       }
       session.positions[username] = landed;
       if (landed === 100) {
