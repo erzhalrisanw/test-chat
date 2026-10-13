@@ -33,6 +33,160 @@
     if (opts && opts.socket) sharedSocket = opts.socket;
     if (opts && typeof opts.getPartner === 'function') getPartnerFn = opts.getPartner;
     if (opts && typeof opts.getMe === 'function') getMeFn = opts.getMe;
+    ensureGlobalChat();
+  }
+
+  // ------------------------------------------------------------------
+  // Global in-game chat (shared across all games except Remi which has its own)
+  // ------------------------------------------------------------------
+  let globalChatInited = false;
+  let globalChatFab = null;
+  let globalChatModal = null;
+  let globalChatLog = null;
+  let globalChatInput = null;
+  let globalChatBadge = null;
+  let globalChatOpen = false;
+  let globalChatUnread = 0;
+  const globalChatHistory = [];
+
+  function escChat(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+  function globalChatPeerInfo() {
+    const me = (getMeFn && getMeFn()) || localStorage.getItem('username') || '';
+    const meIsHub = me === HUB_USER;
+    const peer = meIsHub
+      ? ((getPartnerFn && getPartnerFn()) || localStorage.getItem('activePeer') || '')
+      : me;
+    return { me, peer };
+  }
+  function ensureGlobalChat() {
+    if (globalChatInited) return;
+    globalChatInited = true;
+
+    globalChatFab = document.createElement('button');
+    globalChatFab.type = 'button';
+    globalChatFab.className = 'remi-chat-fab game-global-chat-fab hidden';
+    globalChatFab.innerHTML = '<span class="remi-chat-fab-icon">💬</span><span class="remi-chat-badge hidden">0</span>';
+    globalChatFab.setAttribute('aria-label', 'Buka chat');
+
+    globalChatModal = document.createElement('div');
+    globalChatModal.className = 'remi-chat-modal game-global-chat-modal hidden';
+    const bd = document.createElement('div');
+    bd.className = 'remi-chat-backdrop';
+    const card = document.createElement('div');
+    card.className = 'remi-chat-card';
+    const header = document.createElement('div');
+    header.className = 'remi-chat-header';
+    header.innerHTML = '<span class="remi-chat-title">💬 Chat</span><button type="button" class="remi-chat-close" aria-label="Tutup chat">✕</button>';
+    globalChatLog = document.createElement('div');
+    globalChatLog.className = 'remi-chat-log';
+    const form = document.createElement('form');
+    form.className = 'remi-chat-form';
+    globalChatInput = document.createElement('textarea');
+    globalChatInput.className = 'remi-chat-input';
+    globalChatInput.placeholder = 'Ketik pesan…';
+    globalChatInput.maxLength = 500;
+    globalChatInput.rows = 1;
+    const isDesktop = !window.matchMedia('(pointer: coarse)').matches;
+    globalChatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && isDesktop) {
+        e.preventDefault();
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.dispatchEvent(new Event('submit', { cancelable: true }));
+      }
+    });
+    const send = document.createElement('button');
+    send.type = 'submit';
+    send.className = 'remi-chat-send';
+    send.textContent = 'Kirim';
+    form.appendChild(globalChatInput);
+    form.appendChild(send);
+    card.appendChild(header);
+    card.appendChild(globalChatLog);
+    card.appendChild(form);
+    globalChatModal.appendChild(bd);
+    globalChatModal.appendChild(card);
+    document.body.appendChild(globalChatFab);
+    document.body.appendChild(globalChatModal);
+    globalChatBadge = globalChatFab.querySelector('.remi-chat-badge');
+
+    globalChatFab.addEventListener('click', openGlobalChat);
+    bd.addEventListener('click', closeGlobalChat);
+    header.querySelector('.remi-chat-close').addEventListener('click', closeGlobalChat);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const text = globalChatInput.value.trim();
+      if (!text) return;
+      const { peer } = globalChatPeerInfo();
+      if (!peer || !sharedSocket) return;
+      sharedSocket.emit('message', { text, peer });
+      globalChatInput.value = '';
+      globalChatInput.focus();
+    });
+
+    if (sharedSocket) sharedSocket.on('message', onGlobalChatMessage);
+  }
+  function appendGlobalChatLine(m) {
+    const { me } = globalChatPeerInfo();
+    const line = document.createElement('div');
+    line.className = 'remi-chat-line' + (m.username === me ? ' me' : ' them');
+    const name = document.createElement('span');
+    name.className = 'remi-chat-name';
+    name.textContent = m.username === me ? 'Kamu' : m.username;
+    const text = document.createElement('span');
+    text.className = 'remi-chat-text';
+    text.textContent = m.text || '';
+    line.appendChild(name);
+    line.appendChild(text);
+    globalChatLog.appendChild(line);
+    while (globalChatLog.childElementCount > 100) globalChatLog.removeChild(globalChatLog.firstChild);
+    if (globalChatOpen) globalChatLog.scrollTop = globalChatLog.scrollHeight;
+  }
+  function updateGlobalChatBadge() {
+    if (globalChatUnread > 0 && !globalChatOpen) {
+      globalChatBadge.textContent = globalChatUnread > 99 ? '99+' : String(globalChatUnread);
+      globalChatBadge.classList.remove('hidden');
+    } else {
+      globalChatBadge.classList.add('hidden');
+    }
+  }
+  function onGlobalChatMessage(m) {
+    if (!m || typeof m.text !== 'string' || !m.text) return;
+    if (currentGameId === 'remi') return;
+    const { me, peer } = globalChatPeerInfo();
+    if (!peer) return;
+    if (m.peer && m.peer !== peer) return;
+    globalChatHistory.push({ username: m.username, text: m.text });
+    while (globalChatHistory.length > 100) globalChatHistory.shift();
+    if (!globalChatModal) return;
+    appendGlobalChatLine(m);
+    if (m.username !== me && !globalChatOpen) {
+      globalChatUnread += 1;
+      updateGlobalChatBadge();
+    }
+  }
+  function openGlobalChat() {
+    globalChatOpen = true;
+    globalChatModal.classList.remove('hidden');
+    globalChatUnread = 0;
+    updateGlobalChatBadge();
+    setTimeout(() => { globalChatLog.scrollTop = globalChatLog.scrollHeight; globalChatInput.focus(); }, 40);
+  }
+  function closeGlobalChat() {
+    globalChatOpen = false;
+    globalChatModal.classList.add('hidden');
+  }
+  function showGlobalChatFab() {
+    if (!globalChatFab) return;
+    const { peer } = globalChatPeerInfo();
+    if (!peer) { hideGlobalChat(); return; }
+    globalChatFab.classList.remove('hidden');
+  }
+  function hideGlobalChat() {
+    if (!globalChatFab) return;
+    globalChatFab.classList.add('hidden');
+    closeGlobalChat();
   }
 
   const GAMES = {
@@ -63,6 +217,7 @@
   function close() {
     unmountCurrent();
     modal.classList.add('hidden');
+    hideGlobalChat();
   }
   function showPicker() {
     unmountCurrent();
@@ -73,6 +228,7 @@
     if (lbBtn) lbBtn.classList.remove('hidden');
     titleEl.textContent = 'Pilih game';
     hintEl.textContent = '';
+    hideGlobalChat();
   }
   function getMeAndPeer() {
     const me = localStorage.getItem('username') || '';
@@ -127,6 +283,7 @@
     backBtn.classList.remove('hidden');
     if (lbBtn) lbBtn.classList.add('hidden');
     titleEl.textContent = 'Leaderboard';
+    hideGlobalChat();
     lbHeader.innerHTML = '';
     lbBody.innerHTML = '';
     lbEmpty.classList.add('hidden');
@@ -212,6 +369,8 @@
     await syncBestsFromServer();
     if (currentGameId !== id) return;
     cleanupFn = g.mount(board) || null;
+    if (id === 'remi') hideGlobalChat();
+    else showGlobalChatFab();
   }
   function restart() {
     if (currentGameId) selectGame(currentGameId);
@@ -1247,10 +1406,16 @@
     infoRow.appendChild(rollLog);
     const actions = document.createElement('div');
     actions.className = 'snl-actions';
+    const setupPanel = document.createElement('div');
+    setupPanel.className = 'snl-setup hidden';
+    const modalLayer = document.createElement('div');
+    modalLayer.className = 'snl-modal-layer hidden';
     wrap.appendChild(statusEl);
     wrap.appendChild(boardWrap);
     wrap.appendChild(infoRow);
     wrap.appendChild(actions);
+    wrap.appendChild(setupPanel);
+    wrap.appendChild(modalLayer);
     rootEl.innerHTML = '';
     rootEl.appendChild(wrap);
 
@@ -1286,6 +1451,10 @@
       renderOverlay(s);
       renderPawns(s);
       renderRoll(s);
+      const isSetup = s && s.status === 'setup';
+      setupPanel.classList.toggle('hidden', !isSetup);
+      infoRow.classList.toggle('hidden', !!isSetup);
+      if (isSetup) renderSetup(s);
       if (!s) {
         statusEl.textContent = 'Ajak peer main Ular Tangga.';
         addBtn('Undang peer', 'primary', invite);
@@ -1300,6 +1469,13 @@
           addBtn('Terima', 'primary', accept);
           addBtn('Tolak', 'secondary', decline);
         }
+      } else if (s.status === 'setup') {
+        const other = me === s.inviter ? s.opponent : s.inviter;
+        const myReady = !!(s.ready && s.ready[me]);
+        const otherReady = !!(s.ready && s.ready[other]);
+        statusEl.innerHTML = 'Pilih challenge yang disepakati berdua. ' + (otherReady ? '<b>' + escapeText(other) + '</b> sudah siap.' : '<b>' + escapeText(other) + '</b> belum siap.');
+        addBtn(myReady ? 'Batal siap' : 'Siap main 🚀', myReady ? 'secondary' : 'primary', () => toggleReady(!myReady));
+        addBtn('Keluar', 'secondary', leave);
       } else if (s.status === 'active') {
         const isMyTurn = s.turn === me;
         const bonus = s.lastRoll && s.lastRoll.by === s.turn && s.lastRoll.dice === 6;
@@ -1316,12 +1492,126 @@
       }
     }
 
+    function renderSetup(s) {
+      const other = me === s.inviter ? s.opponent : s.inviter;
+      const pool = (s.challengePool || []).slice();
+      setupPanel.innerHTML = '';
+      const intro = document.createElement('div');
+      intro.className = 'snl-setup-intro';
+      intro.innerHTML = 'Masing-masing tulis challenge. Centang yang kamu setujui — hanya yang di-approve <b>kedua pemain</b> yang akan dipakai (max ' + 8 + ' petak).';
+      setupPanel.appendChild(intro);
+
+      const list = document.createElement('div');
+      list.className = 'snl-challenge-list';
+      if (pool.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'snl-challenge-empty';
+        empty.textContent = 'Belum ada challenge. Tambahkan di bawah.';
+        list.appendChild(empty);
+      } else {
+        pool.forEach((c) => {
+          const row = document.createElement('div');
+          row.className = 'snl-challenge-item';
+          const myApproved = !!(c.approvals && c.approvals[me]);
+          const otherApproved = !!(c.approvals && c.approvals[other]);
+          if (myApproved && otherApproved) row.classList.add('mutual');
+          const text = document.createElement('div');
+          text.className = 'snl-challenge-text';
+          text.textContent = c.text;
+          const meta = document.createElement('div');
+          meta.className = 'snl-challenge-meta';
+          meta.innerHTML = 'oleh <b>' + escapeText(c.author) + '</b>';
+          const controls = document.createElement('div');
+          controls.className = 'snl-challenge-controls';
+          const myBtn = document.createElement('button');
+          myBtn.type = 'button';
+          myBtn.className = 'snl-approve' + (myApproved ? ' on' : '');
+          myBtn.textContent = myApproved ? '✓ Aku setuju' : '✗ Aku belum';
+          myBtn.addEventListener('click', () => toggleChallenge(c.id));
+          const otherBadge = document.createElement('span');
+          otherBadge.className = 'snl-approve other' + (otherApproved ? ' on' : '');
+          otherBadge.textContent = (otherApproved ? '✓ ' : '✗ ') + escapeText(other);
+          controls.appendChild(myBtn);
+          controls.appendChild(otherBadge);
+          if (c.author === me) {
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'snl-challenge-del';
+            del.title = 'Hapus';
+            del.textContent = '✕';
+            del.addEventListener('click', () => removeChallenge(c.id));
+            controls.appendChild(del);
+          }
+          row.appendChild(text);
+          row.appendChild(meta);
+          row.appendChild(controls);
+          list.appendChild(row);
+        });
+      }
+      setupPanel.appendChild(list);
+
+      const presets = Array.isArray(s.presets) ? s.presets : [];
+      if (presets.length > 0) {
+        const existingTexts = new Set((s.challengePool || []).map((c) => c.text));
+        const presetWrap = document.createElement('details');
+        presetWrap.className = 'snl-preset-wrap';
+        presetWrap.open = pool.length === 0;
+        const presetSum = document.createElement('summary');
+        presetSum.className = 'snl-preset-summary';
+        presetSum.textContent = '🔥 Preset 21+ (klik buat tambahin ke pool)';
+        presetWrap.appendChild(presetSum);
+        const presetGrid = document.createElement('div');
+        presetGrid.className = 'snl-preset-grid';
+        presets.forEach((text) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'snl-preset-chip' + (existingTexts.has(text) ? ' used' : '');
+          chip.textContent = text;
+          chip.title = existingTexts.has(text) ? 'Sudah ada di pool' : text;
+          chip.disabled = existingTexts.has(text);
+          chip.addEventListener('click', () => {
+            if (chip.disabled) return;
+            addChallenge(text);
+          });
+          presetGrid.appendChild(chip);
+        });
+        presetWrap.appendChild(presetGrid);
+        setupPanel.appendChild(presetWrap);
+      }
+
+      const addForm = document.createElement('form');
+      addForm.className = 'snl-challenge-add';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = 240;
+      input.placeholder = 'Atau tulis sendiri (max 240 karakter)…';
+      input.className = 'snl-challenge-input';
+      const addBtnEl = document.createElement('button');
+      addBtnEl.type = 'submit';
+      addBtnEl.className = 'snl-btn';
+      addBtnEl.textContent = 'Tambah';
+      addForm.appendChild(input);
+      addForm.appendChild(addBtnEl);
+      addForm.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        const val = input.value.trim();
+        if (!val) return;
+        addChallenge(val, () => { input.value = ''; });
+      });
+      setupPanel.appendChild(addForm);
+    }
+
     function renderCells(s) {
       for (let n = 1; n <= 100; n++) {
         const cell = cells[n];
         cell.className = 'snl-cell';
+        cell.title = '';
         if (s && s.ladders && s.ladders[n] !== undefined) cell.classList.add('ladder-foot');
         if (s && s.snakes && s.snakes[n] !== undefined) cell.classList.add('snake-head');
+        if (s && s.challengeTiles && s.challengeTiles[n] !== undefined) {
+          cell.classList.add('challenge-tile');
+          cell.title = 'Challenge';
+        }
         if (s && s.lastRoll && s.lastRoll.to === n) cell.classList.add('recent');
       }
     }
@@ -1496,6 +1786,49 @@
     function leave() {
       sharedSocket.emit('snakeladder:leave', { peer }, () => {});
     }
+    function addChallenge(text, done) {
+      sharedSocket.emit('snakeladder:challenge:add', { peer, text }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+        else if (typeof done === 'function') done();
+      });
+    }
+    function toggleChallenge(id) {
+      sharedSocket.emit('snakeladder:challenge:toggle', { peer, id }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function removeChallenge(id) {
+      sharedSocket.emit('snakeladder:challenge:remove', { peer, id }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function toggleReady(ready) {
+      sharedSocket.emit('snakeladder:challenge:ready', { peer, ready: !!ready }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+      });
+    }
+    function showChallengeModal(text, byUser, tile) {
+      modalLayer.classList.remove('hidden');
+      const forMe = byUser === me;
+      modalLayer.innerHTML = '';
+      const card = document.createElement('div');
+      card.className = 'snl-modal-card';
+      const title = document.createElement('div');
+      title.className = 'snl-modal-title';
+      title.textContent = forMe ? '🔥 Challenge untukmu @ petak ' + tile : '🔥 Challenge untuk ' + byUser + ' @ petak ' + tile;
+      const body = document.createElement('div');
+      body.className = 'snl-modal-body';
+      body.textContent = text;
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'snl-btn';
+      close.textContent = 'Oke, tutup';
+      close.addEventListener('click', () => { modalLayer.classList.add('hidden'); modalLayer.innerHTML = ''; });
+      card.appendChild(title);
+      card.appendChild(body);
+      card.appendChild(close);
+      modalLayer.appendChild(card);
+    }
 
     let hintTimer = null;
     function flashHint(msg) {
@@ -1540,7 +1873,12 @@
         const lr = next.lastRoll;
         playDiceAnim(lr.dice, () => {
           animating = true;
-          walkPawn(next, lr, () => { animating = false; currentSession = next; render(); });
+          walkPawn(next, lr, () => {
+            animating = false;
+            currentSession = next;
+            render();
+            if (lr.challenge) showChallengeModal(lr.challenge, lr.by, lr.to);
+          });
         });
         return;
       }

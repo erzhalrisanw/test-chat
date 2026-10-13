@@ -2278,8 +2278,40 @@ function remiSessionOf(username, payload) {
 
 const SNL_LADDERS = { 1: 38, 4: 14, 9: 31, 21: 42, 28: 84, 36: 44, 51: 67, 71: 91, 80: 100 };
 const SNL_SNAKES = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 73, 95: 75, 98: 78 };
+const SNL_CHALLENGE_PAIR = new Set(['occupatus', 'riz', 'cha']);
+const SNL_MAX_POOL = 40;
+const SNL_MAX_CHALLENGE_LEN = 240;
+const SNL_MAX_TILES = 8;
+const SNL_PRESETS_CIPHER = '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';
 
-function snlNewSession(peer, inviter, opponent) {
+function snlDecryptPresets() {
+  const key = process.env.CHALLENGE_PRESET_KEY;
+  if (!key) return [];
+  try {
+    const buf = Buffer.from(SNL_PRESETS_CIPHER, 'base64');
+    const salt = buf.slice(0, 16);
+    const iv = buf.slice(16, 28);
+    const tag = buf.slice(28, 44);
+    const ct = buf.slice(44);
+    const derived = crypto.scryptSync(key, salt, 32);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', derived, iv);
+    decipher.setAuthTag(tag);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
+    const arr = JSON.parse(pt);
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    console.warn('Failed to decrypt SNL presets:', err.message);
+    return [];
+  }
+}
+const SNL_PRESETS = snlDecryptPresets();
+
+function snlChallengesEnabled(a, b) {
+  return SNL_CHALLENGE_PAIR.has(a) && SNL_CHALLENGE_PAIR.has(b) && a !== b;
+}
+
+function snlNewSession(peer, inviter, opponent, carryPool) {
+  const enabled = snlChallengesEnabled(inviter, opponent);
   return {
     peer,
     status: 'pending',
@@ -2291,7 +2323,33 @@ function snlNewSession(peer, inviter, opponent) {
     winner: null,
     startedAt: new Date().toISOString(),
     resigned: null,
+    challengesEnabled: enabled,
+    challengePool: enabled ? (Array.isArray(carryPool) ? carryPool.map(snlCloneChallenge) : []) : null,
+    ready: enabled ? { [inviter]: false, [opponent]: false } : null,
+    challengeTiles: null,
   };
+}
+
+function snlCloneChallenge(c) {
+  return { id: c.id, text: c.text, author: c.author, approvals: Object.assign({}, c.approvals || {}) };
+}
+
+function snlPickChallengeTiles(session) {
+  const pool = session.challengePool || [];
+  const approved = pool.filter((c) => c.approvals[session.inviter] && c.approvals[session.opponent]);
+  if (approved.length === 0) return {};
+  const avoid = new Set([1, 100]);
+  for (const k of Object.keys(SNL_LADDERS)) { avoid.add(Number(k)); avoid.add(Number(SNL_LADDERS[k])); }
+  for (const k of Object.keys(SNL_SNAKES)) { avoid.add(Number(k)); avoid.add(Number(SNL_SNAKES[k])); }
+  const tiles = [];
+  for (let i = 2; i < 100; i++) if (!avoid.has(i)) tiles.push(i);
+  for (let i = tiles.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [tiles[i], tiles[j]] = [tiles[j], tiles[i]]; }
+  const chosen = approved.slice();
+  for (let i = chosen.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [chosen[i], chosen[j]] = [chosen[j], chosen[i]]; }
+  const count = Math.min(SNL_MAX_TILES, tiles.length, chosen.length);
+  const out = {};
+  for (let i = 0; i < count; i++) out[tiles[i]] = chosen[i].text;
+  return out;
 }
 
 function snlPublicState(session) {
@@ -2309,6 +2367,11 @@ function snlPublicState(session) {
     resigned: session.resigned || null,
     ladders: SNL_LADDERS,
     snakes: SNL_SNAKES,
+    challengesEnabled: !!session.challengesEnabled,
+    challengePool: session.challengePool ? session.challengePool.map(snlCloneChallenge) : null,
+    ready: session.ready ? Object.assign({}, session.ready) : null,
+    challengeTiles: session.challengeTiles ? Object.assign({}, session.challengeTiles) : null,
+    presets: session.challengesEnabled ? SNL_PRESETS.slice() : null,
   };
 }
 
@@ -3233,7 +3296,7 @@ io.on('connection', async (socket) => {
       if (typeof ack === 'function') ack({ error: 'Bukan penerima undangan' });
       return;
     }
-    session.status = 'active';
+    session.status = session.challengesEnabled ? 'setup' : 'active';
     session.startedAt = new Date().toISOString();
     emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
     if (typeof ack === 'function') ack({ ok: true, session: snlPublicState(session) });
@@ -3298,7 +3361,11 @@ io.on('connection', async (socket) => {
       }
       session.positions[username] = landed;
     }
-    session.lastRoll = { by: username, dice, from, to: landed, jumped };
+    let challenge = null;
+    if (session.challengeTiles && session.challengeTiles[landed] !== undefined && session.status !== 'done') {
+      challenge = session.challengeTiles[landed];
+    }
+    session.lastRoll = { by: username, dice, from, to: landed, jumped, challenge };
     if (session.status !== 'done') {
       if (dice !== 6) {
         const other = username === session.inviter ? session.opponent : session.inviter;
@@ -3326,11 +3393,87 @@ io.on('connection', async (socket) => {
     }
     const newInviter = username;
     const newOpponent = newInviter === session.inviter ? session.opponent : session.inviter;
-    const next = snlNewSession(peer, newInviter, newOpponent);
-    next.status = 'active';
+    const carryPool = session.challengesEnabled ? session.challengePool : null;
+    const next = snlNewSession(peer, newInviter, newOpponent, carryPool);
+    next.status = next.challengesEnabled ? 'setup' : 'active';
     snlSessions.set(peer, next);
     emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(next) });
     if (typeof ack === 'function') ack({ ok: true, session: snlPublicState(next) });
+  });
+
+  socket.on('snakeladder:challenge:add', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = snlSessions.get(peer);
+    if (!session || !session.challengesEnabled) { if (typeof ack === 'function') ack({ error: 'Challenge nonaktif' }); return; }
+    if (session.status !== 'setup') { if (typeof ack === 'function') ack({ error: 'Setup selesai' }); return; }
+    if (username !== session.inviter && username !== session.opponent) { if (typeof ack === 'function') ack({ error: 'Bukan peserta' }); return; }
+    const text = String((payload && payload.text) || '').trim().slice(0, SNL_MAX_CHALLENGE_LEN);
+    if (!text) { if (typeof ack === 'function') ack({ error: 'Teks kosong' }); return; }
+    if (session.challengePool.length >= SNL_MAX_POOL) { if (typeof ack === 'function') ack({ error: 'Pool penuh' }); return; }
+    const id = 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+    session.challengePool.push({
+      id,
+      text,
+      author: username,
+      approvals: { [session.inviter]: username === session.inviter, [session.opponent]: username === session.opponent },
+    });
+    session.ready[session.inviter] = false;
+    session.ready[session.opponent] = false;
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('snakeladder:challenge:toggle', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = snlSessions.get(peer);
+    if (!session || !session.challengesEnabled) { if (typeof ack === 'function') ack({ error: 'Challenge nonaktif' }); return; }
+    if (session.status !== 'setup') { if (typeof ack === 'function') ack({ error: 'Setup selesai' }); return; }
+    if (username !== session.inviter && username !== session.opponent) { if (typeof ack === 'function') ack({ error: 'Bukan peserta' }); return; }
+    const id = String((payload && payload.id) || '');
+    const entry = session.challengePool.find((c) => c.id === id);
+    if (!entry) { if (typeof ack === 'function') ack({ error: 'Challenge tidak ditemukan' }); return; }
+    entry.approvals[username] = !entry.approvals[username];
+    session.ready[session.inviter] = false;
+    session.ready[session.opponent] = false;
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('snakeladder:challenge:remove', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = snlSessions.get(peer);
+    if (!session || !session.challengesEnabled) { if (typeof ack === 'function') ack({ error: 'Challenge nonaktif' }); return; }
+    if (session.status !== 'setup') { if (typeof ack === 'function') ack({ error: 'Setup selesai' }); return; }
+    const id = String((payload && payload.id) || '');
+    const idx = session.challengePool.findIndex((c) => c.id === id);
+    if (idx === -1) { if (typeof ack === 'function') ack({ error: 'Challenge tidak ditemukan' }); return; }
+    if (session.challengePool[idx].author !== username) { if (typeof ack === 'function') ack({ error: 'Hanya penulis yang bisa hapus' }); return; }
+    session.challengePool.splice(idx, 1);
+    session.ready[session.inviter] = false;
+    session.ready[session.opponent] = false;
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('snakeladder:challenge:ready', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = snlSessions.get(peer);
+    if (!session || !session.challengesEnabled) { if (typeof ack === 'function') ack({ error: 'Challenge nonaktif' }); return; }
+    if (session.status !== 'setup') { if (typeof ack === 'function') ack({ error: 'Setup selesai' }); return; }
+    if (username !== session.inviter && username !== session.opponent) { if (typeof ack === 'function') ack({ error: 'Bukan peserta' }); return; }
+    session.ready[username] = !!(payload && payload.ready);
+    if (session.ready[session.inviter] && session.ready[session.opponent]) {
+      session.challengeTiles = snlPickChallengeTiles(session);
+      session.status = 'active';
+      session.turn = session.inviter;
+      session.lastRoll = null;
+    }
+    emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
   socket.on('snakeladder:leave', (payload, ack) => {
