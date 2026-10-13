@@ -1462,6 +1462,7 @@
       if (!s) {
         statusEl.textContent = 'Ajak peer main Ular Tangga.';
         addBtn('Undang peer', 'primary', invite);
+        addBtn('History 📂', 'secondary', showHistoryModal);
         return;
       }
       if (s.status === 'pending') {
@@ -1473,12 +1474,14 @@
           addBtn('Terima', 'primary', accept);
           addBtn('Tolak', 'secondary', decline);
         }
+        addBtn('History 📂', 'secondary', showHistoryModal);
       } else if (s.status === 'setup') {
         const other = me === s.inviter ? s.opponent : s.inviter;
         const myReady = !!(s.ready && s.ready[me]);
         const otherReady = !!(s.ready && s.ready[other]);
         statusEl.innerHTML = 'Pilih challenge yang disepakati berdua. ' + (otherReady ? '<b>' + escapeText(other) + '</b> sudah siap.' : '<b>' + escapeText(other) + '</b> belum siap.');
         addBtn(myReady ? 'Batal siap' : 'Siap main 🚀', myReady ? 'secondary' : 'primary', () => toggleReady(!myReady));
+        addBtn('History 📂', 'secondary', showHistoryModal);
         addBtn('Keluar', 'secondary', leave);
       } else if (s.status === 'active') {
         const isMyTurn = s.turn === me;
@@ -1488,14 +1491,14 @@
           : 'Giliran ' + pawnChip(s.turn) + ' <b>' + escapeText(s.turn) + '</b>' + (bonus ? ' <small>(bonus)</small>' : '');
         if (isMyTurn) addBtn('Lempar dadu 🎲', 'primary', roll);
         if (s.challengesEnabled) addBtn('Rekap 📜', 'secondary', openRecap);
-        addBtn('Game lalu 📂', 'secondary', showHistoryModal);
+        addBtn('History 📂', 'secondary', showHistoryModal);
         addBtn('Menyerah', 'secondary', leave);
       } else if (s.status === 'done') {
         if (s.winner === me) statusEl.innerHTML = 'Kamu menang! 🎉';
         else statusEl.innerHTML = '<b>' + escapeText(s.winner || 'peer') + '</b> menang. Coba lagi?';
         addBtn('Main lagi', 'primary', rematch);
         if (s.challengesEnabled) addBtn('Rekap 📜', 'secondary', openRecap);
-        addBtn('Game lalu 📂', 'secondary', showHistoryModal);
+        addBtn('History 📂', 'secondary', showHistoryModal);
         addBtn('Tutup', 'secondary', () => { leave(); });
       }
     }
@@ -2006,7 +2009,7 @@
       card.className = 'snl-modal-card snl-history-card';
       const title = document.createElement('div');
       title.className = 'snl-modal-title';
-      title.textContent = '📂 Game lalu';
+      title.textContent = '📂 History';
       const body = document.createElement('div');
       body.className = 'snl-modal-body';
       body.textContent = 'Memuat…';
