@@ -1408,6 +1408,8 @@
     actions.className = 'snl-actions';
     const setupPanel = document.createElement('div');
     setupPanel.className = 'snl-setup hidden';
+    const recapPanel = document.createElement('div');
+    recapPanel.className = 'snl-recap hidden';
     const modalLayer = document.createElement('div');
     modalLayer.className = 'snl-modal-layer hidden';
     wrap.appendChild(statusEl);
@@ -1415,6 +1417,7 @@
     wrap.appendChild(infoRow);
     wrap.appendChild(actions);
     wrap.appendChild(setupPanel);
+    wrap.appendChild(recapPanel);
     wrap.appendChild(modalLayer);
     rootEl.innerHTML = '';
     rootEl.appendChild(wrap);
@@ -1455,6 +1458,7 @@
       setupPanel.classList.toggle('hidden', !isSetup);
       infoRow.classList.toggle('hidden', !!isSetup);
       if (isSetup) renderSetup(s);
+      renderRecap(s);
       if (!s) {
         statusEl.textContent = 'Ajak peer main Ular Tangga.';
         addBtn('Undang peer', 'primary', invite);
@@ -1498,7 +1502,7 @@
       setupPanel.innerHTML = '';
       const intro = document.createElement('div');
       intro.className = 'snl-setup-intro';
-      intro.innerHTML = 'Masing-masing tulis challenge. Centang yang kamu setujui — hanya yang di-approve <b>kedua pemain</b> yang akan dipakai (max ' + 8 + ' petak).';
+      intro.innerHTML = 'Masing-masing tulis challenge. Centang yang kamu setujui — hanya yang di-approve <b>kedua pemain</b> yang akan dipakai (max ' + 16 + ' petak).';
       setupPanel.appendChild(intro);
 
       const list = document.createElement('div');
@@ -1599,6 +1603,50 @@
         addChallenge(val, () => { input.value = ''; });
       });
       setupPanel.appendChild(addForm);
+    }
+
+    function renderRecap(s) {
+      const log = s && Array.isArray(s.challengeLog) ? s.challengeLog : [];
+      if (!s || log.length === 0 || s.status === 'setup' || s.status === 'pending') {
+        recapPanel.classList.add('hidden');
+        recapPanel.innerHTML = '';
+        return;
+      }
+      recapPanel.classList.remove('hidden');
+      recapPanel.innerHTML = '';
+      const isDone = s.status === 'done';
+      const wrapEl = document.createElement('details');
+      wrapEl.className = 'snl-recap-wrap';
+      wrapEl.open = isDone;
+      const sum = document.createElement('summary');
+      sum.className = 'snl-recap-summary';
+      const countByMe = log.filter((e) => e.by === me).length;
+      const countByOther = log.length - countByMe;
+      const other = me === s.inviter ? s.opponent : s.inviter;
+      sum.innerHTML = (isDone ? '📜 Rekap challenge — ayo bayar!' : '📜 Rekap challenge')
+        + ' <small>(' + pawnChip(me) + ' ' + countByMe + ' · ' + pawnChip(other) + ' ' + countByOther + ')</small>';
+      wrapEl.appendChild(sum);
+      const list = document.createElement('ol');
+      list.className = 'snl-recap-list';
+      log.forEach((entry) => {
+        const li = document.createElement('li');
+        li.className = 'snl-recap-item' + (entry.by === me ? ' mine' : '');
+        const who = document.createElement('span');
+        who.className = 'snl-recap-who';
+        who.innerHTML = pawnChip(entry.by) + ' <b>' + escapeText(entry.by) + '</b>';
+        const tile = document.createElement('span');
+        tile.className = 'snl-recap-tile';
+        tile.textContent = 'petak ' + entry.tile;
+        const txt = document.createElement('div');
+        txt.className = 'snl-recap-text';
+        txt.textContent = entry.text;
+        li.appendChild(who);
+        li.appendChild(tile);
+        li.appendChild(txt);
+        list.appendChild(li);
+      });
+      wrapEl.appendChild(list);
+      recapPanel.appendChild(wrapEl);
     }
 
     function renderCells(s) {

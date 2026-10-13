@@ -5380,6 +5380,62 @@ textarea,
   font-size: 13px;
   min-width: 0;
 }
+.snl-recap {
+  width: min(360px, 92vw);
+}
+.snl-recap.hidden { display: none; }
+.snl-recap-wrap {
+  background: #fff;
+  border: 2px solid var(--toon-ink);
+  border-radius: 10px;
+  box-shadow: var(--toon-shadow-sm);
+  padding: 8px 10px;
+}
+.snl-recap-wrap[open] { background: #fff6c7; }
+.snl-recap-summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--toon-ink);
+  padding: 2px 0;
+  list-style: none;
+}
+.snl-recap-summary::-webkit-details-marker { display: none; }
+.snl-recap-summary small { font-weight: 500; opacity: 0.75; margin-left: 4px; }
+.snl-recap-list {
+  margin: 8px 0 0;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.snl-recap-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  background: #fff;
+  border: 2px solid var(--toon-ink);
+  border-radius: 8px;
+  box-shadow: var(--toon-shadow-sm);
+  font-size: 12px;
+}
+.snl-recap-item.mine { background: #ffe9a3; }
+.snl-recap-who { font-size: 11px; }
+.snl-recap-tile {
+  font-size: 11px;
+  opacity: 0.7;
+  justify-self: end;
+}
+.snl-recap-text {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  color: var(--toon-ink);
+  line-height: 1.4;
+  word-wrap: break-word;
+}
 .snl-modal-layer {
   position: fixed;
   inset: 0;

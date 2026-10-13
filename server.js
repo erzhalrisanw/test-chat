@@ -2281,7 +2281,8 @@ const SNL_SNAKES = { 16: 6, 47: 26, 49: 11, 56: 53, 62: 19, 64: 60, 87: 24, 93: 
 const SNL_CHALLENGE_PAIR = new Set(['occupatus', 'riz', 'cha']);
 const SNL_MAX_POOL = 40;
 const SNL_MAX_CHALLENGE_LEN = 240;
-const SNL_MAX_TILES = 8;
+const SNL_MAX_TILES = 16;
+const SNL_MIN_TILE_GAP = 5;
 const SNL_PRESETS_CIPHER = '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';
 
 function snlDecryptPresets() {
@@ -2327,6 +2328,7 @@ function snlNewSession(peer, inviter, opponent, carryPool) {
     challengePool: enabled ? (Array.isArray(carryPool) ? carryPool.map(snlCloneChallenge) : []) : null,
     ready: enabled ? { [inviter]: false, [opponent]: false } : null,
     challengeTiles: null,
+    challengeLog: enabled ? [] : null,
   };
 }
 
@@ -2341,14 +2343,25 @@ function snlPickChallengeTiles(session) {
   const avoid = new Set([1, 100]);
   for (const k of Object.keys(SNL_LADDERS)) { avoid.add(Number(k)); avoid.add(Number(SNL_LADDERS[k])); }
   for (const k of Object.keys(SNL_SNAKES)) { avoid.add(Number(k)); avoid.add(Number(SNL_SNAKES[k])); }
-  const tiles = [];
-  for (let i = 2; i < 100; i++) if (!avoid.has(i)) tiles.push(i);
-  for (let i = tiles.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [tiles[i], tiles[j]] = [tiles[j], tiles[i]]; }
+  const free = [];
+  for (let i = 2; i < 100; i++) if (!avoid.has(i)) free.push(i);
+  const target = Math.min(SNL_MAX_TILES, free.length, approved.length);
+  let picked = [];
+  for (let gap = SNL_MIN_TILE_GAP; gap >= 1; gap--) {
+    picked = [];
+    const shuffled = free.slice();
+    for (let i = shuffled.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]; }
+    for (const n of shuffled) {
+      if (picked.every((p) => Math.abs(p - n) >= gap)) picked.push(n);
+      if (picked.length >= target) break;
+    }
+    if (picked.length >= target) break;
+  }
   const chosen = approved.slice();
   for (let i = chosen.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [chosen[i], chosen[j]] = [chosen[j], chosen[i]]; }
-  const count = Math.min(SNL_MAX_TILES, tiles.length, chosen.length);
+  const count = Math.min(picked.length, chosen.length);
   const out = {};
-  for (let i = 0; i < count; i++) out[tiles[i]] = chosen[i].text;
+  for (let i = 0; i < count; i++) out[picked[i]] = chosen[i].text;
   return out;
 }
 
@@ -2371,6 +2384,7 @@ function snlPublicState(session) {
     challengePool: session.challengePool ? session.challengePool.map(snlCloneChallenge) : null,
     ready: session.ready ? Object.assign({}, session.ready) : null,
     challengeTiles: session.challengeTiles ? Object.assign({}, session.challengeTiles) : null,
+    challengeLog: session.challengeLog ? session.challengeLog.slice() : null,
     presets: session.challengesEnabled ? SNL_PRESETS.slice() : null,
   };
 }
@@ -3347,10 +3361,6 @@ io.on('connection', async (socket) => {
     let jumped = null;
     if (landed > 100) {
       landed = from;
-    } else if (landed === 100) {
-      session.positions[username] = 100;
-      session.status = 'done';
-      session.winner = username;
     } else {
       if (SNL_LADDERS[landed] !== undefined) {
         jumped = { kind: 'ladder', from: landed, to: SNL_LADDERS[landed] };
@@ -3360,10 +3370,17 @@ io.on('connection', async (socket) => {
         landed = SNL_SNAKES[landed];
       }
       session.positions[username] = landed;
+      if (landed === 100) {
+        session.status = 'done';
+        session.winner = username;
+      }
     }
     let challenge = null;
     if (session.challengeTiles && session.challengeTiles[landed] !== undefined && session.status !== 'done') {
       challenge = session.challengeTiles[landed];
+      if (session.challengeLog) {
+        session.challengeLog.push({ tile: landed, text: challenge, by: username, at: new Date().toISOString() });
+      }
     }
     session.lastRoll = { by: username, dice, from, to: landed, jumped, challenge };
     if (session.status !== 'done') {
