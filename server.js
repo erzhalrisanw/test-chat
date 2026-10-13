@@ -275,6 +275,22 @@ async function initDb() {
       }
     }
   }
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS snl_games (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      peer TEXT NOT NULL,
+      inviter TEXT NOT NULL,
+      opponent TEXT NOT NULL,
+      winner TEXT,
+      resigned TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT NOT NULL,
+      challenges_enabled INTEGER NOT NULL DEFAULT 0,
+      challenge_log TEXT,
+      approved_pool TEXT
+    )
+  `);
+  await db.execute(`CREATE INDEX IF NOT EXISTS idx_snl_games_peer_id ON snl_games (peer, id DESC)`);
 }
 
 async function getAppKv(key) {
@@ -2365,6 +2381,36 @@ function snlPickChallengeTiles(session) {
   return out;
 }
 
+function snlApprovedPoolTexts(session) {
+  if (!session || !session.challengesEnabled || !Array.isArray(session.challengePool)) return [];
+  return session.challengePool
+    .filter((c) => c.approvals && c.approvals[session.inviter] && c.approvals[session.opponent])
+    .map((c) => c.text);
+}
+
+function snlPersistGame(session) {
+  if (!session || session._persisted) return;
+  session._persisted = true;
+  const log = Array.isArray(session.challengeLog) ? session.challengeLog : [];
+  const approved = snlApprovedPoolTexts(session);
+  db.execute({
+    sql: `INSERT INTO snl_games (peer, inviter, opponent, winner, resigned, started_at, finished_at, challenges_enabled, challenge_log, approved_pool)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      session.peer,
+      session.inviter,
+      session.opponent,
+      session.winner || null,
+      session.resigned || null,
+      session.startedAt || new Date().toISOString(),
+      new Date().toISOString(),
+      session.challengesEnabled ? 1 : 0,
+      log.length ? JSON.stringify(log) : null,
+      approved.length ? JSON.stringify(approved) : null,
+    ],
+  }).catch((err) => console.warn('snlPersistGame failed:', err.message));
+}
+
 function snlPublicState(session) {
   if (!session) return null;
   return {
@@ -3373,6 +3419,7 @@ io.on('connection', async (socket) => {
       if (landed === 100) {
         session.status = 'done';
         session.winner = username;
+        snlPersistGame(session);
       }
     }
     let challenge = null;
@@ -3512,12 +3559,139 @@ io.on('connection', async (socket) => {
       session.status = 'done';
       session.winner = username === session.inviter ? session.opponent : session.inviter;
       session.resigned = username;
+      snlPersistGame(session);
       emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session), reason: 'resigned', by: username });
     } else {
       snlSessions.delete(peer);
       emitToThread(peer, 'snakeladder:state', { peer, session: null, reason: 'left', by: username });
     }
     if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  socket.on('snakeladder:history', async (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    try {
+      const r = await db.execute({
+        sql: `SELECT id, inviter, opponent, winner, resigned, started_at, finished_at, challenges_enabled,
+                     COALESCE(json_array_length(challenge_log), 0) AS log_count
+              FROM snl_games WHERE peer = ? ORDER BY id DESC LIMIT 30`,
+        args: [peer],
+      });
+      const games = r.rows.map((row) => ({
+        id: Number(row.id),
+        inviter: String(row.inviter),
+        opponent: String(row.opponent),
+        winner: row.winner ? String(row.winner) : null,
+        resigned: row.resigned ? String(row.resigned) : null,
+        startedAt: String(row.started_at),
+        finishedAt: String(row.finished_at),
+        challengesEnabled: !!Number(row.challenges_enabled),
+        logCount: Number(row.log_count || 0),
+      }));
+      if (typeof ack === 'function') ack({ ok: true, games });
+    } catch (err) {
+      if (typeof ack === 'function') ack({ error: err.message || 'DB error' });
+    }
+  });
+
+  socket.on('snakeladder:recap', async (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const id = Number(payload && payload.id);
+    if (!Number.isFinite(id) || id <= 0) { if (typeof ack === 'function') ack({ error: 'ID tidak valid' }); return; }
+    try {
+      const r = await db.execute({
+        sql: `SELECT id, inviter, opponent, winner, resigned, started_at, finished_at, challenge_log
+              FROM snl_games WHERE id = ? AND peer = ?`,
+        args: [id, peer],
+      });
+      if (r.rows.length === 0) { if (typeof ack === 'function') ack({ error: 'Rekap tidak ditemukan' }); return; }
+      const row = r.rows[0];
+      let log = [];
+      if (row.challenge_log) {
+        try { log = JSON.parse(String(row.challenge_log)); } catch (_) { log = []; }
+      }
+      if (typeof ack === 'function') ack({
+        ok: true,
+        game: {
+          id: Number(row.id),
+          inviter: String(row.inviter),
+          opponent: String(row.opponent),
+          winner: row.winner ? String(row.winner) : null,
+          resigned: row.resigned ? String(row.resigned) : null,
+          startedAt: String(row.started_at),
+          finishedAt: String(row.finished_at),
+          challengeLog: Array.isArray(log) ? log : [],
+        },
+      });
+    } catch (err) {
+      if (typeof ack === 'function') ack({ error: err.message || 'DB error' });
+    }
+  });
+
+  socket.on('snakeladder:challenges:recent', async (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    try {
+      const r = await db.execute({
+        sql: `SELECT approved_pool FROM snl_games
+              WHERE peer = ? AND challenges_enabled = 1 AND approved_pool IS NOT NULL
+              ORDER BY id DESC LIMIT 10`,
+        args: [peer],
+      });
+      const seen = new Set();
+      const texts = [];
+      for (const row of r.rows) {
+        let arr = [];
+        try { arr = JSON.parse(String(row.approved_pool)); } catch (_) {}
+        if (!Array.isArray(arr)) continue;
+        for (const t of arr) {
+          const key = String(t || '').trim();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          texts.push(key);
+          if (texts.length >= 60) break;
+        }
+        if (texts.length >= 60) break;
+      }
+      if (typeof ack === 'function') ack({ ok: true, texts });
+    } catch (err) {
+      if (typeof ack === 'function') ack({ error: err.message || 'DB error' });
+    }
+  });
+
+  socket.on('snakeladder:challenge:importMany', (payload, ack) => {
+    const peer = resolvePeer(username, payload && payload.peer);
+    if (!peer) { if (typeof ack === 'function') ack({ error: 'Invalid peer' }); return; }
+    const session = snlSessions.get(peer);
+    if (!session || !session.challengesEnabled) { if (typeof ack === 'function') ack({ error: 'Challenge nonaktif' }); return; }
+    if (session.status !== 'setup') { if (typeof ack === 'function') ack({ error: 'Setup selesai' }); return; }
+    if (username !== session.inviter && username !== session.opponent) { if (typeof ack === 'function') ack({ error: 'Bukan peserta' }); return; }
+    const rawList = (payload && Array.isArray(payload.texts)) ? payload.texts : [];
+    if (rawList.length === 0) { if (typeof ack === 'function') ack({ ok: true, added: 0 }); return; }
+    const existing = new Set(session.challengePool.map((c) => c.text));
+    let added = 0;
+    for (const raw of rawList) {
+      if (session.challengePool.length >= SNL_MAX_POOL) break;
+      const text = String(raw || '').trim().slice(0, SNL_MAX_CHALLENGE_LEN);
+      if (!text || existing.has(text)) continue;
+      const id = 'c' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+      session.challengePool.push({
+        id,
+        text,
+        author: username,
+        approvals: { [session.inviter]: username === session.inviter, [session.opponent]: username === session.opponent },
+      });
+      existing.add(text);
+      added++;
+    }
+    if (added > 0) {
+      session.ready[session.inviter] = false;
+      session.ready[session.opponent] = false;
+      emitToThread(peer, 'snakeladder:state', { peer, session: snlPublicState(session) });
+    }
+    if (typeof ack === 'function') ack({ ok: true, added });
   });
 
   // ============ Remi Joker ============

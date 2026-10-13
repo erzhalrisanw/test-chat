@@ -1487,11 +1487,15 @@
           ? 'Giliranmu ' + pawnChip(me) + (bonus ? ' <small>(bonus, kena 6)</small>' : '')
           : 'Giliran ' + pawnChip(s.turn) + ' <b>' + escapeText(s.turn) + '</b>' + (bonus ? ' <small>(bonus)</small>' : '');
         if (isMyTurn) addBtn('Lempar dadu 🎲', 'primary', roll);
+        if (s.challengesEnabled) addBtn('Rekap 📜', 'secondary', openRecap);
+        addBtn('Game lalu 📂', 'secondary', showHistoryModal);
         addBtn('Menyerah', 'secondary', leave);
       } else if (s.status === 'done') {
         if (s.winner === me) statusEl.innerHTML = 'Kamu menang! 🎉';
         else statusEl.innerHTML = '<b>' + escapeText(s.winner || 'peer') + '</b> menang. Coba lagi?';
         addBtn('Main lagi', 'primary', rematch);
+        if (s.challengesEnabled) addBtn('Rekap 📜', 'secondary', openRecap);
+        addBtn('Game lalu 📂', 'secondary', showHistoryModal);
         addBtn('Tutup', 'secondary', () => { leave(); });
       }
     }
@@ -1603,50 +1607,153 @@
         addChallenge(val, () => { input.value = ''; });
       });
       setupPanel.appendChild(addForm);
+
+      const reuseWrap = document.createElement('details');
+      reuseWrap.className = 'snl-reuse-wrap';
+      const reuseSum = document.createElement('summary');
+      reuseSum.className = 'snl-reuse-summary';
+      reuseSum.textContent = '♻️ Dari game sebelumnya';
+      reuseWrap.appendChild(reuseSum);
+      const reuseBody = document.createElement('div');
+      reuseBody.className = 'snl-reuse-body';
+      reuseBody.textContent = 'Memuat…';
+      reuseWrap.appendChild(reuseBody);
+      setupPanel.appendChild(reuseWrap);
+      reuseWrap.addEventListener('toggle', () => {
+        if (!reuseWrap.open || reuseBody.dataset.loaded === '1') return;
+        fetchRecentChallenges((texts) => {
+          reuseBody.dataset.loaded = '1';
+          renderReuseList(reuseBody, texts);
+        });
+      });
+    }
+
+    function renderReuseList(container, texts) {
+      container.innerHTML = '';
+      const pool = (currentSession && currentSession.challengePool) || [];
+      const existing = new Set(pool.map((c) => c.text));
+      const fresh = texts.filter((t) => !existing.has(t));
+      if (fresh.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'snl-reuse-empty';
+        empty.textContent = texts.length === 0
+          ? 'Belum ada riwayat.'
+          : 'Semua challenge dari game lalu sudah ada di pool.';
+        container.appendChild(empty);
+        return;
+      }
+      const selected = new Set();
+      const list = document.createElement('div');
+      list.className = 'snl-reuse-list';
+      const actions = document.createElement('div');
+      actions.className = 'snl-reuse-actions';
+      const importBtn = document.createElement('button');
+      importBtn.type = 'button';
+      importBtn.className = 'snl-btn';
+      importBtn.textContent = 'Import 0';
+      importBtn.disabled = true;
+      const selectAll = document.createElement('button');
+      selectAll.type = 'button';
+      selectAll.className = 'snl-btn secondary';
+      selectAll.textContent = 'Pilih semua';
+      fresh.forEach((text, idx) => {
+        const row = document.createElement('label');
+        row.className = 'snl-reuse-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = String(idx);
+        const span = document.createElement('span');
+        span.textContent = text;
+        cb.addEventListener('change', () => {
+          if (cb.checked) selected.add(idx); else selected.delete(idx);
+          importBtn.textContent = 'Import ' + selected.size;
+          importBtn.disabled = selected.size === 0;
+        });
+        row.appendChild(cb);
+        row.appendChild(span);
+        list.appendChild(row);
+      });
+      selectAll.addEventListener('click', () => {
+        const boxes = list.querySelectorAll('input[type="checkbox"]');
+        const allOn = selected.size === fresh.length;
+        boxes.forEach((cb, i) => {
+          cb.checked = !allOn;
+          if (!allOn) selected.add(i); else selected.delete(i);
+        });
+        importBtn.textContent = 'Import ' + selected.size;
+        importBtn.disabled = selected.size === 0;
+        selectAll.textContent = allOn ? 'Pilih semua' : 'Batal pilih';
+      });
+      importBtn.addEventListener('click', () => {
+        const picks = Array.from(selected).map((i) => fresh[i]);
+        importChallenges(picks);
+      });
+      actions.appendChild(selectAll);
+      actions.appendChild(importBtn);
+      container.appendChild(list);
+      container.appendChild(actions);
     }
 
     function renderRecap(s) {
       const log = s && Array.isArray(s.challengeLog) ? s.challengeLog : [];
-      if (!s || log.length === 0 || s.status === 'setup' || s.status === 'pending') {
+      const enabled = !!(s && s.challengesEnabled);
+      const active = s && (s.status === 'active' || s.status === 'done');
+      if (!enabled || !active) {
         recapPanel.classList.add('hidden');
         recapPanel.innerHTML = '';
         return;
       }
+      const prev = recapPanel.querySelector('details.snl-recap-wrap');
+      const prevOpen = prev ? prev.open : null;
       recapPanel.classList.remove('hidden');
       recapPanel.innerHTML = '';
       const isDone = s.status === 'done';
       const wrapEl = document.createElement('details');
       wrapEl.className = 'snl-recap-wrap';
-      wrapEl.open = isDone;
+      wrapEl.open = prevOpen !== null ? prevOpen : (isDone && log.length > 0);
       const sum = document.createElement('summary');
       sum.className = 'snl-recap-summary';
       const countByMe = log.filter((e) => e.by === me).length;
       const countByOther = log.length - countByMe;
       const other = me === s.inviter ? s.opponent : s.inviter;
-      sum.innerHTML = (isDone ? '📜 Rekap challenge — ayo bayar!' : '📜 Rekap challenge')
+      sum.innerHTML = (isDone && log.length > 0 ? '📜 Rekap challenge — ayo bayar!' : '📜 Rekap challenge')
         + ' <small>(' + pawnChip(me) + ' ' + countByMe + ' · ' + pawnChip(other) + ' ' + countByOther + ')</small>';
       wrapEl.appendChild(sum);
-      const list = document.createElement('ol');
-      list.className = 'snl-recap-list';
-      log.forEach((entry) => {
-        const li = document.createElement('li');
-        li.className = 'snl-recap-item' + (entry.by === me ? ' mine' : '');
-        const who = document.createElement('span');
-        who.className = 'snl-recap-who';
-        who.innerHTML = pawnChip(entry.by) + ' <b>' + escapeText(entry.by) + '</b>';
-        const tile = document.createElement('span');
-        tile.className = 'snl-recap-tile';
-        tile.textContent = 'petak ' + entry.tile;
-        const txt = document.createElement('div');
-        txt.className = 'snl-recap-text';
-        txt.textContent = entry.text;
-        li.appendChild(who);
-        li.appendChild(tile);
-        li.appendChild(txt);
-        list.appendChild(li);
-      });
-      wrapEl.appendChild(list);
+      if (log.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'snl-recap-empty';
+        empty.textContent = 'Belum ada challenge yang kena.';
+        wrapEl.appendChild(empty);
+      } else {
+        const list = document.createElement('ol');
+        list.className = 'snl-recap-list';
+        log.forEach((entry) => {
+          const li = document.createElement('li');
+          li.className = 'snl-recap-item' + (entry.by === me ? ' mine' : '');
+          const who = document.createElement('span');
+          who.className = 'snl-recap-who';
+          who.innerHTML = pawnChip(entry.by) + ' <b>' + escapeText(entry.by) + '</b>';
+          const tile = document.createElement('span');
+          tile.className = 'snl-recap-tile';
+          tile.textContent = 'petak ' + entry.tile;
+          const txt = document.createElement('div');
+          txt.className = 'snl-recap-text';
+          txt.textContent = entry.text;
+          li.appendChild(who);
+          li.appendChild(tile);
+          li.appendChild(txt);
+          list.appendChild(li);
+        });
+        wrapEl.appendChild(list);
+      }
       recapPanel.appendChild(wrapEl);
+    }
+
+    function openRecap() {
+      const details = recapPanel.querySelector('details.snl-recap-wrap');
+      if (!details) return;
+      details.open = true;
+      details.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
     function renderCells(s) {
@@ -1878,6 +1985,175 @@
       modalLayer.appendChild(card);
     }
 
+    function closeModal() {
+      modalLayer.classList.add('hidden');
+      modalLayer.innerHTML = '';
+    }
+
+    function formatHistoryDate(iso) {
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return iso;
+        const pad = (n) => String(n).padStart(2, '0');
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      } catch (_) { return String(iso || ''); }
+    }
+
+    function showHistoryModal() {
+      modalLayer.classList.remove('hidden');
+      modalLayer.innerHTML = '';
+      const card = document.createElement('div');
+      card.className = 'snl-modal-card snl-history-card';
+      const title = document.createElement('div');
+      title.className = 'snl-modal-title';
+      title.textContent = '📂 Game lalu';
+      const body = document.createElement('div');
+      body.className = 'snl-modal-body';
+      body.textContent = 'Memuat…';
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'snl-btn secondary';
+      close.textContent = 'Tutup';
+      close.addEventListener('click', closeModal);
+      card.appendChild(title);
+      card.appendChild(body);
+      card.appendChild(close);
+      modalLayer.appendChild(card);
+      sharedSocket.emit('snakeladder:history', { peer }, (resp) => {
+        if (!resp || resp.error) {
+          body.textContent = (resp && resp.error) || 'Gagal memuat.';
+          return;
+        }
+        const games = Array.isArray(resp.games) ? resp.games : [];
+        if (games.length === 0) {
+          body.textContent = 'Belum ada game selesai.';
+          return;
+        }
+        body.innerHTML = '';
+        const list = document.createElement('ol');
+        list.className = 'snl-history-list';
+        games.forEach((g) => {
+          const li = document.createElement('li');
+          li.className = 'snl-history-item';
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'snl-history-btn';
+          const head = document.createElement('div');
+          head.className = 'snl-history-head';
+          const winnerLabel = g.winner
+            ? ((g.resigned ? '🏳️ ' : '🏆 ') + escapeText(g.winner) + (g.winner === me ? ' (kamu)' : ''))
+            : '—';
+          head.innerHTML = '<b>' + winnerLabel + '</b> <small>' + escapeText(formatHistoryDate(g.finishedAt)) + '</small>';
+          const meta = document.createElement('div');
+          meta.className = 'snl-history-meta';
+          meta.textContent = (g.challengesEnabled ? ('📜 ' + (g.logCount || 0) + ' challenge') : 'tanpa challenge');
+          btn.appendChild(head);
+          btn.appendChild(meta);
+          btn.addEventListener('click', () => openRecapModal(g.id));
+          li.appendChild(btn);
+          list.appendChild(li);
+        });
+        body.appendChild(list);
+      });
+    }
+
+    function openRecapModal(id) {
+      modalLayer.classList.remove('hidden');
+      modalLayer.innerHTML = '';
+      const card = document.createElement('div');
+      card.className = 'snl-modal-card snl-history-card';
+      const title = document.createElement('div');
+      title.className = 'snl-modal-title';
+      title.textContent = '📜 Rekap';
+      const body = document.createElement('div');
+      body.className = 'snl-modal-body';
+      body.textContent = 'Memuat…';
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'snl-btn secondary';
+      back.textContent = '← Daftar';
+      back.addEventListener('click', showHistoryModal);
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'snl-btn';
+      close.textContent = 'Tutup';
+      close.addEventListener('click', closeModal);
+      const btnRow = document.createElement('div');
+      btnRow.className = 'snl-history-actions';
+      btnRow.appendChild(back);
+      btnRow.appendChild(close);
+      card.appendChild(title);
+      card.appendChild(body);
+      card.appendChild(btnRow);
+      modalLayer.appendChild(card);
+      sharedSocket.emit('snakeladder:recap', { peer, id }, (resp) => {
+        if (!resp || resp.error) {
+          body.textContent = (resp && resp.error) || 'Gagal memuat.';
+          return;
+        }
+        const g = resp.game || {};
+        const log = Array.isArray(g.challengeLog) ? g.challengeLog : [];
+        title.textContent = '📜 Rekap · ' + formatHistoryDate(g.finishedAt);
+        body.innerHTML = '';
+        const header = document.createElement('div');
+        header.className = 'snl-history-header';
+        const winner = g.winner
+          ? ((g.resigned ? '🏳️ ' : '🏆 ') + '<b>' + escapeText(g.winner) + '</b>' + (g.winner === me ? ' (kamu)' : '') + ' menang')
+          : 'Tidak ada pemenang';
+        header.innerHTML = winner;
+        body.appendChild(header);
+        if (log.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'snl-recap-empty';
+          empty.textContent = 'Tidak ada challenge yang kena.';
+          body.appendChild(empty);
+          return;
+        }
+        const list = document.createElement('ol');
+        list.className = 'snl-recap-list snl-history-recap';
+        log.forEach((entry) => {
+          const li = document.createElement('li');
+          li.className = 'snl-recap-item' + (entry.by === me ? ' mine' : '');
+          const who = document.createElement('span');
+          who.className = 'snl-recap-who';
+          who.innerHTML = '<b>' + escapeText(entry.by) + '</b>';
+          const tile = document.createElement('span');
+          tile.className = 'snl-recap-tile';
+          tile.textContent = 'petak ' + entry.tile;
+          const txt = document.createElement('div');
+          txt.className = 'snl-recap-text';
+          txt.textContent = entry.text;
+          li.appendChild(who);
+          li.appendChild(tile);
+          li.appendChild(txt);
+          list.appendChild(li);
+        });
+        body.appendChild(list);
+      });
+    }
+
+    function importChallenges(texts) {
+      if (!Array.isArray(texts) || texts.length === 0) return;
+      sharedSocket.emit('snakeladder:challenge:importMany', { peer, texts }, (resp) => {
+        if (resp && resp.error) flashHint(resp.error);
+        else if (resp && typeof resp.added === 'number') flashHint('+ ' + resp.added + ' challenge');
+      });
+    }
+
+    let recentCache = null;
+    let recentLoading = false;
+    function fetchRecentChallenges(cb) {
+      if (recentCache) { cb(recentCache); return; }
+      if (recentLoading) return;
+      recentLoading = true;
+      sharedSocket.emit('snakeladder:challenges:recent', { peer }, (resp) => {
+        recentLoading = false;
+        const list = (resp && resp.ok && Array.isArray(resp.texts)) ? resp.texts : [];
+        recentCache = list;
+        cb(list);
+      });
+    }
+
     let hintTimer = null;
     function flashHint(msg) {
       hintEl.textContent = msg;
@@ -1915,6 +2191,9 @@
     function onState(payload) {
       if (!payload || payload.peer !== peer) return;
       const next = payload.session || null;
+      const prevStatus = currentSession && currentSession.status;
+      const nextStatus = next && next.status;
+      if (prevStatus !== 'done' && nextStatus === 'done') recentCache = null;
       const prevKey = rollKey(currentSession && currentSession.lastRoll);
       const nextKey = rollKey(next && next.lastRoll);
       if (next && next.lastRoll && nextKey && nextKey !== prevKey) {

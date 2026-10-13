@@ -5402,6 +5402,14 @@ textarea,
 }
 .snl-recap-summary::-webkit-details-marker { display: none; }
 .snl-recap-summary small { font-weight: 500; opacity: 0.75; margin-left: 4px; }
+.snl-recap-empty {
+  margin: 8px 0 0;
+  padding: 10px;
+  font-size: 12px;
+  color: var(--toon-ink);
+  opacity: 0.7;
+  text-align: center;
+}
 .snl-recap-list {
   margin: 8px 0 0;
   padding: 0 0 0 18px;
@@ -5479,6 +5487,98 @@ textarea,
   word-break: break-word;
 }
 .snl-info.hidden { display: none; }
+
+.snl-history-card { width: min(440px, 100%); max-height: 80vh; }
+.snl-history-card .snl-modal-body {
+  background: #fff;
+  border: 2px solid var(--toon-ink);
+  border-style: solid;
+  padding: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.snl-history-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.snl-history-item { margin: 0; }
+.snl-history-btn {
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 2px solid var(--toon-ink);
+  border-radius: 8px;
+  box-shadow: var(--toon-shadow-sm);
+  padding: 8px 10px;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.snl-history-btn:hover { background: #fff6c7; }
+.snl-history-head { font-size: 13px; color: var(--toon-ink); }
+.snl-history-head small { font-weight: 400; opacity: 0.7; margin-left: 6px; }
+.snl-history-meta { font-size: 11px; opacity: 0.75; }
+.snl-history-header {
+  font-size: 13px;
+  color: var(--toon-ink);
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+.snl-history-recap { padding-left: 20px; max-height: none; }
+.snl-history-actions { display: flex; gap: 8px; }
+.snl-history-actions .snl-btn { flex: 1; }
+
+.snl-reuse-wrap {
+  background: #fff;
+  border: 2px solid var(--toon-ink);
+  border-radius: 10px;
+  box-shadow: var(--toon-shadow-sm);
+  padding: 8px 10px;
+  margin-top: 8px;
+}
+.snl-reuse-summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--toon-ink);
+  list-style: none;
+}
+.snl-reuse-summary::-webkit-details-marker { display: none; }
+.snl-reuse-body { margin-top: 8px; }
+.snl-reuse-empty { font-size: 12px; opacity: 0.7; padding: 6px; text-align: center; }
+.snl-reuse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.snl-reuse-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #fffdf4;
+  border: 1.5px solid var(--toon-ink);
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.snl-reuse-item input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; }
+.snl-reuse-item span { flex: 1; word-break: break-word; }
+.snl-reuse-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.snl-reuse-actions .snl-btn { flex: 1; }
 
 .copy-toast {
   position: fixed;
