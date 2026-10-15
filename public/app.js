@@ -339,7 +339,7 @@ const galleryModal = document.getElementById('gallery-modal');
 const galleryGrid = document.getElementById('gallery-grid');
 const galleryClose = document.getElementById('gallery-close');
 const galleryEmpty = document.getElementById('gallery-empty');
-const GALLERY_ALLOWED = new Set(['occupatus', 'london']);
+const GALLERY_ALLOWED = new Set(['occupatus', 'london', 'riz']);
 const HUB_USER = 'occupatus';
 const DEFAULT_PEER = 'mutatio';
 let currentPeer = null;
@@ -3539,10 +3539,19 @@ async function jumpToMessage(targetId) {
   var targetNum = Number(targetId);
   var el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
   var safety = 0;
-  while (!el && hasMoreHistory && oldestLoadedId && targetNum < Number(oldestLoadedId) && safety < 100) {
-    safety++;
-    await loadMoreHistory();
-    el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+  var showedLoader = false;
+  try {
+    while (!el && hasMoreHistory && oldestLoadedId && targetNum < Number(oldestLoadedId) && safety < 100) {
+      if (!showedLoader && messagesLoadingEl) {
+        messagesLoadingEl.classList.remove('hidden');
+        showedLoader = true;
+      }
+      safety++;
+      await loadMoreHistory();
+      el = messagesEl.querySelector('.msg[data-id="' + targetId + '"]');
+    }
+  } finally {
+    if (showedLoader && messagesLoadingEl) messagesLoadingEl.classList.add('hidden');
   }
   if (!el) return;
   // Scroll messages container to center the target element
@@ -3645,9 +3654,9 @@ function loadMoreHistory() {
   if (!socket || loadingMore || !hasMoreHistory || !oldestLoadedId || !currentPeer) return Promise.resolve();
   loadingMore = true;
   const loader = document.createElement('div');
-  loader.className = 'msg system';
+  loader.className = 'msg system history-loader';
   loader.id = 'history-loader';
-  loader.textContent = 'Loading older messages...';
+  loader.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Loading older messages...</span>';
   messagesEl.insertBefore(loader, messagesEl.firstChild);
   const prevScrollTop = messagesEl.scrollTop;
   const prevScrollHeight = messagesEl.scrollHeight;
@@ -4294,9 +4303,7 @@ chatForm.addEventListener('submit', function(e) {
   msgInput.focus();
 });
 
-fileInput.addEventListener('change', async function() {
-  var file = fileInput.files && fileInput.files[0];
-  fileInput.value = '';
+async function handleAttachmentFile(file) {
   if (!file) return;
   if (file.type.startsWith('video/')) {
     setPendingVideo(file);
@@ -4324,6 +4331,27 @@ fileInput.addEventListener('change', async function() {
     msgInput.focus();
   } catch (err) {
     alert('Failed to prepare image: ' + ((err && err.message) || err));
+  }
+}
+
+fileInput.addEventListener('change', function() {
+  var file = fileInput.files && fileInput.files[0];
+  fileInput.value = '';
+  handleAttachmentFile(file);
+});
+
+msgInput.addEventListener('paste', function(e) {
+  var items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    if (item.kind === 'file' && item.type.startsWith('image/')) {
+      var file = item.getAsFile();
+      if (!file) continue;
+      e.preventDefault();
+      handleAttachmentFile(file);
+      return;
+    }
   }
 });
 
@@ -5544,7 +5572,7 @@ function renderSearchList() {
     return;
   }
   if (searchState.loading && !searchState.items.length) {
-    searchStateEl.textContent = 'Mencari…';
+    searchStateEl.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Mencari…</span>';
     searchStateEl.classList.remove('hidden');
     searchListEl.classList.add('hidden');
     searchLoadMoreBtn.classList.add('hidden');
@@ -5579,6 +5607,8 @@ function renderSearchList() {
   else searchLoadMoreBtn.classList.add('hidden');
 }
 
+const SEARCH_LOAD_MORE_LABEL = 'Muat hasil lebih lama';
+
 async function runSearch(append) {
   const peer = searchState.peer;
   const q = searchState.q;
@@ -5588,6 +5618,11 @@ async function runSearch(append) {
   const reqId = ++searchState.reqId;
   searchState.loading = true;
   if (!append) renderSearchList();
+  else if (searchLoadMoreBtn) {
+    searchLoadMoreBtn.disabled = true;
+    searchLoadMoreBtn.classList.add('loading');
+    searchLoadMoreBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Memuat…</span>';
+  }
   const params = new URLSearchParams({ peer, q });
   if (append && searchState.items.length) {
     params.set('before', String(searchState.items[searchState.items.length - 1].id));
@@ -5613,6 +5648,11 @@ async function runSearch(append) {
     if (searchLoadMoreBtn) searchLoadMoreBtn.classList.add('hidden');
   } finally {
     if (reqId === searchState.reqId) searchState.loading = false;
+    if (searchLoadMoreBtn) {
+      searchLoadMoreBtn.disabled = false;
+      searchLoadMoreBtn.classList.remove('loading');
+      searchLoadMoreBtn.textContent = SEARCH_LOAD_MORE_LABEL;
+    }
   }
 }
 
@@ -6015,6 +6055,7 @@ async function loadGalleryPage(page) {
   galleryLoading = true;
   var loadingEl = document.getElementById('gallery-loading');
   if (loadingEl) loadingEl.classList.remove('hidden');
+  galleryGrid.classList.add('hidden');
   galleryEmpty.classList.add('hidden');
   try {
     var url = '/gallery?limit=' + GALLERY_PAGE_SIZE + '&page=' + page + '&peer=' + encodeURIComponent(currentPeer);
@@ -6037,6 +6078,7 @@ async function loadGalleryPage(page) {
   } finally {
     galleryLoading = false;
     if (loadingEl) loadingEl.classList.add('hidden');
+    galleryGrid.classList.remove('hidden');
   }
 }
 

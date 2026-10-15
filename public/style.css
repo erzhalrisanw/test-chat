@@ -5894,7 +5894,16 @@ textarea,
   padding: 2px 4px;
 }
 #search-clear:hover { opacity: 1; }
-.search-state { text-align: center; padding: 12px 0; font-weight: 600; opacity: 0.8; }
+.search-state { text-align: center; padding: 12px 0; font-weight: 600; opacity: 0.8; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.search-state .spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(var(--ink-rgb),0.2);
+  border-top-color: var(--toon-pink);
+  border-radius: 50%;
+  animation: gallery-spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
 .search-list {
   list-style: none;
   padding: 0;
@@ -5944,6 +5953,37 @@ textarea,
   box-shadow: 0 2px 0 0 var(--toon-ink);
 }
 .search-load-more:active { transform: translateY(2px); box-shadow: 0 0 0 0 var(--toon-ink); }
+.search-load-more.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: default;
+  opacity: 0.85;
+}
+.search-load-more .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(var(--ink-rgb),0.2);
+  border-top-color: var(--toon-pink);
+  border-radius: 50%;
+  animation: gallery-spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+.msg.system.history-loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.msg.system.history-loader .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(var(--ink-rgb),0.25);
+  border-top-color: var(--toon-pink);
+  border-radius: 50%;
+  animation: gallery-spin 0.8s linear infinite;
+  flex: 0 0 auto;
+}
+#gallery-grid.hidden { display: none; }
 
 /* ============ Remi Joker ============ */
 .remi-wrap {

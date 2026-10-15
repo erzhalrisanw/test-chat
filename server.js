@@ -1064,6 +1064,7 @@ app.post('/r2-presign-video', async (req, res) => {
 
 const GALLERY_PAGE_DEFAULT = 12;
 const GALLERY_PAGE_MAX = 1000;
+const GALLERY_VIEW_ONCE_MARKER = '\u2063\u200B\u2063\u200B';
 
 app.get('/gallery', async (req, res) => {
   const username = authFromReq(req);
@@ -1083,11 +1084,14 @@ app.get('/gallery', async (req, res) => {
   const offset = (page - 1) * limit;
 
   const unsentFilter = username === HUB_USER ? '' : ' AND unsent = 0';
+  const hideViewOnce = username === 'riz';
+  const viewOnceFilter = hideViewOnce ? ' AND (text IS NULL OR instr(text, ?) = 0)' : '';
+  const extraArgs = hideViewOnce ? [GALLERY_VIEW_ONCE_MARKER] : [];
   const mediaFilter = "((image IS NOT NULL AND image NOT LIKE '/stickers/%') OR video IS NOT NULL)";
   try {
     const countResult = await db.execute({
-      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE peer = ? AND ${mediaFilter}${unsentFilter}`,
-      args: [peer],
+      sql: `SELECT COUNT(*) AS cnt FROM messages WHERE peer = ? AND ${mediaFilter}${unsentFilter}${viewOnceFilter}`,
+      args: [peer, ...extraArgs],
     });
     const totalItems = Number(countResult.rows[0].cnt);
     const totalPages = Math.ceil(totalItems / limit);
@@ -1095,10 +1099,10 @@ app.get('/gallery', async (req, res) => {
     const result = await db.execute({
       sql: `SELECT id, username, image, video, time, unsent
              FROM messages
-            WHERE peer = ? AND ${mediaFilter}${unsentFilter}
+            WHERE peer = ? AND ${mediaFilter}${unsentFilter}${viewOnceFilter}
             ORDER BY id DESC
             LIMIT ? OFFSET ?`,
-      args: [peer, limit, offset],
+      args: [peer, ...extraArgs, limit, offset],
     });
 
     const items = result.rows.map((r) => ({
